@@ -275,6 +275,24 @@ select option { background: #2a2a2a; }
 }
 .hand-empty { color: var(--text-muted); font-size: 0.85rem; line-height: 1.5; padding: 0.5rem 0; }
 
+/* Proactive/Reactive corner badge on cards */
+.card-type-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  font-size: 0.7rem;
+  line-height: 1;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+}
+.card-type-badge.reactive { box-shadow: 0 0 0 1.5px #2a6a9a; }
+.card-type-badge.proactive { box-shadow: 0 0 0 1.5px #5a4a20; }
+
 .turn-actions { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.5rem 1.1rem 0.75rem; }
 .btn-cash {
   width: 100%;
@@ -377,8 +395,9 @@ select option { background: #2a2a2a; }
 .btn-pass:hover { background: #204020; }
 
 /* ===== VERDICT ===== */
-#verdict-screen { background: var(--bg); align-items: center; justify-content: center; }
-.verdict-content { text-align: center; padding: 2rem 1.5rem; max-width: 360px; display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
+#verdict-screen { background: var(--bg); }
+.verdict-topbar { width: 100%; display: flex; justify-content: flex-end; padding: 0.8rem 1.1rem 0; flex-shrink: 0; }
+.verdict-content { text-align: center; padding: 1rem 1.5rem 2rem; max-width: 360px; margin: 0 auto; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; }
 .verdict-icon { font-size: 3.5rem; }
 .verdict-content h2 { font-size: 1.5rem; }
 .verdict-content p { color: var(--text-muted); line-height: 1.55; }
@@ -486,6 +505,19 @@ select option { background: #2a2a2a; }
   border: 1px solid #3a3a3a;
   box-shadow: 0 6px 24px rgba(0,0,0,0.5);
 }
+.sheet-type {
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0.35rem 0.6rem;
+  margin: 0 auto 1rem;
+  width: fit-content;
+  max-width: 100%;
+}
+.sheet-type.proactive { background: rgba(227,178,60,0.12); border: 1px solid #5a4a20; color: var(--gold); }
+.sheet-type.reactive { background: rgba(80,150,200,0.12); border: 1px solid #2a4a6a; color: #90caf9; }
+
 .sheet-power-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600; margin-bottom: 0.3rem; }
 .sheet-power { font-size: 0.95rem; line-height: 1.5; color: var(--gold); font-style: italic; }
 .sheet-affinity { font-size: 0.82rem; line-height: 1.5; color: var(--text-muted); margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid #3a3a3a; }

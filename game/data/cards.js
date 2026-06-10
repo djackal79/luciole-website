@@ -41,6 +41,24 @@ const AFFINITY = {
   'Giggle Box':           "Cockatoo? If they crack, steal their turn's reward too.",
 };
 
+// Whether a card's power is played on your own turn (proactive) or in
+// response to another player's action (reactive).
+const POWER_TYPE = {
+  'The Ad-Lib':            'proactive',
+  'Warm-Up Act':          'proactive',
+  'Standing Ovation':     'reactive',
+  'Prop Master':          'proactive',
+  'Improviser':           'proactive',
+  'Heckler':              'reactive',
+  'Pie In The Face':      'proactive',
+  'Stage Hook':           'proactive',
+  'Intermission':         'proactive',
+  'Clap Back':            'reactive',
+  'Mime Time':            'reactive',
+  'Stage Left Stage Right':'proactive',
+  'Giggle Box':           'reactive',
+};
+
 // Per-card animal (1..52), as printed on each card.
 const ANIMALS = {
   1:'kookaburra', 2:'echidna', 3:'platypus', 4:'quokka', 5:'galah', 6:'magpie', 7:'emu',
@@ -70,6 +88,7 @@ for (let n = 1; n <= 52; n++) {
     animal: ANIMALS[n],
     power_text: POWER[title],
     affinity_text: AFFINITY[title],
+    power_type: POWER_TYPE[title],
   });
 }
 

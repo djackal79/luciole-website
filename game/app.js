@@ -314,11 +314,21 @@ function renderTurn() {
   document.getElementById('cash-pair-btn').classList.toggle('hidden', venueMatchCards(player).length < 2);
 }
 
+function addTypeBadge(el, card) {
+  const badge = document.createElement('span');
+  const reactive = card.power_type === 'reactive';
+  badge.className = 'card-type-badge ' + (reactive ? 'reactive' : 'proactive');
+  badge.textContent = reactive ? '🛡️' : '⚡';
+  badge.title = reactive ? 'Reactive power' : 'Proactive power';
+  el.appendChild(badge);
+}
+
 function buildHandCard(cardNumber) {
   const card = cardByNumber(cardNumber);
   const el = document.createElement('button');
   el.className = 'hand-card';
   el.style.backgroundImage = `url('assets/venues/${cardNumber}.jpg')`;
+  addTypeBadge(el, card);
   const label = document.createElement('span');
   label.className = 'hand-card-label';
   label.textContent = card.title;
@@ -496,6 +506,7 @@ function renderPossessions() {
         card.style.backgroundImage = `url('assets/venues/${n}.jpg')`;
         card.title = c.title;
         card.addEventListener('click', () => openCardSheet(n, 'poss', idx));
+        addTypeBadge(card, c);
         const lbl = document.createElement('span');
         lbl.className = 'hand-card-label';
         lbl.textContent = c.title;
@@ -523,6 +534,14 @@ function openCardSheet(cardNumber, source, playerIndex) {
   document.getElementById('card-sheet-title').textContent = card.title;
   document.getElementById('card-sheet-img').style.backgroundImage = `url('assets/venues/${cardNumber}.jpg')`;
   document.getElementById('card-sheet-power').textContent = card.power_text;
+
+  const typeEl = document.getElementById('card-sheet-type');
+  const reactive = card.power_type === 'reactive';
+  typeEl.className = 'sheet-type ' + (reactive ? 'reactive' : 'proactive');
+  typeEl.textContent = reactive
+    ? '🛡️ Reactive — play in response to another player'
+    : '⚡ Proactive — play on your turn';
+
   const aff = document.getElementById('card-sheet-affinity');
   aff.textContent = card.affinity_text || '';
   aff.classList.toggle('hidden', !card.affinity_text);
@@ -531,13 +550,9 @@ function openCardSheet(cardNumber, source, playerIndex) {
   actions.innerHTML = '';
   const useBtn = document.createElement('button');
   useBtn.className = 'btn-primary';
-  useBtn.textContent = '⚡ Use Power & Discard';
+  useBtn.textContent = '🎭 Play Power & Discard';
   useBtn.addEventListener('click', () => discardFromHand(sheetContext.playerIndex, cardNumber));
   actions.appendChild(useBtn);
-
-  if (source === 'poss') {
-    useBtn.textContent = '🗑️ Discard This Card';
-  }
 
   document.getElementById('card-sheet').classList.remove('hidden');
 }
@@ -641,8 +656,9 @@ function doSuccess() {
   // Mark the performed prompt as used
   if (state.drawnPromptPos != null) markPromptUsed(player, card.venue, state.drawnPromptPos);
 
-  // Resolve reward in order: Animal Affinity → Venue Match → No Match
-  if (card.animal === ch.animal) state.pendingOutcome = 'animal';
+  // Resolve reward in order: Animal Affinity → Venue Match → No Match.
+  // A character's animal is its id (e.g. 'kookaburra').
+  if (card.animal === ch.id) state.pendingOutcome = 'animal';
   else if (card.venue === ch.venue) state.pendingOutcome = 'venue';
   else state.pendingOutcome = 'power';
 
@@ -805,6 +821,7 @@ function wireDraw() {
 }
 
 function wireVerdict() {
+  document.getElementById('verdict-allplayers-btn').addEventListener('click', openPossessions);
   document.getElementById('verdict-continue-btn').addEventListener('click', () => {
     applyOutcome(state.pendingOutcome);
   });
