@@ -1,5 +1,6 @@
 import { prompts } from './data/prompts.js';
 import { cards, cardByNumber, FAMILY_REMOVED_TITLES } from './data/cards.js';
+import { supabase, SESSION_ID } from './supabase.js';
 
 // ===== CONSTANTS =====
 
@@ -63,9 +64,12 @@ const TOKEN_GOAL = 3;
 // ===== STATE =====
 
 let state = null;
+let myPlayerIndex = null;  // which player slot this device has claimed
 let timerInterval = null;
 let timerRemaining = 0;
 let timerRunning = false;
+let saveDebounceTimer = null;
+let realtimeIgnoreNext = false;
 
 function defaultState() {
   return {
@@ -75,24 +79,77 @@ function defaultState() {
     currentPlayerIndex: 0,
     deck: [],
     discard: [],
-    drawnCard: null,        // card number currently in play this turn
-    drawnPromptPos: null,   // position of the prompt being performed
-    pendingOutcome: null,   // 'animal' | 'venue' | 'power'
+    drawnCard: null,
+    drawnPromptPos: null,
+    pendingOutcome: null,
     nextTokenIndex: 0,
     familyMode: false,
   };
 }
 
+// ===== PERSISTENCE (SUPABASE) =====
+
 function save() {
-  try { localStorage.setItem('pao_v2', JSON.stringify(state)); } catch(e) {}
+  realtimeIgnoreNext = true;
+  if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+  saveDebounceTimer = setTimeout(async () => {
+    try {
+      await supabase.from('game_sessions').upsert({
+        id: SESSION_ID,
+        state: state,
+        updated_at: new Date().toISOString(),
+      });
+    } catch(e) { console.error('save failed', e); }
+  }, 80);
 }
 
-function load() {
+async function load() {
   try {
-    const raw = localStorage.getItem('pao_v2');
-    if (raw) { state = JSON.parse(raw); return; }
+    const { data } = await supabase
+      .from('game_sessions')
+      .select('state')
+      .eq('id', SESSION_ID)
+      .single();
+    if (data?.state) { state = data.state; return; }
   } catch(e) {}
   state = defaultState();
+}
+
+function subscribeRealtime() {
+  supabase
+    .channel('game-state')
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'game_sessions',
+      filter: `id=eq.${SESSION_ID}`,
+    }, (payload) => {
+      if (realtimeIgnoreNext) { realtimeIgnoreNext = false; return; }
+      if (payload.new?.state) {
+        state = payload.new.state;
+        renderCurrentPhase();
+      }
+    })
+    .subscribe();
+}
+
+// ===== PLAYER IDENTITY =====
+
+function loadMyPlayerIndex() {
+  const raw = localStorage.getItem('pao_my_player');
+  if (raw === null) return;
+  const idx = parseInt(raw);
+  if (!isNaN(idx)) myPlayerIndex = idx;
+}
+
+function claimPlayerSlot(idx) {
+  myPlayerIndex = idx;
+  localStorage.setItem('pao_my_player', String(idx));
+}
+
+function clearMyPlayerSlot() {
+  myPlayerIndex = null;
+  localStorage.removeItem('pao_my_player');
 }
 
 // ===== HELPERS =====
@@ -120,13 +177,11 @@ function buildDeck(familyMode) {
 
 function ensureDeck() {
   if (state.deck.length === 0) {
-    // Reshuffle the discard pile into a fresh deck.
     state.deck = shuffle(state.discard);
     state.discard = [];
   }
 }
 
-// Prompt Card helpers (the player's personal script)
 function getCardPrompts(cardNumber, venue, familyMode) {
   return prompts
     .filter(p => p.card_number === cardNumber && p.venue === venue && (!familyMode || p.family_safe))
@@ -157,6 +212,11 @@ function awardToken(player) {
 
 function hasWon(player) {
   return player.tokens.length >= TOKEN_GOAL;
+}
+
+function animalName(id) {
+  const c = CHARACTERS.find(x => x.id === id);
+  return c ? c.name : id.charAt(0).toUpperCase() + id.slice(1);
 }
 
 // ===== TIMER =====
@@ -196,6 +256,101 @@ function updateTimerDisplay() {
     btn.textContent = timerRunning ? 'Stop' : 'Start Timer';
     btn.classList.toggle('running', timerRunning);
   }
+}
+
+// ===== NAVIGATION =====
+
+function showPhase(phase) {
+  ['setup','turn','draw','verdict','win','join','spectate'].forEach(p => {
+    document.getElementById(`${p}-screen`).classList.toggle('hidden', phase !== p);
+  });
+}
+
+// Central routing: always call this after state changes (locally or from realtime)
+function renderCurrentPhase() {
+  // Guard: if player slot is stale (player count changed), clear it
+  if (myPlayerIndex !== null && state.players.length > 0 && myPlayerIndex >= state.players.length) {
+    clearMyPlayerSlot();
+  }
+
+  if (state.phase === 'win') {
+    const winner = state.players.find(p => p.tokens.length >= TOKEN_GOAL);
+    if (winner) {
+      document.getElementById('win-message').textContent =
+        `${winner.name || `Player ${state.players.indexOf(winner) + 1}`} collected ${TOKEN_GOAL} Prop Tokens and wins.`;
+    }
+    showPhase('win');
+    return;
+  }
+
+  if (state.phase === 'setup') {
+    showPhase('setup');
+    renderSetup();
+    return;
+  }
+
+  // Game in progress — need to know who I am
+  if (myPlayerIndex === null) {
+    showPhase('join');
+    renderJoin();
+    return;
+  }
+
+  if (myPlayerIndex === state.currentPlayerIndex) {
+    // It's my turn
+    stopTimer();
+    switch (state.phase) {
+      case 'turn':    showPhase('turn');    renderTurn();    break;
+      case 'draw':    showPhase('draw');    renderDraw();    break;
+      case 'verdict': showPhase('verdict'); renderVerdict(); break;
+      default:        showPhase('turn');    renderTurn();    break;
+    }
+  } else {
+    // Someone else's turn — spectate
+    showPhase('spectate');
+    renderSpectate();
+  }
+}
+
+function goToSetup() {
+  stopTimer();
+  state.phase = 'setup';
+  save();
+  renderCurrentPhase();
+}
+
+function goToTurn() {
+  stopTimer();
+  state.phase = 'turn';
+  state.drawnCard = null;
+  state.drawnPromptPos = null;
+  state.pendingOutcome = null;
+  save();
+  renderCurrentPhase();
+}
+
+function goToDraw() {
+  state.phase = 'draw';
+  save();
+  renderCurrentPhase();
+}
+
+function goToVerdict() {
+  stopTimer();
+  state.phase = 'verdict';
+  save();
+  renderCurrentPhase();
+}
+
+function goToWin(winnerIndex) {
+  stopTimer();
+  state.phase = 'win';
+  save();
+  renderCurrentPhase();
+}
+
+function advancePlayer() {
+  state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
 }
 
 // ===== RENDER: SETUP =====
@@ -267,6 +422,121 @@ function renderSetup() {
   }
 }
 
+// ===== RENDER: JOIN =====
+
+function renderJoin() {
+  const list = document.getElementById('join-player-list');
+  list.innerHTML = '';
+
+  state.players.forEach((player, idx) => {
+    const ch = getCharacter(player);
+    const venue = VENUES[ch.venue];
+
+    const card = document.createElement('button');
+    card.className = 'join-player-card';
+
+    const img = document.createElement('div');
+    img.className = 'join-char-img';
+    img.style.backgroundImage = `url('assets/characters/${ch.img}.jpg')`;
+
+    const info = document.createElement('div');
+    info.className = 'join-player-info';
+
+    const name = document.createElement('div');
+    name.className = 'join-player-name';
+    name.textContent = player.name || `Player ${idx + 1}`;
+
+    const meta = document.createElement('div');
+    meta.className = 'join-player-meta';
+    meta.textContent = `${ch.name} · ${venue.icon} ${venue.name}`;
+
+    const stats = document.createElement('div');
+    stats.className = 'join-player-stats';
+    stats.textContent = `🪙 ${player.tokens.length} token${player.tokens.length !== 1 ? 's' : ''} · ${player.hand.length} card${player.hand.length !== 1 ? 's' : ''}`;
+
+    info.appendChild(name);
+    info.appendChild(meta);
+    info.appendChild(stats);
+    card.appendChild(img);
+    card.appendChild(info);
+
+    card.addEventListener('click', () => {
+      claimPlayerSlot(idx);
+      renderCurrentPhase();
+    });
+
+    list.appendChild(card);
+  });
+}
+
+// ===== RENDER: SPECTATE =====
+
+function renderSpectate() {
+  const activePlayer = state.players[state.currentPlayerIndex];
+  if (!activePlayer) return;
+  const ch = getCharacter(activePlayer);
+  const venue = VENUES[ch.venue];
+
+  document.getElementById('spectate-active-char').style.backgroundImage =
+    `url('assets/characters/${ch.img}.jpg')`;
+  document.getElementById('spectate-active-name').textContent =
+    activePlayer.name || `Player ${state.currentPlayerIndex + 1}`;
+  document.getElementById('spectate-active-meta').textContent =
+    `${ch.name} · ${venue.icon} ${venue.name}`;
+
+  const phaseLabels = {
+    turn:    'Deciding what to do…',
+    draw:    state.drawnCard ? `Performing: ${cardByNumber(state.drawnCard)?.title}` : 'Drawing a card…',
+    verdict: 'Collecting reward…',
+  };
+  document.getElementById('spectate-phase-label').textContent =
+    phaseLabels[state.phase] || '';
+
+  // Drawn card preview
+  const drawnWrap = document.getElementById('spectate-drawn-wrap');
+  if (state.drawnCard && (state.phase === 'draw' || state.phase === 'verdict')) {
+    const card = cardByNumber(state.drawnCard);
+    document.getElementById('spectate-drawn-card').style.backgroundImage =
+      `url('assets/venues/${state.drawnCard}.jpg')`;
+    document.getElementById('spectate-drawn-title').textContent =
+      `${card.title} · ${animalName(card.animal)}`;
+    drawnWrap.classList.remove('hidden');
+  } else {
+    drawnWrap.classList.add('hidden');
+  }
+
+  // My tokens
+  const me = myPlayerIndex !== null ? state.players[myPlayerIndex] : null;
+  const tokenBar = document.getElementById('spectate-token-bar');
+  tokenBar.innerHTML = '';
+  if (me) {
+    const label = document.createElement('div');
+    label.className = 'token-bar-label';
+    label.textContent = `🪙 ${me.tokens.length} / ${TOKEN_GOAL}`;
+    tokenBar.appendChild(label);
+    const chips = document.createElement('div');
+    chips.className = 'token-chips';
+    if (me.tokens.length === 0) {
+      const empty = document.createElement('span');
+      empty.className = 'token-chip empty';
+      empty.textContent = 'no tokens yet';
+      chips.appendChild(empty);
+    } else {
+      me.tokens.forEach((t, ti) => {
+        chips.appendChild(buildTokenChip(t, () => renameToken(myPlayerIndex, ti)));
+      });
+    }
+    tokenBar.appendChild(chips);
+  }
+
+  // My hand
+  const grid = document.getElementById('spectate-hand-grid');
+  grid.innerHTML = '';
+  const myHand = me ? me.hand : [];
+  myHand.forEach(n => grid.appendChild(buildHandCard(n)));
+  document.getElementById('spectate-hand-empty').classList.toggle('hidden', myHand.length > 0);
+}
+
 // ===== RENDER: TURN =====
 
 function renderTurn() {
@@ -283,7 +553,6 @@ function renderTurn() {
   const charCard = document.getElementById('turn-char-card');
   charCard.style.backgroundImage = `url('assets/characters/${ch.img}.jpg')`;
 
-  // Token bar — progress toward 3
   const bar = document.getElementById('turn-token-bar');
   bar.innerHTML = '';
   const label = document.createElement('div');
@@ -304,13 +573,11 @@ function renderTurn() {
   }
   bar.appendChild(chips);
 
-  // Hand grid
   const grid = document.getElementById('turn-hand-grid');
   grid.innerHTML = '';
   player.hand.forEach(n => grid.appendChild(buildHandCard(n)));
   document.getElementById('turn-hand-empty').classList.toggle('hidden', player.hand.length > 0);
 
-  // Cash a pair availability
   document.getElementById('cash-pair-btn').classList.toggle('hidden', venueMatchCards(player).length < 2);
 }
 
@@ -344,6 +611,7 @@ function renderDraw() {
   const card = cardByNumber(state.drawnCard);
   if (!player || !card) return;
   const venue = VENUES[card.venue];
+
   const header = document.getElementById('draw-header');
   header.className = `draw-header ${venue.cssClass}`;
   document.getElementById('draw-venue-label').textContent = `${venue.icon} ${venue.name}`;
@@ -354,7 +622,6 @@ function renderDraw() {
     `🐾 ${animalName(card.animal)} · ${venue.icon} ${venue.name}`;
   document.getElementById('drawn-card-power').textContent = card.power_text;
 
-  // The prompt the performer must do (next unused on their card for this venue)
   const prompt = getNextPrompt(player, card.venue, state.familyMode);
   state.drawnPromptPos = prompt ? prompt.position : null;
 
@@ -409,11 +676,6 @@ const OUTCOME_INFO = {
   },
 };
 
-function animalName(id) {
-  const c = CHARACTERS.find(x => x.id === id);
-  return c ? c.name : id.charAt(0).toUpperCase() + id.slice(1);
-}
-
 function renderVerdict() {
   const card = cardByNumber(state.drawnCard);
   const player = state.players[state.currentPlayerIndex];
@@ -447,7 +709,6 @@ function renderPossessions() {
       <div class="poss-meta">${ch.name} · ${venue.icon} ${venue.name}</div>`;
     section.appendChild(head);
 
-    // Tokens row with +/- controls
     const tokRow = document.createElement('div');
     tokRow.className = 'poss-tokens';
     const tokLabel = document.createElement('div');
@@ -483,7 +744,6 @@ function renderPossessions() {
     tokRow.appendChild(tokControls);
     section.appendChild(tokRow);
 
-    // Hand
     const handLabel = document.createElement('div');
     handLabel.className = 'poss-subtitle';
     handLabel.textContent = `Performance Cards (${player.hand.length})`;
@@ -523,7 +783,7 @@ function escapeHtml(s) {
 
 // ===== RENDER: CARD SHEET =====
 
-let sheetContext = null; // {cardNumber, source:'hand'|'poss', playerIndex}
+let sheetContext = null;
 
 function openCardSheet(cardNumber, source, playerIndex) {
   const card = cardByNumber(cardNumber);
@@ -577,77 +837,20 @@ function discardFromHand(playerIndex, cardNumber) {
   }
   closeCardSheet();
   save();
-  renderTurn();
+  renderCurrentPhase();
   if (!document.getElementById('possessions-overlay').classList.contains('hidden')) renderPossessions();
-}
-
-// ===== NAVIGATION =====
-
-function showPhase(phase) {
-  ['setup','turn','draw','verdict','win'].forEach(p => {
-    document.getElementById(`${p}-screen`).classList.toggle('hidden', phase !== p);
-  });
-}
-
-function goToSetup() {
-  stopTimer();
-  state.phase = 'setup';
-  showPhase('setup');
-  renderSetup();
-  save();
-}
-
-function goToTurn() {
-  stopTimer();
-  state.phase = 'turn';
-  state.drawnCard = null;
-  state.drawnPromptPos = null;
-  state.pendingOutcome = null;
-  showPhase('turn');
-  renderTurn();
-  save();
-}
-
-function goToDraw() {
-  state.phase = 'draw';
-  showPhase('draw');
-  renderDraw();
-  save();
-}
-
-function goToVerdict() {
-  stopTimer();
-  state.phase = 'verdict';
-  showPhase('verdict');
-  renderVerdict();
-  save();
-}
-
-function goToWin(winnerIndex) {
-  stopTimer();
-  state.phase = 'win';
-  const p = state.players[winnerIndex];
-  document.getElementById('win-message').textContent =
-    `${p.name || `Player ${winnerIndex + 1}`} collected ${TOKEN_GOAL} Prop Tokens and wins.`;
-  showPhase('win');
-  save();
-}
-
-function advancePlayer() {
-  state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
 }
 
 // ===== ACTIONS =====
 
 function doDraw() {
   ensureDeck();
-  if (state.deck.length === 0) return; // nothing to draw (shouldn't happen)
+  if (state.deck.length === 0) return;
   state.drawnCard = state.deck.pop();
   goToDraw();
 }
 
 function doFail() {
-  // Card goes to discard, turn ends.
   if (state.drawnCard != null) state.discard.push(state.drawnCard);
   stopTimer();
   advancePlayer();
@@ -659,11 +862,8 @@ function doSuccess() {
   const card = cardByNumber(state.drawnCard);
   const ch = getCharacter(player);
 
-  // Mark the performed prompt as used
   if (state.drawnPromptPos != null) markPromptUsed(player, card.venue, state.drawnPromptPos);
 
-  // Resolve reward in order: Animal Affinity → Venue Match → No Match.
-  // A character's animal is its id (e.g. 'kookaburra').
   if (card.animal === ch.id) state.pendingOutcome = 'animal';
   else if (card.venue === ch.venue) state.pendingOutcome = 'venue';
   else state.pendingOutcome = 'power';
@@ -677,9 +877,8 @@ function applyOutcome(outcome) {
 
   if (outcome === 'animal') {
     awardToken(player);
-    state.discard.push(card.number); // cashed for a token, card leaves play
+    state.discard.push(card.number);
   } else {
-    // venue or power: keep the card face-up in hand
     player.hand.push(card.number);
   }
 
@@ -697,7 +896,6 @@ function doCashPair() {
   const player = state.players[state.currentPlayerIndex];
   const matches = venueMatchCards(player);
   if (matches.length < 2) return;
-  // Discard the two oldest venue-matching cards, gain a token.
   const toDiscard = matches.slice(0, 2);
   toDiscard.forEach(n => {
     const i = player.hand.indexOf(n);
@@ -705,9 +903,9 @@ function doCashPair() {
     state.discard.push(n);
   });
   awardToken(player);
+  if (hasWon(player)) { save(); goToWin(state.currentPlayerIndex); return; }
   save();
-  if (hasWon(player)) { goToWin(state.currentPlayerIndex); return; }
-  renderTurn();
+  renderCurrentPhase();
 }
 
 function adjustToken(playerIndex, delta) {
@@ -725,7 +923,7 @@ function adjustToken(playerIndex, delta) {
   }
   save();
   renderPossessions();
-  if (state.phase === 'turn') renderTurn();
+  renderCurrentPhase();
 }
 
 function renameToken(playerIndex, tokenIndex) {
@@ -737,7 +935,7 @@ function renameToken(playerIndex, tokenIndex) {
   current.name = name.trim() || current.name;
   save();
   renderPossessions();
-  if (state.phase === 'turn') renderTurn();
+  renderCurrentPhase();
 }
 
 function openPossessions() {
@@ -778,6 +976,7 @@ function wireSetup() {
     state.currentPlayerIndex = 0;
     state.deck = buildDeck(state.familyMode);
     state.discard = [];
+    claimPlayerSlot(0); // host becomes player 1
     goToTurn();
   });
 }
@@ -789,22 +988,22 @@ function wireTurn() {
 
   document.getElementById('turn-family-mode').addEventListener('change', e => {
     state.familyMode = e.target.checked;
-    renderTurn();
+    renderCurrentPhase();
     save();
   });
 
   document.getElementById('reset-btn').addEventListener('click', () => {
     if (confirm('Reset the whole game? This clears all hands, tokens and progress.')) {
+      clearMyPlayerSlot();
       state = defaultState();
       save();
-      goToSetup();
+      renderCurrentPhase();
     }
   });
 }
 
 function wireDraw() {
   document.getElementById('draw-back-btn').addEventListener('click', () => {
-    // Cancel the draw — put card back on top of the deck, return to turn.
     if (state.drawnCard != null) { state.deck.push(state.drawnCard); state.drawnCard = null; }
     goToTurn();
   });
@@ -851,8 +1050,9 @@ function wireWin() {
     state.players = keep.map(p => ({
       ...p, tokens: [], hand: [], used: {comedy_club:[], rsl:[], royal_show:[], school_play:[]},
     }));
+    // Keep myPlayerIndex — same player in new game
     save();
-    goToSetup();
+    renderCurrentPhase();
   });
 }
 
@@ -870,10 +1070,19 @@ function wireCardSheet() {
   document.getElementById('card-sheet-backdrop').addEventListener('click', closeCardSheet);
 }
 
+function wireJoin() {
+  // Join player cards are rendered dynamically in renderJoin(); no static wiring needed.
+}
+
+function wireSpectate() {
+  document.getElementById('spectate-allplayers-btn').addEventListener('click', openPossessions);
+}
+
 // ===== INIT =====
 
-function init() {
-  load();
+async function init() {
+  loadMyPlayerIndex();
+
   wireSetup();
   wireTurn();
   wireDraw();
@@ -881,14 +1090,12 @@ function init() {
   wireWin();
   wirePossessions();
   wireCardSheet();
+  wireJoin();
+  wireSpectate();
 
-  switch (state.phase) {
-    case 'turn':    showPhase('turn'); renderTurn(); break;
-    case 'draw':    showPhase('draw'); renderDraw(); break;
-    case 'verdict': showPhase('verdict'); renderVerdict(); break;
-    case 'win':     showPhase('win'); break;
-    default:        state.phase = 'setup'; showPhase('setup'); renderSetup();
-  }
+  await load();
+  subscribeRealtime();
+  renderCurrentPhase();
 }
 
 init();

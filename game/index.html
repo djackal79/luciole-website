@@ -164,6 +164,46 @@
   </div>
 </div>
 
+<!-- JOIN SCREEN -->
+<div id="join-screen" class="screen hidden">
+  <div class="join-header">
+    <div class="game-logo">🎄</div>
+    <h1>Pull Another One</h1>
+    <p class="subtitle">Game in progress — who are you?</p>
+  </div>
+  <div class="join-body">
+    <div id="join-player-list"></div>
+  </div>
+</div>
+
+<!-- SPECTATE SCREEN -->
+<div id="spectate-screen" class="screen hidden">
+  <div class="spectate-header">
+    <div class="spectate-turn-info">
+      <div class="char-card-wrap" id="spectate-active-char" aria-hidden="true"></div>
+      <div>
+        <div class="spectate-active-name" id="spectate-active-name">Player 1</div>
+        <div class="spectate-active-meta" id="spectate-active-meta">Kookaburra · 🎤 Comedy Club</div>
+        <div class="spectate-phase-label" id="spectate-phase-label">Drawing…</div>
+      </div>
+    </div>
+    <button class="btn-allplayers" id="spectate-allplayers-btn">All Players</button>
+  </div>
+
+  <div class="spectate-drawn-wrap hidden" id="spectate-drawn-wrap">
+    <div class="spectate-drawn-card" id="spectate-drawn-card"></div>
+    <div class="spectate-drawn-title" id="spectate-drawn-title"></div>
+  </div>
+
+  <div class="token-bar" id="spectate-token-bar"></div>
+
+  <div class="spectate-hand-section">
+    <div class="section-title">Your Hand <span class="section-hint">tap a card to use its power</span></div>
+    <div class="hand-grid" id="spectate-hand-grid"></div>
+    <div class="hand-empty" id="spectate-hand-empty">No Performance Cards yet.</div>
+  </div>
+</div>
+
 <!-- ALL PLAYERS (POSSESSIONS) OVERLAY -->
 <div id="possessions-overlay" class="modal hidden" role="dialog" aria-modal="true">
   <div class="modal-backdrop" id="possessions-backdrop"></div>
