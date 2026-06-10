@@ -22,6 +22,12 @@ const VENUES = {
 
 const VENUE_KEYS = ['comedy_club','rsl','royal_show','school_play'];
 
+const PERFORMANCE_CARDS = [
+  'Ad-Lib', 'Warm-Up Act', 'Standing Ovation', 'Prop Master', 'Improvisor',
+  'Heckler', 'Pie in the Face', 'Stage Hook', 'Intermission', 'Clap Back',
+  'Mime Time', 'Stage Left Stage Right', 'Giggle Box',
+];
+
 const SUCCESS_DISPLAY = {
   vote:        {icon:'🗳️', label:'Majority vote'},
   objective:   {icon:'✅', label:'Objective'},
@@ -42,7 +48,9 @@ function defaultState() {
     players: [],
     currentPlayerIndex: 0,
     selectedVenue: null,
-    currentPromptKey: null, // "card-venue-position"
+    selectedCardName: null,
+    selectedCardImg: null,
+    currentPromptKey: null,
     familyMode: false,
   };
 }
@@ -270,12 +278,10 @@ function renderPrompt() {
   header.className = `prompt-header ${venueInfo.cssClass}`;
   document.getElementById('prompt-venue-label').textContent = `${venueInfo.icon} ${venueInfo.name}`;
 
-  // Venue (performance) card image — picks a random card from this venue's group
+  // Venue (performance) card image — use the one already selected on card screen
   const venueCard = document.getElementById('prompt-venue-card');
-  if (venueCard) {
-    const v = VENUES[venue];
-    const cardNum = v.imgStart + Math.floor(Math.random() * v.imgCount);
-    venueCard.style.backgroundImage = `url('assets/venues/${cardNum}.jpg')`;
+  if (venueCard && state.selectedCardImg) {
+    venueCard.style.backgroundImage = `url('assets/venues/${state.selectedCardImg}.jpg')`;
   }
 
   // Difficulty stars
@@ -306,6 +312,25 @@ function renderPrompt() {
 
   // Store current prompt ref
   state.currentPromptKey = `${prompt.card_number}-${prompt.venue}-${prompt.position}`;
+}
+
+// ===== RENDER CARD =====
+
+function renderCard() {
+  const venue = state.selectedVenue;
+  if (!venue) return;
+  const venueInfo = VENUES[venue];
+
+  const headerEl = document.querySelector('#card-screen .card-screen-header');
+  if (headerEl) headerEl.className = `card-screen-header ${venueInfo.cssClass}`;
+  document.getElementById('card-screen-venue').textContent = `${venueInfo.icon} ${venueInfo.name}`;
+
+  const imgWrap = document.getElementById('card-screen-img');
+  if (imgWrap && state.selectedCardImg) {
+    imgWrap.style.backgroundImage = `url('assets/venues/${state.selectedCardImg}.jpg')`;
+  }
+
+  document.getElementById('card-screen-name').textContent = state.selectedCardName || '';
 }
 
 // ===== RENDER USED MODAL =====
@@ -358,6 +383,7 @@ function renderUsedModal() {
 function showPhase(phase) {
   document.getElementById('setup-screen').classList.toggle('hidden', phase !== 'setup');
   document.getElementById('game-screen').classList.toggle('hidden', phase !== 'game');
+  document.getElementById('card-screen').classList.toggle('hidden', phase !== 'card');
   document.getElementById('prompt-screen').classList.toggle('hidden', phase !== 'prompt');
   document.getElementById('exhausted-screen').classList.toggle('hidden', phase !== 'exhausted');
 }
@@ -380,7 +406,7 @@ function goToSetup() {
   save();
 }
 
-function goToPrompt(venue) {
+function goToCard(venue) {
   const player = state.players[state.currentPlayerIndex];
   state.selectedVenue = venue;
 
@@ -394,6 +420,16 @@ function goToPrompt(venue) {
     return;
   }
 
+  const v = VENUES[venue];
+  state.selectedCardImg = v.imgStart + Math.floor(Math.random() * v.imgCount);
+  state.selectedCardName = PERFORMANCE_CARDS[Math.floor(Math.random() * PERFORMANCE_CARDS.length)];
+  state.phase = 'card';
+  showPhase('card');
+  renderCard();
+  save();
+}
+
+function goToPrompt() {
   state.phase = 'prompt';
   showPhase('prompt');
   renderPrompt();
@@ -406,6 +442,7 @@ function completePrompt() {
   const prompt = getNextPrompt(player, state.familyMode);
   if (prompt) markUsed(player, venue, prompt.position);
   stopTimer();
+  state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
   goToGame();
 }
 
@@ -453,7 +490,7 @@ function wireGame() {
   document.getElementById('venue-grid').addEventListener('click', e => {
     const btn = e.target.closest('.venue-btn');
     if (!btn) return;
-    goToPrompt(btn.dataset.venue);
+    goToCard(btn.dataset.venue);
   });
 
   // Tokens
@@ -496,6 +533,11 @@ function wireGame() {
       goToSetup();
     }
   });
+}
+
+function wireCard() {
+  document.getElementById('card-back-btn').addEventListener('click', goToGame);
+  document.getElementById('show-prompt-btn').addEventListener('click', goToPrompt);
 }
 
 function wirePrompt() {
@@ -546,6 +588,7 @@ function init() {
   load();
   wireSetup();
   wireGame();
+  wireCard();
   wirePrompt();
   wireModal();
   wireExhausted();
@@ -554,6 +597,9 @@ function init() {
   if (state.phase === 'game') {
     showPhase('game');
     renderGame();
+  } else if (state.phase === 'card') {
+    showPhase('card');
+    renderCard();
   } else if (state.phase === 'prompt') {
     showPhase('prompt');
     renderPrompt();
