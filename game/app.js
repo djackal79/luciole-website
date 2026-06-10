@@ -316,10 +316,10 @@ function renderTurn() {
 
 function addTypeBadge(el, card) {
   const badge = document.createElement('span');
-  const reactive = card.power_type === 'reactive';
-  badge.className = 'card-type-badge ' + (reactive ? 'reactive' : 'proactive');
-  badge.textContent = reactive ? '🛡️' : '⚡';
-  badge.title = reactive ? 'Reactive power' : 'Proactive power';
+  const interrupt = card.timing.startsWith('interrupt');
+  badge.className = 'card-type-badge ' + (interrupt ? 'interrupt' : 'your_turn');
+  badge.textContent = interrupt ? '🛡️' : '⚡';
+  badge.title = card.timing_label;
   el.appendChild(badge);
 }
 
@@ -344,8 +344,6 @@ function renderDraw() {
   const card = cardByNumber(state.drawnCard);
   if (!player || !card) return;
   const venue = VENUES[card.venue];
-  const chAnimal = CHARACTERS.find(c => c.id === card.animal);
-
   const header = document.getElementById('draw-header');
   header.className = `draw-header ${venue.cssClass}`;
   document.getElementById('draw-venue-label').textContent = `${venue.icon} ${venue.name}`;
@@ -353,7 +351,7 @@ function renderDraw() {
   document.getElementById('drawn-card').style.backgroundImage = `url('assets/venues/${card.number}.jpg')`;
   document.getElementById('drawn-card-title').textContent = card.title;
   document.getElementById('drawn-card-animal').textContent =
-    `🐾 ${chAnimal ? chAnimal.name : card.animal} · ${venue.icon} ${venue.name}`;
+    `🐾 ${animalName(card.animal)} · ${venue.icon} ${venue.name}`;
   document.getElementById('drawn-card-power').textContent = card.power_text;
 
   // The prompt the performer must do (next unused on their card for this venue)
@@ -413,7 +411,7 @@ const OUTCOME_INFO = {
 
 function animalName(id) {
   const c = CHARACTERS.find(x => x.id === id);
-  return c ? c.name : id;
+  return c ? c.name : id.charAt(0).toUpperCase() + id.slice(1);
 }
 
 function renderVerdict() {
@@ -533,14 +531,22 @@ function openCardSheet(cardNumber, source, playerIndex) {
 
   document.getElementById('card-sheet-title').textContent = card.title;
   document.getElementById('card-sheet-img').style.backgroundImage = `url('assets/venues/${cardNumber}.jpg')`;
+  document.getElementById('card-sheet-animal').textContent = animalName(card.animal);
   document.getElementById('card-sheet-power').textContent = card.power_text;
 
   const typeEl = document.getElementById('card-sheet-type');
-  const reactive = card.power_type === 'reactive';
-  typeEl.className = 'sheet-type ' + (reactive ? 'reactive' : 'proactive');
-  typeEl.textContent = reactive
-    ? '🛡️ Reactive — play in response to another player'
-    : '⚡ Proactive — play on your turn';
+  const interrupt = card.timing.startsWith('interrupt');
+  typeEl.className = 'sheet-type ' + (interrupt ? 'interrupt' : 'your_turn');
+  typeEl.textContent = (interrupt ? '🛡️ ' : '⚡ ') + card.timing_label;
+
+  const noteEl = document.getElementById('card-sheet-timing-note');
+  if (card.title === 'Intermission' && state.drawnCard != null) {
+    noteEl.textContent = '⚠️ Current player has already drawn — cannot be played this turn.';
+    noteEl.classList.remove('hidden');
+  } else {
+    noteEl.textContent = '';
+    noteEl.classList.add('hidden');
+  }
 
   const aff = document.getElementById('card-sheet-affinity');
   aff.textContent = card.affinity_text || '';

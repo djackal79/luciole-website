@@ -275,7 +275,7 @@ select option { background: #2a2a2a; }
 }
 .hand-empty { color: var(--text-muted); font-size: 0.85rem; line-height: 1.5; padding: 0.5rem 0; }
 
-/* Proactive/Reactive corner badge on cards */
+/* Your-turn / Interrupt corner badge on cards */
 .card-type-badge {
   position: absolute;
   top: 4px;
@@ -290,8 +290,8 @@ select option { background: #2a2a2a; }
   border-radius: 50%;
   background: rgba(0,0,0,0.6);
 }
-.card-type-badge.reactive { box-shadow: 0 0 0 1.5px #2a6a9a; }
-.card-type-badge.proactive { box-shadow: 0 0 0 1.5px #5a4a20; }
+.card-type-badge.your_turn { box-shadow: 0 0 0 1.5px #D4A82A; }
+.card-type-badge.interrupt  { box-shadow: 0 0 0 1.5px #A8341F; }
 
 .turn-actions { display: flex; flex-direction: column; gap: 0.6rem; padding: 0.5rem 1.1rem 0.75rem; }
 .btn-cash {
@@ -505,20 +505,38 @@ select option { background: #2a2a2a; }
   border: 1px solid #3a3a3a;
   box-shadow: 0 6px 24px rgba(0,0,0,0.5);
 }
+.sheet-animal {
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
 .sheet-type {
   text-align: center;
   font-size: 0.78rem;
   font-weight: 600;
   border-radius: 999px;
-  padding: 0.35rem 0.6rem;
-  margin: 0 auto 1rem;
+  padding: 0.35rem 0.75rem;
+  margin: 0 auto 0.75rem;
   width: fit-content;
   max-width: 100%;
 }
-.sheet-type.proactive { background: rgba(227,178,60,0.12); border: 1px solid #5a4a20; color: var(--gold); }
-.sheet-type.reactive { background: rgba(80,150,200,0.12); border: 1px solid #2a4a6a; color: #90caf9; }
+.sheet-type.your_turn { background: rgba(212,168,42,0.12); border: 1px solid #6a5218; color: #D4A82A; }
+.sheet-type.interrupt  { background: rgba(168,52,31,0.15);  border: 1px solid #6a2010; color: #e07060; }
+
+.sheet-timing-note {
+  font-size: 0.8rem;
+  color: #e07060;
+  background: rgba(168,52,31,0.12);
+  border: 1px solid #6a2010;
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.4;
+}
 
 .sheet-power-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600; margin-bottom: 0.3rem; }
-.sheet-power { font-size: 0.95rem; line-height: 1.5; color: var(--gold); font-style: italic; }
+.sheet-power { font-size: 0.95rem; line-height: 1.6; color: var(--text); }
 .sheet-affinity { font-size: 0.82rem; line-height: 1.5; color: var(--text-muted); margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid #3a3a3a; }
 .sheet-actions { margin-top: 1.25rem; }
