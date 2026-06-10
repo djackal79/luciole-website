@@ -3,21 +3,21 @@ import { prompts } from './data/prompts.js';
 // ===== CONSTANTS =====
 
 const CHARACTERS = [
-  {id:'kookaburra', name:'Kookaburra', archetype:'The Heckled Stand-up', venue:'comedy_club'},
-  {id:'cockatoo',   name:'Cockatoo',   archetype:'The Bitter Satirist',     venue:'comedy_club'},
-  {id:'quokka',     name:'Quokka',     archetype:'The Sweaty Warm-up Act',  venue:'rsl'},
-  {id:'magpie',     name:'Magpie',     archetype:'The Tragic Songbird',     venue:'rsl'},
-  {id:'emu',        name:'Emu',        archetype:'The Chaotic Prop Comic',  venue:'royal_show'},
-  {id:'galah',      name:'Galah',      archetype:'The Drunken Clown',       venue:'royal_show'},
-  {id:'echidna',    name:'Echidna',    archetype:'The Pretentious Improviser', venue:'school_play'},
-  {id:'platypus',   name:'Platypus',   archetype:'The Deadpan Magician',    venue:'school_play'},
+  {id:'kookaburra', name:'Kookaburra', archetype:'The Heckled Stand-up',      venue:'comedy_club', img:'1'},
+  {id:'cockatoo',   name:'Cockatoo',   archetype:'The Bitter Satirist',        venue:'comedy_club', img:'2'},
+  {id:'quokka',     name:'Quokka',     archetype:'The Sweaty Warm-up Act',     venue:'rsl',         img:'3'},
+  {id:'magpie',     name:'Magpie',     archetype:'The Tragic Songbird',        venue:'rsl',         img:'4'},
+  {id:'emu',        name:'Emu',        archetype:'The Chaotic Prop Comic',     venue:'royal_show',  img:'5'},
+  {id:'galah',      name:'Galah',      archetype:'The Drunken Clown',          venue:'royal_show',  img:'6'},
+  {id:'echidna',    name:'Echidna',    archetype:'The Pretentious Improviser', venue:'school_play', img:'7'},
+  {id:'platypus',   name:'Platypus',   archetype:'The Deadpan Magician',       venue:'school_play', img:'8'},
 ];
 
 const VENUES = {
-  comedy_club:  {name:'The Comedy Club', icon:'🎤', cssClass:'comedy'},
-  rsl:          {name:'The RSL',         icon:'🎵', cssClass:'rsl'},
-  royal_show:   {name:'The Royal Show',  icon:'🎪', cssClass:'royal_show'},
-  school_play:  {name:'The School Play', icon:'🎭', cssClass:'school_play'},
+  comedy_club:  {name:'The Comedy Club', icon:'🎤', cssClass:'comedy',    imgStart:1,  imgCount:13},
+  rsl:          {name:'The RSL',         icon:'🎵', cssClass:'rsl',        imgStart:14, imgCount:13},
+  royal_show:   {name:'The Royal Show',  icon:'🎪', cssClass:'royal_show', imgStart:27, imgCount:13},
+  school_play:  {name:'The School Play', icon:'🎭', cssClass:'school_play',imgStart:40, imgCount:13},
 };
 
 const VENUE_KEYS = ['comedy_club','rsl','royal_show','school_play'];
@@ -201,9 +201,13 @@ function renderSetup() {
     // Character card image preview (updates live on dropdown change)
     const charPreview = document.createElement('div');
     charPreview.className = 'char-preview-img';
-    charPreview.style.backgroundImage = `url('assets/characters/${charSelect.value}.png')`;
+    const getCharImg = (charId) => {
+      const c = CHARACTERS.find(x => x.id === charId);
+      return c ? `url('assets/characters/${c.img}.jpg')` : '';
+    };
+    charPreview.style.backgroundImage = getCharImg(charSelect.value);
     charSelect.addEventListener('change', () => {
-      charPreview.style.backgroundImage = `url('assets/characters/${charSelect.value}.png')`;
+      charPreview.style.backgroundImage = getCharImg(charSelect.value);
     });
 
     row.appendChild(charPreview);
@@ -229,7 +233,10 @@ function renderGame() {
 
   // Character card image
   const charCard = document.getElementById('game-char-card');
-  if (charCard) charCard.style.backgroundImage = `url('assets/characters/${player.character}.png')`;
+  if (charCard) {
+    const c = CHARACTERS.find(x => x.id === player.character);
+    charCard.style.backgroundImage = c ? `url('assets/characters/${c.img}.jpg')` : '';
+  }
 
   // Venue buttons progress
   VENUE_KEYS.forEach(venue => {
@@ -263,9 +270,13 @@ function renderPrompt() {
   header.className = `prompt-header ${venueInfo.cssClass}`;
   document.getElementById('prompt-venue-label').textContent = `${venueInfo.icon} ${venueInfo.name}`;
 
-  // Venue (performance) card image
+  // Venue (performance) card image — picks a random card from this venue's group
   const venueCard = document.getElementById('prompt-venue-card');
-  if (venueCard) venueCard.style.backgroundImage = `url('assets/venues/${venue}.png')`;
+  if (venueCard) {
+    const v = VENUES[venue];
+    const cardNum = v.imgStart + Math.floor(Math.random() * v.imgCount);
+    venueCard.style.backgroundImage = `url('assets/venues/${cardNum}.jpg')`;
+  }
 
   // Difficulty stars
   document.getElementById('difficulty-row').textContent = '⭐'.repeat(prompt.difficulty);
