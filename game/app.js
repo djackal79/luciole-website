@@ -198,6 +198,15 @@ function renderSetup() {
       cardSelect.appendChild(opt);
     }
 
+    // Character card image preview (updates live on dropdown change)
+    const charPreview = document.createElement('div');
+    charPreview.className = 'char-preview-img';
+    charPreview.style.backgroundImage = `url('assets/characters/${charSelect.value}.png')`;
+    charSelect.addEventListener('change', () => {
+      charPreview.style.backgroundImage = `url('assets/characters/${charSelect.value}.png')`;
+    });
+
+    row.appendChild(charPreview);
     row.appendChild(nameInput);
     row.appendChild(charSelect);
     row.appendChild(cardSelect);
@@ -217,6 +226,10 @@ function renderGame() {
   document.getElementById('current-player-card').textContent = `Card #${player.card_number}`;
   document.getElementById('token-count').textContent = player.tokens;
   document.getElementById('game-family-mode').checked = state.familyMode;
+
+  // Character card image
+  const charCard = document.getElementById('game-char-card');
+  if (charCard) charCard.style.backgroundImage = `url('assets/characters/${player.character}.png')`;
 
   // Venue buttons progress
   VENUE_KEYS.forEach(venue => {
@@ -249,6 +262,10 @@ function renderPrompt() {
   const header = document.getElementById('prompt-header');
   header.className = `prompt-header ${venueInfo.cssClass}`;
   document.getElementById('prompt-venue-label').textContent = `${venueInfo.icon} ${venueInfo.name}`;
+
+  // Venue (performance) card image
+  const venueCard = document.getElementById('prompt-venue-card');
+  if (venueCard) venueCard.style.backgroundImage = `url('assets/venues/${venue}.png')`;
 
   // Difficulty stars
   document.getElementById('difficulty-row').textContent = '⭐'.repeat(prompt.difficulty);
