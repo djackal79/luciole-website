@@ -59,16 +59,22 @@ const POWER_TYPE = {
   'Giggle Box':           'reactive',
 };
 
-// Per-card animal (1..52), as printed on each card.
-const ANIMALS = {
-  1:'kookaburra', 2:'echidna', 3:'platypus', 4:'quokka', 5:'galah', 6:'magpie', 7:'emu',
-  8:'galah', 9:'quokka', 10:'emu', 11:'echidna', 12:'quokka', 13:'cockatoo',
-  14:'kookaburra', 15:'echidna', 16:'platypus', 17:'quokka', 18:'galah', 19:'magpie', 20:'emu',
-  21:'kookaburra', 22:'quokka', 23:'emu', 24:'echidna', 25:'quokka', 26:'cockatoo',
-  27:'kookaburra', 28:'echidna', 29:'platypus', 30:'quokka', 31:'galah', 32:'magpie', 33:'emu',
-  34:'galah', 35:'quokka', 36:'emu', 37:'echidna', 38:'quokka', 39:'cockatoo',
-  40:'kookaburra', 41:'quokka', 42:'platypus', 43:'quokka', 44:'galah', 45:'magpie', 46:'emu',
-  47:'kookaburra', 48:'quokka', 49:'galah', 50:'echidna', 51:'quokka', 52:'cockatoo',
+// Each card type always has the same animal regardless of venue.
+// 13 types × 4 venues = 52 cards; each animal appears exactly 4 times.
+const TITLE_ANIMALS = {
+  'The Ad-Lib':             'kookaburra',
+  'Warm-Up Act':            'bilby',
+  'Standing Ovation':       'platypus',
+  'Prop Master':            'numbat',
+  'Improviser':             'galah',
+  'Heckler':                'magpie',
+  'Pie In The Face':        'emu',
+  'Stage Hook':             'dingo',
+  'Intermission':           'koala',
+  'Clap Back':              'lyrebird',
+  'Mime Time':              'echidna',
+  'Stage Left Stage Right': 'quokka',
+  'Giggle Box':             'cockatoo',
 };
 
 function venueOf(n) {
@@ -85,7 +91,7 @@ for (let n = 1; n <= 52; n++) {
     number: n,
     title,
     venue: venueOf(n),
-    animal: ANIMALS[n],
+    animal: TITLE_ANIMALS[title],
     power_text: POWER[title],
     affinity_text: AFFINITY[title],
     power_type: POWER_TYPE[title],
