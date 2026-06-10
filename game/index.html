@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Pull Another One</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- SETUP SCREEN -->
+<div id="setup-screen" class="screen">
+  <div class="setup-header">
+    <div class="game-logo">🎄</div>
+    <h1>Pull Another One</h1>
+    <p class="subtitle">Prompt Card App</p>
+  </div>
+
+  <div class="setup-body">
+    <div class="form-section">
+      <label class="form-label">Number of Players</label>
+      <div class="count-selector" id="player-count-selector">
+        <button class="count-btn" data-count="3">3</button>
+        <button class="count-btn" data-count="4">4</button>
+        <button class="count-btn active" data-count="5">5</button>
+        <button class="count-btn" data-count="6">6</button>
+        <button class="count-btn" data-count="7">7</button>
+        <button class="count-btn" data-count="8">8</button>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <label class="form-label">Players</label>
+      <div id="player-rows"></div>
+    </div>
+
+    <div class="form-section">
+      <div class="family-mode-row">
+        <label class="toggle-label" for="setup-family-mode">
+          Family Mode
+          <span class="toggle-hint">Hides adult-themed prompts</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="setup-family-mode">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <button id="start-game-btn" class="btn-primary">Start Game</button>
+  </div>
+</div>
+
+<!-- GAME SCREEN -->
+<div id="game-screen" class="screen hidden">
+  <div class="game-header">
+    <div class="player-info">
+      <div class="player-name-display" id="current-player-name">Player 1</div>
+      <div class="player-meta">
+        <span id="current-player-character">Kookaburra</span>
+        <span class="dot">·</span>
+        <span id="current-player-card">Card #1</span>
+      </div>
+    </div>
+    <div class="token-block">
+      <button class="token-btn" id="token-minus" aria-label="Remove token">−</button>
+      <div class="token-display">
+        <span id="token-count">0</span>
+        <span class="token-label">tokens</span>
+      </div>
+      <button class="token-btn" id="token-plus" aria-label="Add token">+</button>
+    </div>
+  </div>
+
+  <div class="venue-grid" id="venue-grid">
+    <button class="venue-btn" data-venue="comedy_club">
+      <span class="venue-icon">🎤</span>
+      <span class="venue-name">Comedy Club</span>
+      <span class="venue-progress" id="progress-comedy_club">0/4</span>
+    </button>
+    <button class="venue-btn" data-venue="rsl">
+      <span class="venue-icon">🎵</span>
+      <span class="venue-name">The RSL</span>
+      <span class="venue-progress" id="progress-rsl">0/4</span>
+    </button>
+    <button class="venue-btn" data-venue="royal_show">
+      <span class="venue-icon">🎪</span>
+      <span class="venue-name">Royal Show</span>
+      <span class="venue-progress" id="progress-royal_show">0/4</span>
+    </button>
+    <button class="venue-btn" data-venue="school_play">
+      <span class="venue-icon">🎭</span>
+      <span class="venue-name">School Play</span>
+      <span class="venue-progress" id="progress-school_play">0/4</span>
+    </button>
+  </div>
+
+  <div class="game-footer">
+    <button class="btn-secondary" id="used-prompts-btn">Used Prompts</button>
+    <button class="btn-next" id="next-player-btn">Next Player →</button>
+  </div>
+
+  <div class="settings-row">
+    <div class="family-mode-row">
+      <label class="toggle-label small" for="game-family-mode">Family Mode</label>
+      <label class="toggle">
+        <input type="checkbox" id="game-family-mode">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <button class="btn-ghost" id="reset-btn">Reset Game</button>
+  </div>
+</div>
+
+<!-- PROMPT SCREEN -->
+<div id="prompt-screen" class="screen hidden">
+  <div class="prompt-header" id="prompt-header">
+    <button class="back-btn" id="back-btn">← Back</button>
+    <div class="prompt-venue-label" id="prompt-venue-label">The Comedy Club</div>
+  </div>
+
+  <div class="prompt-body">
+    <div class="difficulty-row" id="difficulty-row">⭐</div>
+
+    <div class="prompt-text" id="prompt-text">
+      Tell a joke about the person to your left.
+    </div>
+
+    <div class="timer-block hidden" id="timer-block">
+      <div class="timer-display" id="timer-display">0:30</div>
+      <button class="btn-timer" id="timer-btn">Start Timer</button>
+    </div>
+
+    <div class="success-block" id="success-block">
+      <span class="success-icon" id="success-icon">🗳️</span>
+      <div class="success-text-wrap">
+        <div class="success-label" id="success-label">Majority vote</div>
+        <div class="success-text" id="success-text"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="prompt-footer">
+    <button class="btn-fail" id="fail-btn">✗ Fail</button>
+    <button class="btn-pass" id="pass-btn">✓ Pass</button>
+  </div>
+</div>
+
+<!-- USED PROMPTS MODAL -->
+<div id="used-modal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-backdrop" id="modal-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 id="modal-title">Used Prompts</h2>
+      <button class="modal-close" id="modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<!-- EXHAUSTED SCREEN -->
+<div id="exhausted-screen" class="screen hidden">
+  <div class="exhausted-content">
+    <div class="exhausted-icon">📭</div>
+    <h2>Card Complete</h2>
+    <p id="exhausted-message">All prompts for this venue have been used.</p>
+    <p class="exhausted-hint">Draw a bonus card (9–16) from the box, or pass to the next player.</p>
+    <button class="btn-primary" id="exhausted-back-btn">Back to Game</button>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
