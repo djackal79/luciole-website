@@ -433,17 +433,24 @@ function goToPrompt() {
   state.phase = 'prompt';
   showPhase('prompt');
   renderPrompt();
+  showPromptFooter('normal');
   save();
 }
 
-function completePrompt() {
+function completePrompt(gainToken = false) {
   const player = state.players[state.currentPlayerIndex];
   const venue = state.selectedVenue;
   const prompt = getNextPrompt(player, state.familyMode);
   if (prompt) markUsed(player, venue, prompt.position);
+  if (gainToken) player.tokens++;
   stopTimer();
   state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
   goToGame();
+}
+
+function showPromptFooter(mode) {
+  document.getElementById('prompt-footer').classList.toggle('hidden', mode === 'success');
+  document.getElementById('success-choice-footer').classList.toggle('hidden', mode !== 'success');
 }
 
 // ===== EVENT WIRING =====
@@ -547,9 +554,17 @@ function wirePrompt() {
     goToGame();
   });
 
-  // Pass / Fail (same mechanical outcome)
-  document.getElementById('pass-btn').addEventListener('click', completePrompt);
-  document.getElementById('fail-btn').addEventListener('click', completePrompt);
+  // Fail: mark used, advance player, return to game
+  document.getElementById('fail-btn').addEventListener('click', () => completePrompt(false));
+
+  // Pass: show keep-card / gain-token choice
+  document.getElementById('pass-btn').addEventListener('click', () => {
+    stopTimer();
+    showPromptFooter('success');
+  });
+
+  document.getElementById('keep-card-btn').addEventListener('click', () => completePrompt(false));
+  document.getElementById('gain-token-btn').addEventListener('click', () => completePrompt(true));
 
   // Timer
   document.getElementById('timer-btn').addEventListener('click', () => {
@@ -603,6 +618,7 @@ function init() {
   } else if (state.phase === 'prompt') {
     showPhase('prompt');
     renderPrompt();
+    showPromptFooter('normal');
   } else {
     state.phase = 'setup';
     showPhase('setup');

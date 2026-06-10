@@ -680,6 +680,41 @@ select option { background: #2a2a2a; }
 
 .btn-pass:hover { background: #204020; }
 
+/* Success choice (Keep Card / Gain Token) */
+.success-choice {
+  gap: 0.75rem;
+}
+
+.btn-keep-card, .btn-gain-token {
+  flex: 1;
+  padding: 1rem;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: filter 0.15s, transform 0.1s;
+}
+
+.btn-keep-card:active, .btn-gain-token:active { transform: scale(0.97); }
+
+.btn-keep-card {
+  background: #1a2535;
+  color: #90caf9;
+  border: 1px solid #2a4a6a;
+}
+
+.btn-keep-card:hover { background: #223040; }
+
+.btn-gain-token {
+  background: #2a2510;
+  color: #ffe082;
+  border: 1px solid #5a4a20;
+}
+
+.btn-gain-token:hover { background: #352f18; }
+
 /* ===== EXHAUSTED SCREEN ===== */
 #exhausted-screen {
   background: var(--bg);
