@@ -1,4 +1,5 @@
 import { prompts } from './data/prompts.js';
+import { cards, cardByNumber, FAMILY_REMOVED_TITLES } from './data/cards.js';
 
 // ===== CONSTANTS =====
 
@@ -14,25 +15,20 @@ const CHARACTERS = [
 ];
 
 const VENUES = {
-  comedy_club:  {name:'The Comedy Club', icon:'🎤', cssClass:'comedy',    imgStart:1,  imgCount:13},
-  rsl:          {name:'The RSL',         icon:'🎵', cssClass:'rsl',        imgStart:14, imgCount:13},
-  royal_show:   {name:'The Royal Show',  icon:'🎪', cssClass:'royal_show', imgStart:27, imgCount:13},
-  school_play:  {name:'The School Play', icon:'🎭', cssClass:'school_play',imgStart:40, imgCount:13},
+  comedy_club: {name:'The Comedy Club', icon:'🎤', cssClass:'comedy',     act:'Tell jokes'},
+  rsl:         {name:'The RSL',         icon:'🎵', cssClass:'rsl',         act:'Sing or rhyme'},
+  royal_show:  {name:'The Royal Show',  icon:'🎪', cssClass:'royal_show',  act:'Clown around'},
+  school_play: {name:'The School Play', icon:'🎭', cssClass:'school_play', act:'Act'},
 };
-
-const VENUE_KEYS = ['comedy_club','rsl','royal_show','school_play'];
-
-const PERFORMANCE_CARDS = [
-  'Ad-Lib', 'Warm-Up Act', 'Standing Ovation', 'Prop Master', 'Improvisor',
-  'Heckler', 'Pie in the Face', 'Stage Hook', 'Intermission', 'Clap Back',
-  'Mime Time', 'Stage Left Stage Right', 'Giggle Box',
-];
 
 const SUCCESS_DISPLAY = {
   vote:        {icon:'🗳️', label:'Majority vote'},
-  objective:   {icon:'✅', label:'Objective'},
-  named_judge: {icon:'👤', label:'Named judge — player to left'},
+  objective:   {icon:'✅', label:'Objective — the table can see it'},
+  named_judge: {icon:'👤', label:'Judge — player to your left decides'},
 };
+
+const TOKEN_GOAL = 3;
+const DEFAULT_TOKEN_NAME = 'Prop Token';
 
 // ===== STATE =====
 
@@ -47,63 +43,87 @@ function defaultState() {
     numPlayers: 5,
     players: [],
     currentPlayerIndex: 0,
-    selectedVenue: null,
-    selectedCardName: null,
-    selectedCardImg: null,
-    currentPromptKey: null,
+    deck: [],
+    discard: [],
+    drawnCard: null,        // card number currently in play this turn
+    drawnPromptPos: null,   // position of the prompt being performed
+    pendingOutcome: null,   // 'animal' | 'venue' | 'power'
     familyMode: false,
   };
 }
 
 function save() {
-  try { localStorage.setItem('pao_v1', JSON.stringify(state)); } catch(e) {}
+  try { localStorage.setItem('pao_v2', JSON.stringify(state)); } catch(e) {}
 }
 
 function load() {
   try {
-    const raw = localStorage.getItem('pao_v1');
+    const raw = localStorage.getItem('pao_v2');
     if (raw) { state = JSON.parse(raw); return; }
   } catch(e) {}
   state = defaultState();
 }
 
-// ===== PROMPT HELPERS =====
+// ===== HELPERS =====
 
+function getCharacter(player) {
+  return CHARACTERS.find(c => c.id === player.character) || CHARACTERS[0];
+}
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function buildDeck(familyMode) {
+  let pool = cards.map(c => c.number);
+  if (familyMode) {
+    pool = pool.filter(n => !FAMILY_REMOVED_TITLES.includes(cardByNumber(n).title));
+  }
+  return shuffle(pool);
+}
+
+function ensureDeck() {
+  if (state.deck.length === 0) {
+    // Reshuffle the discard pile into a fresh deck.
+    state.deck = shuffle(state.discard);
+    state.discard = [];
+  }
+}
+
+// Prompt Card helpers (the player's personal script)
 function getCardPrompts(cardNumber, venue, familyMode) {
   return prompts
     .filter(p => p.card_number === cardNumber && p.venue === venue && (!familyMode || p.family_safe))
     .sort((a, b) => a.position - b.position);
 }
 
-function getUsedPositions(player, venue) {
-  return player.used[venue] || [];
+function getNextPrompt(player, venue, familyMode) {
+  const list = getCardPrompts(player.card_number, venue, familyMode);
+  const used = (player.used && player.used[venue]) || [];
+  return list.find(p => !used.includes(p.position)) || null;
 }
 
-function getNextPrompt(player, familyMode) {
-  const venue = state.selectedVenue;
-  const card = getCardPrompts(player.card_number, venue, familyMode);
-  const used = getUsedPositions(player, venue);
-  return card.find(p => !used.includes(p.position)) || null;
-}
-
-function markUsed(player, venue, position) {
+function markPromptUsed(player, venue, position) {
   if (!player.used[venue]) player.used[venue] = [];
-  if (!player.used[venue].includes(position)) {
-    player.used[venue].push(position);
-  }
+  if (!player.used[venue].includes(position)) player.used[venue].push(position);
 }
 
-function isVenueExhausted(player, venue, familyMode) {
-  const card = getCardPrompts(player.card_number, venue, familyMode);
-  const used = getUsedPositions(player, venue);
-  return card.length > 0 && card.every(p => used.includes(p.position));
+function venueMatchCards(player) {
+  const ch = getCharacter(player);
+  return player.hand.filter(n => cardByNumber(n).venue === ch.venue);
 }
 
-function venueProgress(player, venue, familyMode) {
-  const card = getCardPrompts(player.card_number, venue, familyMode);
-  const used = getUsedPositions(player, venue);
-  const usedCount = card.filter(p => used.includes(p.position)).length;
-  return {used: usedCount, total: card.length};
+function awardToken(player, name) {
+  player.tokens.push({ name: name || DEFAULT_TOKEN_NAME });
+}
+
+function hasWon(player) {
+  return player.tokens.length >= TOKEN_GOAL;
 }
 
 // ===== TIMER =====
@@ -125,7 +145,7 @@ function startTimer(seconds) {
       stopTimer();
       const btn = document.getElementById('timer-btn');
       const display = document.getElementById('timer-display');
-      if (btn) { btn.textContent = 'Time\'s up!'; btn.classList.remove('running'); }
+      if (btn) { btn.textContent = "Time's up!"; btn.classList.remove('running'); }
       if (display) display.classList.add('warning');
     }
   }, 1000);
@@ -136,39 +156,31 @@ function updateTimerDisplay() {
   const btn = document.getElementById('timer-btn');
   if (!display) return;
   const m = Math.floor(timerRemaining / 60);
-  const s = timerRemaining % 60;
-  display.textContent = m > 0 ? `${m}:${String(s).padStart(2,'0')}` : `0:${String(Math.max(0,s)).padStart(2,'0')}`;
-  if (timerRemaining <= 5 && timerRunning) display.classList.add('warning');
-  else display.classList.remove('warning');
+  const s = Math.max(0, timerRemaining % 60);
+  display.textContent = m > 0 ? `${m}:${String(s).padStart(2,'0')}` : `0:${String(s).padStart(2,'0')}`;
+  display.classList.toggle('warning', timerRemaining <= 5 && timerRunning);
   if (btn) {
     btn.textContent = timerRunning ? 'Stop' : 'Start Timer';
     btn.classList.toggle('running', timerRunning);
   }
 }
 
-// ===== RENDER SETUP =====
+// ===== RENDER: SETUP =====
 
 function renderSetup() {
-  const numPlayers = state.numPlayers;
-
-  // Sync count buttons
   document.querySelectorAll('.count-btn').forEach(btn => {
-    btn.classList.toggle('active', parseInt(btn.dataset.count) === numPlayers);
+    btn.classList.toggle('active', parseInt(btn.dataset.count) === state.numPlayers);
   });
-
-  // Family mode
   document.getElementById('setup-family-mode').checked = state.familyMode;
 
-  // Build player rows
   const container = document.getElementById('player-rows');
   container.innerHTML = '';
 
-  for (let i = 0; i < numPlayers; i++) {
+  for (let i = 0; i < state.numPlayers; i++) {
     const existing = state.players[i] || {};
     const row = document.createElement('div');
     row.className = 'player-row';
 
-    // Name
     const nameInput = document.createElement('input');
     nameInput.type = 'text';
     nameInput.placeholder = `Player ${i+1}`;
@@ -176,37 +188,33 @@ function renderSetup() {
     nameInput.dataset.playerIndex = i;
     nameInput.className = 'player-name-input';
 
-    // Character
     const charSelect = document.createElement('select');
     charSelect.dataset.playerIndex = i;
     charSelect.className = 'char-select';
     CHARACTERS.forEach(c => {
       const opt = document.createElement('option');
       opt.value = c.id;
-      opt.textContent = `${c.name} — ${c.archetype}`;
+      opt.textContent = `${c.name} — ${VENUES[c.venue].icon}`;
       if (existing.character === c.id) opt.selected = true;
       charSelect.appendChild(opt);
     });
-    // Default: pick character not already used
     if (!existing.character) {
       const usedChars = state.players.slice(0, i).map(p => p && p.character);
       const unused = CHARACTERS.find(c => !usedChars.includes(c.id));
       if (unused) charSelect.value = unused.id;
     }
 
-    // Card number
     const cardSelect = document.createElement('select');
     cardSelect.dataset.playerIndex = i;
     cardSelect.className = 'card-select';
     for (let c = 1; c <= 16; c++) {
       const opt = document.createElement('option');
       opt.value = c;
-      opt.textContent = `Card ${c}`;
+      opt.textContent = `Prompt Card ${c}`;
       if ((existing.card_number || (i + 1)) === c) opt.selected = true;
       cardSelect.appendChild(opt);
     }
 
-    // Character card image preview (updates live on dropdown change)
     const charPreview = document.createElement('div');
     charPreview.className = 'char-preview-img';
     const getCharImg = (charId) => {
@@ -226,176 +234,314 @@ function renderSetup() {
   }
 }
 
-// ===== RENDER GAME =====
+// ===== RENDER: TURN =====
 
-function renderGame() {
+function renderTurn() {
   const player = state.players[state.currentPlayerIndex];
   if (!player) return;
+  const ch = getCharacter(player);
+  const venue = VENUES[ch.venue];
 
-  document.getElementById('current-player-name').textContent = player.name || `Player ${state.currentPlayerIndex + 1}`;
-  const char = CHARACTERS.find(c => c.id === player.character);
-  document.getElementById('current-player-character').textContent = char ? char.name : '';
-  document.getElementById('current-player-card').textContent = `Card #${player.card_number}`;
-  document.getElementById('token-count').textContent = player.tokens;
-  document.getElementById('game-family-mode').checked = state.familyMode;
+  document.getElementById('turn-player-name').textContent = player.name || `Player ${state.currentPlayerIndex + 1}`;
+  document.getElementById('turn-player-character').textContent = ch.name;
+  document.getElementById('turn-player-venue').textContent = `${venue.icon} ${venue.name}`;
+  document.getElementById('turn-family-mode').checked = state.familyMode;
 
-  // Character card image
-  const charCard = document.getElementById('game-char-card');
-  if (charCard) {
-    const c = CHARACTERS.find(x => x.id === player.character);
-    charCard.style.backgroundImage = c ? `url('assets/characters/${c.img}.jpg')` : '';
-  }
+  const charCard = document.getElementById('turn-char-card');
+  charCard.style.backgroundImage = `url('assets/characters/${ch.img}.jpg')`;
 
-  // Venue buttons progress
-  VENUE_KEYS.forEach(venue => {
-    const prog = venueProgress(player, venue, state.familyMode);
-    const el = document.getElementById(`progress-${venue}`);
-    if (el) {
-      el.textContent = `${prog.used}/${prog.total}`;
-      el.classList.toggle('done', prog.used === prog.total && prog.total > 0);
-    }
-    const btn = document.querySelector(`.venue-btn[data-venue="${venue}"]`);
-    if (btn) {
-      btn.classList.toggle('all-used', isVenueExhausted(player, venue, state.familyMode));
-    }
-  });
-}
-
-// ===== RENDER PROMPT =====
-
-function renderPrompt() {
-  const player = state.players[state.currentPlayerIndex];
-  const venue = state.selectedVenue;
-  if (!player || !venue) return;
-
-  const prompt = getNextPrompt(player, state.familyMode);
-  if (!prompt) return;
-
-  const venueInfo = VENUES[venue];
-
-  // Header
-  const header = document.getElementById('prompt-header');
-  header.className = `prompt-header ${venueInfo.cssClass}`;
-  document.getElementById('prompt-venue-label').textContent = `${venueInfo.icon} ${venueInfo.name}`;
-
-  // Venue (performance) card image — use the one already selected on card screen
-  const venueCard = document.getElementById('prompt-venue-card');
-  if (venueCard && state.selectedCardImg) {
-    venueCard.style.backgroundImage = `url('assets/venues/${state.selectedCardImg}.jpg')`;
-  }
-
-  // Difficulty stars
-  document.getElementById('difficulty-row').textContent = '⭐'.repeat(prompt.difficulty);
-
-  // Text
-  document.getElementById('prompt-text').textContent = prompt.text;
-
-  // Timer
-  stopTimer();
-  const timerBlock = document.getElementById('timer-block');
-  if (prompt.timed && prompt.duration_seconds) {
-    timerBlock.classList.remove('hidden');
-    timerRemaining = prompt.duration_seconds;
-    updateTimerDisplay();
-    document.getElementById('timer-btn').textContent = 'Start Timer';
-    document.getElementById('timer-btn').classList.remove('running');
-    document.getElementById('timer-display').classList.remove('warning');
+  // Token bar — progress toward 3
+  const bar = document.getElementById('turn-token-bar');
+  bar.innerHTML = '';
+  const label = document.createElement('div');
+  label.className = 'token-bar-label';
+  label.textContent = `🪙 ${player.tokens.length} / ${TOKEN_GOAL}`;
+  bar.appendChild(label);
+  const chips = document.createElement('div');
+  chips.className = 'token-chips';
+  if (player.tokens.length === 0) {
+    const empty = document.createElement('span');
+    empty.className = 'token-chip empty';
+    empty.textContent = 'no tokens yet';
+    chips.appendChild(empty);
   } else {
-    timerBlock.classList.add('hidden');
+    player.tokens.forEach((t, ti) => {
+      const chip = document.createElement('button');
+      chip.className = 'token-chip';
+      chip.textContent = `🪙 ${t.name}`;
+      chip.title = 'Tap to rename';
+      chip.addEventListener('click', () => renameToken(state.currentPlayerIndex, ti));
+      chips.appendChild(chip);
+    });
   }
+  bar.appendChild(chips);
 
-  // Success condition
-  const sc = SUCCESS_DISPLAY[prompt.success_condition];
-  document.getElementById('success-icon').textContent = sc.icon;
-  document.getElementById('success-label').textContent = sc.label;
-  document.getElementById('success-text').textContent = prompt.success_text;
+  // Hand grid
+  const grid = document.getElementById('turn-hand-grid');
+  grid.innerHTML = '';
+  player.hand.forEach(n => grid.appendChild(buildHandCard(n)));
+  document.getElementById('turn-hand-empty').classList.toggle('hidden', player.hand.length > 0);
 
-  // Store current prompt ref
-  state.currentPromptKey = `${prompt.card_number}-${prompt.venue}-${prompt.position}`;
+  // Cash a pair availability
+  document.getElementById('cash-pair-btn').classList.toggle('hidden', venueMatchCards(player).length < 2);
 }
 
-// ===== RENDER CARD =====
-
-function renderCard() {
-  const venue = state.selectedVenue;
-  if (!venue) return;
-  const venueInfo = VENUES[venue];
-
-  const headerEl = document.querySelector('#card-screen .card-screen-header');
-  if (headerEl) headerEl.className = `card-screen-header ${venueInfo.cssClass}`;
-  document.getElementById('card-screen-venue').textContent = `${venueInfo.icon} ${venueInfo.name}`;
-
-  const imgWrap = document.getElementById('card-screen-img');
-  if (imgWrap && state.selectedCardImg) {
-    imgWrap.style.backgroundImage = `url('assets/venues/${state.selectedCardImg}.jpg')`;
-  }
-
-  document.getElementById('card-screen-name').textContent = state.selectedCardName || '';
+function buildHandCard(cardNumber) {
+  const card = cardByNumber(cardNumber);
+  const el = document.createElement('button');
+  el.className = 'hand-card';
+  el.style.backgroundImage = `url('assets/venues/${cardNumber}.jpg')`;
+  const label = document.createElement('span');
+  label.className = 'hand-card-label';
+  label.textContent = card.title;
+  el.appendChild(label);
+  el.addEventListener('click', () => openCardSheet(cardNumber, 'hand'));
+  return el;
 }
 
-// ===== RENDER USED MODAL =====
+// ===== RENDER: DRAW / PERFORM =====
 
-function renderUsedModal() {
+function renderDraw() {
   const player = state.players[state.currentPlayerIndex];
-  if (!player) return;
+  const card = cardByNumber(state.drawnCard);
+  if (!player || !card) return;
+  const venue = VENUES[card.venue];
+  const chAnimal = CHARACTERS.find(c => c.id === card.animal);
 
-  const name = player.name || `Player ${state.currentPlayerIndex + 1}`;
-  document.getElementById('modal-title').textContent = `${name} — Used Prompts`;
+  const header = document.getElementById('draw-header');
+  header.className = `draw-header ${venue.cssClass}`;
+  document.getElementById('draw-venue-label').textContent = `${venue.icon} ${venue.name}`;
 
-  const body = document.getElementById('modal-body');
+  document.getElementById('drawn-card').style.backgroundImage = `url('assets/venues/${card.number}.jpg')`;
+  document.getElementById('drawn-card-title').textContent = card.title;
+  document.getElementById('drawn-card-animal').textContent =
+    `🐾 ${chAnimal ? chAnimal.name : card.animal} · ${venue.icon} ${venue.name}`;
+  document.getElementById('drawn-card-power').textContent = card.power_text;
+
+  // The prompt the performer must do (next unused on their card for this venue)
+  const prompt = getNextPrompt(player, card.venue, state.familyMode);
+  state.drawnPromptPos = prompt ? prompt.position : null;
+
+  document.getElementById('perform-cardno').textContent = `Prompt Card #${player.card_number}`;
+  const promptText = document.getElementById('draw-prompt-text');
+  const successBlock = document.getElementById('draw-success-block');
+  const timerBlock = document.getElementById('timer-block');
+
+  stopTimer();
+  if (prompt) {
+    promptText.textContent = prompt.text;
+    promptText.classList.remove('muted');
+
+    if (prompt.timed && prompt.duration_seconds) {
+      timerBlock.classList.remove('hidden');
+      timerRemaining = prompt.duration_seconds;
+      updateTimerDisplay();
+    } else {
+      timerBlock.classList.add('hidden');
+    }
+
+    const sc = SUCCESS_DISPLAY[prompt.success_condition] || SUCCESS_DISPLAY.vote;
+    successBlock.classList.remove('hidden');
+    document.getElementById('success-icon').textContent = sc.icon;
+    document.getElementById('success-label').textContent = sc.label;
+    document.getElementById('success-text').textContent = prompt.success_text || '';
+  } else {
+    promptText.textContent = `You've used every ${venue.name} prompt on your card — improvise one!`;
+    promptText.classList.add('muted');
+    timerBlock.classList.add('hidden');
+    successBlock.classList.add('hidden');
+  }
+}
+
+// ===== RENDER: VERDICT =====
+
+const OUTCOME_INFO = {
+  animal: {
+    icon: '🐾',
+    title: 'Animal Affinity!',
+    msg: (card, ch) => `The ${animalName(card.animal)} on the card matches your character — take a Prop Token.`,
+  },
+  venue: {
+    icon: '✅',
+    title: 'Venue Match!',
+    msg: (card, ch) => `Same venue as your character — keep the card face-up. Two matching cards can be cashed for a token.`,
+  },
+  power: {
+    icon: '🃏',
+    title: 'Keep the Card',
+    msg: (card, ch) => `No match, but it's yours to keep for its printed power.`,
+  },
+};
+
+function animalName(id) {
+  const c = CHARACTERS.find(x => x.id === id);
+  return c ? c.name : id;
+}
+
+function renderVerdict() {
+  const card = cardByNumber(state.drawnCard);
+  const player = state.players[state.currentPlayerIndex];
+  const ch = getCharacter(player);
+  const info = OUTCOME_INFO[state.pendingOutcome] || OUTCOME_INFO.power;
+
+  document.getElementById('verdict-icon').textContent = info.icon;
+  document.getElementById('verdict-title').textContent = info.title;
+  document.getElementById('verdict-message').textContent = info.msg(card, ch);
+  document.getElementById('verdict-card').style.backgroundImage = `url('assets/venues/${card.number}.jpg')`;
+  document.getElementById('verdict-override').classList.add('hidden');
+}
+
+// ===== RENDER: POSSESSIONS OVERLAY =====
+
+function renderPossessions() {
+  const body = document.getElementById('possessions-body');
   body.innerHTML = '';
 
-  VENUE_KEYS.forEach(venue => {
-    const venueInfo = VENUES[venue];
-    const allPrompts = getCardPrompts(player.card_number, venue, false); // show all, not filtered
-    const used = getUsedPositions(player, venue);
+  state.players.forEach((player, idx) => {
+    const ch = getCharacter(player);
+    const venue = VENUES[ch.venue];
 
     const section = document.createElement('div');
-    section.className = 'used-venue-section';
+    section.className = 'poss-player' + (idx === state.currentPlayerIndex ? ' current' : '');
 
-    const header = document.createElement('div');
-    header.className = `used-venue-header ${venueInfo.cssClass}`;
-    header.textContent = `${venueInfo.icon} ${venueInfo.name}`;
-    section.appendChild(header);
+    const head = document.createElement('div');
+    head.className = 'poss-head';
+    head.innerHTML = `
+      <div class="poss-name">${escapeHtml(player.name || `Player ${idx+1}`)}</div>
+      <div class="poss-meta">${ch.name} · ${venue.icon} ${venue.name}</div>`;
+    section.appendChild(head);
 
-    allPrompts.forEach(p => {
-      const item = document.createElement('div');
-      item.className = 'used-prompt-item' + (used.includes(p.position) ? ' used' : '');
+    // Tokens row with +/- controls
+    const tokRow = document.createElement('div');
+    tokRow.className = 'poss-tokens';
+    const tokLabel = document.createElement('div');
+    tokLabel.className = 'poss-subtitle';
+    tokLabel.textContent = `Prop Tokens (${player.tokens.length}/${TOKEN_GOAL})`;
+    tokRow.appendChild(tokLabel);
 
-      const pos = document.createElement('span');
-      pos.className = 'prompt-pos';
-      pos.textContent = `${'⭐'.repeat(p.difficulty)}`;
+    const tokControls = document.createElement('div');
+    tokControls.className = 'poss-token-controls';
+    const minus = document.createElement('button');
+    minus.className = 'token-btn';
+    minus.textContent = '−';
+    minus.addEventListener('click', () => adjustToken(idx, -1));
+    const plus = document.createElement('button');
+    plus.className = 'token-btn';
+    plus.textContent = '+';
+    plus.addEventListener('click', () => adjustToken(idx, +1));
+    const chipWrap = document.createElement('div');
+    chipWrap.className = 'token-chips';
+    if (player.tokens.length === 0) {
+      const e = document.createElement('span');
+      e.className = 'token-chip empty';
+      e.textContent = 'none';
+      chipWrap.appendChild(e);
+    } else {
+      player.tokens.forEach((t, ti) => {
+        const chip = document.createElement('button');
+        chip.className = 'token-chip';
+        chip.textContent = `🪙 ${t.name}`;
+        chip.addEventListener('click', () => renameToken(idx, ti));
+        chipWrap.appendChild(chip);
+      });
+    }
+    tokControls.appendChild(minus);
+    tokControls.appendChild(chipWrap);
+    tokControls.appendChild(plus);
+    tokRow.appendChild(tokControls);
+    section.appendChild(tokRow);
 
-      const text = document.createElement('span');
-      text.textContent = p.text.length > 80 ? p.text.slice(0, 80) + '…' : p.text;
+    // Hand
+    const handLabel = document.createElement('div');
+    handLabel.className = 'poss-subtitle';
+    handLabel.textContent = `Performance Cards (${player.hand.length})`;
+    section.appendChild(handLabel);
 
-      item.appendChild(pos);
-      item.appendChild(text);
-      section.appendChild(item);
-    });
-
+    const hand = document.createElement('div');
+    hand.className = 'poss-hand';
+    if (player.hand.length === 0) {
+      const e = document.createElement('span');
+      e.className = 'poss-hand-empty';
+      e.textContent = 'empty hand';
+      hand.appendChild(e);
+    } else {
+      player.hand.forEach(n => {
+        const c = cardByNumber(n);
+        const card = document.createElement('button');
+        card.className = 'poss-card';
+        card.style.backgroundImage = `url('assets/venues/${n}.jpg')`;
+        card.title = c.title;
+        card.addEventListener('click', () => openCardSheet(n, 'poss', idx));
+        const lbl = document.createElement('span');
+        lbl.className = 'hand-card-label';
+        lbl.textContent = c.title;
+        card.appendChild(lbl);
+        hand.appendChild(card);
+      });
+    }
+    section.appendChild(hand);
     body.appendChild(section);
   });
 }
 
-// ===== NAVIGATE =====
-
-function showPhase(phase) {
-  document.getElementById('setup-screen').classList.toggle('hidden', phase !== 'setup');
-  document.getElementById('game-screen').classList.toggle('hidden', phase !== 'game');
-  document.getElementById('card-screen').classList.toggle('hidden', phase !== 'card');
-  document.getElementById('prompt-screen').classList.toggle('hidden', phase !== 'prompt');
-  document.getElementById('exhausted-screen').classList.toggle('hidden', phase !== 'exhausted');
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
 
-function goToGame() {
-  stopTimer();
-  state.phase = 'game';
-  state.selectedVenue = null;
-  state.currentPromptKey = null;
-  showPhase('game');
-  renderGame();
+// ===== RENDER: CARD SHEET =====
+
+let sheetContext = null; // {cardNumber, source:'hand'|'poss', playerIndex}
+
+function openCardSheet(cardNumber, source, playerIndex) {
+  const card = cardByNumber(cardNumber);
+  sheetContext = { cardNumber, source, playerIndex: playerIndex ?? state.currentPlayerIndex };
+
+  document.getElementById('card-sheet-title').textContent = card.title;
+  document.getElementById('card-sheet-img').style.backgroundImage = `url('assets/venues/${cardNumber}.jpg')`;
+  document.getElementById('card-sheet-power').textContent = card.power_text;
+  const aff = document.getElementById('card-sheet-affinity');
+  aff.textContent = card.affinity_text || '';
+  aff.classList.toggle('hidden', !card.affinity_text);
+
+  const actions = document.getElementById('card-sheet-actions');
+  actions.innerHTML = '';
+  const useBtn = document.createElement('button');
+  useBtn.className = 'btn-primary';
+  useBtn.textContent = '⚡ Use Power & Discard';
+  useBtn.addEventListener('click', () => discardFromHand(sheetContext.playerIndex, cardNumber));
+  actions.appendChild(useBtn);
+
+  if (source === 'poss') {
+    useBtn.textContent = '🗑️ Discard This Card';
+  }
+
+  document.getElementById('card-sheet').classList.remove('hidden');
+}
+
+function closeCardSheet() {
+  document.getElementById('card-sheet').classList.add('hidden');
+  sheetContext = null;
+}
+
+function discardFromHand(playerIndex, cardNumber) {
+  const player = state.players[playerIndex];
+  const i = player.hand.indexOf(cardNumber);
+  if (i !== -1) {
+    player.hand.splice(i, 1);
+    state.discard.push(cardNumber);
+  }
+  closeCardSheet();
   save();
+  renderTurn();
+  if (!document.getElementById('possessions-overlay').classList.contains('hidden')) renderPossessions();
+}
+
+// ===== NAVIGATION =====
+
+function showPhase(phase) {
+  ['setup','turn','draw','verdict','win'].forEach(p => {
+    document.getElementById(`${p}-screen`).classList.toggle('hidden', phase !== p);
+  });
 }
 
 function goToSetup() {
@@ -406,57 +552,156 @@ function goToSetup() {
   save();
 }
 
-function goToCard(venue) {
-  const player = state.players[state.currentPlayerIndex];
-  state.selectedVenue = venue;
+function goToTurn() {
+  stopTimer();
+  state.phase = 'turn';
+  state.drawnCard = null;
+  state.drawnPromptPos = null;
+  state.pendingOutcome = null;
+  showPhase('turn');
+  renderTurn();
+  save();
+}
 
-  if (isVenueExhausted(player, venue, state.familyMode)) {
-    const venueInfo = VENUES[venue];
-    document.getElementById('exhausted-message').textContent =
-      `All ${venueInfo.name} prompts on Card #${player.card_number} have been used.`;
-    state.phase = 'exhausted';
-    showPhase('exhausted');
-    save();
-    return;
+function goToDraw() {
+  state.phase = 'draw';
+  showPhase('draw');
+  renderDraw();
+  save();
+}
+
+function goToVerdict() {
+  stopTimer();
+  state.phase = 'verdict';
+  showPhase('verdict');
+  renderVerdict();
+  save();
+}
+
+function goToWin(winnerIndex) {
+  stopTimer();
+  state.phase = 'win';
+  const p = state.players[winnerIndex];
+  document.getElementById('win-message').textContent =
+    `${p.name || `Player ${winnerIndex + 1}`} collected ${TOKEN_GOAL} Prop Tokens and wins.`;
+  showPhase('win');
+  save();
+}
+
+function advancePlayer() {
+  state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
+}
+
+// ===== ACTIONS =====
+
+function doDraw() {
+  ensureDeck();
+  if (state.deck.length === 0) return; // nothing to draw (shouldn't happen)
+  state.drawnCard = state.deck.pop();
+  goToDraw();
+}
+
+function doFail() {
+  // Card goes to discard, turn ends.
+  if (state.drawnCard != null) state.discard.push(state.drawnCard);
+  stopTimer();
+  advancePlayer();
+  goToTurn();
+}
+
+function doSuccess() {
+  const player = state.players[state.currentPlayerIndex];
+  const card = cardByNumber(state.drawnCard);
+  const ch = getCharacter(player);
+
+  // Mark the performed prompt as used
+  if (state.drawnPromptPos != null) markPromptUsed(player, card.venue, state.drawnPromptPos);
+
+  // Resolve reward in order: Animal Affinity → Venue Match → No Match
+  if (card.animal === ch.animal) state.pendingOutcome = 'animal';
+  else if (card.venue === ch.venue) state.pendingOutcome = 'venue';
+  else state.pendingOutcome = 'power';
+
+  goToVerdict();
+}
+
+function applyOutcome(outcome) {
+  const player = state.players[state.currentPlayerIndex];
+  const card = cardByNumber(state.drawnCard);
+
+  if (outcome === 'animal') {
+    awardToken(player, DEFAULT_TOKEN_NAME);
+    state.discard.push(card.number); // cashed for a token, card leaves play
+  } else {
+    // venue or power: keep the card face-up in hand
+    player.hand.push(card.number);
   }
 
-  const v = VENUES[venue];
-  state.selectedCardImg = v.imgStart + Math.floor(Math.random() * v.imgCount);
-  state.selectedCardName = PERFORMANCE_CARDS[Math.floor(Math.random() * PERFORMANCE_CARDS.length)];
-  state.phase = 'card';
-  showPhase('card');
-  renderCard();
-  save();
+  const winner = state.currentPlayerIndex;
+  state.drawnCard = null;
+  state.drawnPromptPos = null;
+  state.pendingOutcome = null;
+
+  if (hasWon(player)) { goToWin(winner); return; }
+  advancePlayer();
+  goToTurn();
 }
 
-function goToPrompt() {
-  state.phase = 'prompt';
-  showPhase('prompt');
-  renderPrompt();
-  showPromptFooter('normal');
-  save();
-}
-
-function completePrompt(gainToken = false) {
+function doCashPair() {
   const player = state.players[state.currentPlayerIndex];
-  const venue = state.selectedVenue;
-  const prompt = getNextPrompt(player, state.familyMode);
-  if (prompt) markUsed(player, venue, prompt.position);
-  if (gainToken) player.tokens++;
-  stopTimer();
-  state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
-  goToGame();
+  const matches = venueMatchCards(player);
+  if (matches.length < 2) return;
+  // Discard the two oldest venue-matching cards, gain a token.
+  const toDiscard = matches.slice(0, 2);
+  toDiscard.forEach(n => {
+    const i = player.hand.indexOf(n);
+    if (i !== -1) player.hand.splice(i, 1);
+    state.discard.push(n);
+  });
+  awardToken(player, DEFAULT_TOKEN_NAME);
+  save();
+  if (hasWon(player)) { goToWin(state.currentPlayerIndex); return; }
+  renderTurn();
 }
 
-function showPromptFooter(mode) {
-  document.getElementById('prompt-footer').classList.toggle('hidden', mode === 'success');
-  document.getElementById('success-choice-footer').classList.toggle('hidden', mode !== 'success');
+function adjustToken(playerIndex, delta) {
+  const player = state.players[playerIndex];
+  if (delta > 0) {
+    awardToken(player, DEFAULT_TOKEN_NAME);
+    if (hasWon(player)) {
+      save();
+      document.getElementById('possessions-overlay').classList.add('hidden');
+      goToWin(playerIndex);
+      return;
+    }
+  } else if (player.tokens.length > 0) {
+    player.tokens.pop();
+  }
+  save();
+  renderPossessions();
+  if (state.phase === 'turn') renderTurn();
+}
+
+function renameToken(playerIndex, tokenIndex) {
+  const player = state.players[playerIndex];
+  const current = player.tokens[tokenIndex];
+  if (!current) return;
+  const name = window.prompt('Token name:', current.name);
+  if (name === null) return;
+  current.name = name.trim() || DEFAULT_TOKEN_NAME;
+  save();
+  renderPossessions();
+  if (state.phase === 'turn') renderTurn();
+}
+
+function openPossessions() {
+  renderPossessions();
+  document.getElementById('possessions-overlay').classList.remove('hidden');
 }
 
 // ===== EVENT WIRING =====
 
 function wireSetup() {
-  // Count selector
   document.getElementById('player-count-selector').addEventListener('click', e => {
     const btn = e.target.closest('.count-btn');
     if (!btn) return;
@@ -464,77 +709,46 @@ function wireSetup() {
     renderSetup();
   });
 
-  // Family mode toggle (setup)
   document.getElementById('setup-family-mode').addEventListener('change', e => {
     state.familyMode = e.target.checked;
   });
 
-  // Start game
   document.getElementById('start-game-btn').addEventListener('click', () => {
-    // Read player data from DOM
     const players = [];
     for (let i = 0; i < state.numPlayers; i++) {
       const nameEl = document.querySelector(`.player-name-input[data-player-index="${i}"]`);
       const charEl = document.querySelector(`.char-select[data-player-index="${i}"]`);
       const cardEl = document.querySelector(`.card-select[data-player-index="${i}"]`);
-      const existing = state.players[i] || {};
       players.push({
         name: nameEl ? nameEl.value.trim() : '',
         character: charEl ? charEl.value : 'kookaburra',
         card_number: cardEl ? parseInt(cardEl.value) : (i + 1),
-        tokens: existing.tokens || 0,
-        used: existing.used || {comedy_club:[], rsl:[], royal_show:[], school_play:[]},
+        tokens: [],
+        hand: [],
+        used: {comedy_club:[], rsl:[], royal_show:[], school_play:[]},
       });
     }
     state.players = players;
     state.currentPlayerIndex = 0;
-    goToGame();
+    state.deck = buildDeck(state.familyMode);
+    state.discard = [];
+    goToTurn();
   });
 }
 
-function wireGame() {
-  // Venue buttons
-  document.getElementById('venue-grid').addEventListener('click', e => {
-    const btn = e.target.closest('.venue-btn');
-    if (!btn) return;
-    goToCard(btn.dataset.venue);
-  });
+function wireTurn() {
+  document.getElementById('draw-btn').addEventListener('click', doDraw);
+  document.getElementById('cash-pair-btn').addEventListener('click', doCashPair);
+  document.getElementById('turn-allplayers-btn').addEventListener('click', openPossessions);
 
-  // Tokens
-  document.getElementById('token-plus').addEventListener('click', () => {
-    state.players[state.currentPlayerIndex].tokens++;
-    document.getElementById('token-count').textContent = state.players[state.currentPlayerIndex].tokens;
-    save();
-  });
-
-  document.getElementById('token-minus').addEventListener('click', () => {
-    const p = state.players[state.currentPlayerIndex];
-    if (p.tokens > 0) { p.tokens--; document.getElementById('token-count').textContent = p.tokens; save(); }
-  });
-
-  // Next player
-  document.getElementById('next-player-btn').addEventListener('click', () => {
-    state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
-    renderGame();
-    save();
-  });
-
-  // Used prompts modal
-  document.getElementById('used-prompts-btn').addEventListener('click', () => {
-    renderUsedModal();
-    document.getElementById('used-modal').classList.remove('hidden');
-  });
-
-  // Family mode toggle (game)
-  document.getElementById('game-family-mode').addEventListener('change', e => {
+  document.getElementById('turn-family-mode').addEventListener('change', e => {
     state.familyMode = e.target.checked;
-    renderGame();
+    renderTurn();
     save();
   });
 
-  // Reset
   document.getElementById('reset-btn').addEventListener('click', () => {
-    if (confirm('Reset the whole game? This will clear all used prompts and tokens.')) {
+    if (confirm('Reset the whole game? This clears all hands, tokens and progress.')) {
       state = defaultState();
       save();
       goToSetup();
@@ -542,59 +756,71 @@ function wireGame() {
   });
 }
 
-function wireCard() {
-  document.getElementById('card-back-btn').addEventListener('click', goToGame);
-  document.getElementById('show-prompt-btn').addEventListener('click', goToPrompt);
-}
-
-function wirePrompt() {
-  // Back
-  document.getElementById('back-btn').addEventListener('click', () => {
-    stopTimer();
-    goToGame();
+function wireDraw() {
+  document.getElementById('draw-back-btn').addEventListener('click', () => {
+    // Cancel the draw — put card back on top of the deck, return to turn.
+    if (state.drawnCard != null) { state.deck.push(state.drawnCard); state.drawnCard = null; }
+    goToTurn();
   });
+  document.getElementById('draw-allplayers-btn').addEventListener('click', openPossessions);
+  document.getElementById('fail-btn').addEventListener('click', doFail);
+  document.getElementById('success-btn').addEventListener('click', doSuccess);
 
-  // Fail: mark used, advance player, return to game
-  document.getElementById('fail-btn').addEventListener('click', () => completePrompt(false));
-
-  // Pass: show keep-card / gain-token choice
-  document.getElementById('pass-btn').addEventListener('click', () => {
-    stopTimer();
-    showPromptFooter('success');
-  });
-
-  document.getElementById('keep-card-btn').addEventListener('click', () => completePrompt(false));
-  document.getElementById('gain-token-btn').addEventListener('click', () => completePrompt(true));
-
-  // Timer
   document.getElementById('timer-btn').addEventListener('click', () => {
     if (timerRunning) {
       stopTimer();
-      const btn = document.getElementById('timer-btn');
-      btn.textContent = 'Start Timer';
-      btn.classList.remove('running');
+      updateTimerDisplay();
     } else {
-      // Find current prompt duration
       const player = state.players[state.currentPlayerIndex];
-      const prompt = getNextPrompt(player, state.familyMode);
-      if (prompt && prompt.duration_seconds) {
-        startTimer(timerRemaining > 0 ? timerRemaining : prompt.duration_seconds);
-      }
+      const card = cardByNumber(state.drawnCard);
+      const prompt = card ? getNextPrompt(player, card.venue, state.familyMode) : null;
+      const dur = prompt && prompt.duration_seconds ? prompt.duration_seconds : 30;
+      startTimer(timerRemaining > 0 ? timerRemaining : dur);
     }
   });
 }
 
-function wireModal() {
-  document.getElementById('modal-close').addEventListener('click', () => {
-    document.getElementById('used-modal').classList.add('hidden');
+function wireVerdict() {
+  document.getElementById('verdict-continue-btn').addEventListener('click', () => {
+    applyOutcome(state.pendingOutcome);
   });
-  document.getElementById('modal-backdrop').addEventListener('click', () => {
-    document.getElementById('used-modal').classList.add('hidden');
+  document.getElementById('verdict-change-btn').addEventListener('click', () => {
+    document.getElementById('verdict-override').classList.toggle('hidden');
+  });
+  document.getElementById('verdict-override').addEventListener('click', e => {
+    const btn = e.target.closest('.override-btn');
+    if (!btn) return;
+    applyOutcome(btn.dataset.outcome);
   });
 }
 
-function wireExhausted() {
-  document.getElementById('exhausted-back-btn').addEventListener('click', goToGame);
+function wireWin() {
+  document.getElementById('win-newgame-btn').addEventListener('click', () => {
+    const keep = state.players.map(p => ({
+      name: p.name, character: p.character, card_number: p.card_number,
+    }));
+    state = defaultState();
+    state.numPlayers = keep.length;
+    state.players = keep.map(p => ({
+      ...p, tokens: [], hand: [], used: {comedy_club:[], rsl:[], royal_show:[], school_play:[]},
+    }));
+    save();
+    goToSetup();
+  });
+}
+
+function wirePossessions() {
+  document.getElementById('possessions-close').addEventListener('click', () => {
+    document.getElementById('possessions-overlay').classList.add('hidden');
+  });
+  document.getElementById('possessions-backdrop').addEventListener('click', () => {
+    document.getElementById('possessions-overlay').classList.add('hidden');
+  });
+}
+
+function wireCardSheet() {
+  document.getElementById('card-sheet-close').addEventListener('click', closeCardSheet);
+  document.getElementById('card-sheet-backdrop').addEventListener('click', closeCardSheet);
 }
 
 // ===== INIT =====
@@ -602,27 +828,19 @@ function wireExhausted() {
 function init() {
   load();
   wireSetup();
-  wireGame();
-  wireCard();
-  wirePrompt();
-  wireModal();
-  wireExhausted();
+  wireTurn();
+  wireDraw();
+  wireVerdict();
+  wireWin();
+  wirePossessions();
+  wireCardSheet();
 
-  // Restore to correct screen
-  if (state.phase === 'game') {
-    showPhase('game');
-    renderGame();
-  } else if (state.phase === 'card') {
-    showPhase('card');
-    renderCard();
-  } else if (state.phase === 'prompt') {
-    showPhase('prompt');
-    renderPrompt();
-    showPromptFooter('normal');
-  } else {
-    state.phase = 'setup';
-    showPhase('setup');
-    renderSetup();
+  switch (state.phase) {
+    case 'turn':    showPhase('turn'); renderTurn(); break;
+    case 'draw':    showPhase('draw'); renderDraw(); break;
+    case 'verdict': showPhase('verdict'); renderVerdict(); break;
+    case 'win':     showPhase('win'); break;
+    default:        state.phase = 'setup'; showPhase('setup'); renderSetup();
   }
 }
 
