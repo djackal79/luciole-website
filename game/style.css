@@ -209,15 +209,34 @@ select option { background: #2a2a2a; }
 .token-bar-label { font-size: 1rem; font-weight: 700; color: var(--gold); flex-shrink: 0; }
 .token-chips { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 .token-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   background: #2a2410;
   border: 1px solid #5a4a20;
   color: var(--gold);
   border-radius: 999px;
   font-size: 0.78rem;
-  padding: 0.25rem 0.6rem;
+  padding: 0.18rem 0.6rem 0.18rem 0.18rem;
   cursor: pointer;
 }
-.token-chip.empty { background: transparent; border-style: dashed; border-color: #3a3a3a; color: var(--text-muted); cursor: default; }
+.token-chip.empty {
+  background: transparent;
+  border-style: dashed;
+  border-color: #3a3a3a;
+  color: var(--text-muted);
+  cursor: default;
+  padding: 0.25rem 0.6rem;
+}
+.token-img {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: var(--surface-2);
+  background-size: cover;
+  background-position: center;
+  flex-shrink: 0;
+}
 
 .turn-body { flex: 1; padding: 1rem 1.1rem; overflow-y: auto; }
 .section-title { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin-bottom: 0.6rem; }

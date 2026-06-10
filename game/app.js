@@ -3,6 +3,37 @@ import { cards, cardByNumber, FAMILY_REMOVED_TITLES } from './data/cards.js';
 
 // ===== CONSTANTS =====
 
+const PROP_TOKENS = [
+  { number:1, name:'The Golden Mic',      file:'1. The golden mike.png' },
+  { number:2, name:'The Script Scroll',   file:'2. The script scroll.png' },
+  { number:3, name:'The Giggle Gavel',    file:'3. The gilden gavel.png' },
+  { number:4, name:'The Tiny Trombone',   file:'4. the tiny trombone.png' },
+  { number:5, name:'The Rubber Chicken',  file:'5. The rubber chicken.png' },
+  { number:6, name:'The Banana Skin',     file:'6 The banana skin.png' },
+  { number:7, name:'The Mask of Comedy',  file:'7. The mask of comedy.png' },
+  { number:8, name:'The Prop Box',        file:'8. The prop box.png' },
+];
+
+function tokenImgUrl(file) {
+  return `url("assets/token/${encodeURIComponent(file)}")`;
+}
+
+function buildTokenChip(token, clickFn) {
+  const chip = document.createElement('button');
+  chip.className = 'token-chip';
+  if (token.file) {
+    const img = document.createElement('div');
+    img.className = 'token-img';
+    img.style.backgroundImage = tokenImgUrl(token.file);
+    chip.appendChild(img);
+  }
+  const lbl = document.createElement('span');
+  lbl.textContent = token.name;
+  chip.appendChild(lbl);
+  if (clickFn) chip.addEventListener('click', clickFn);
+  return chip;
+}
+
 const CHARACTERS = [
   {id:'kookaburra', name:'Kookaburra', archetype:'The Heckled Stand-up',      venue:'comedy_club', img:'1'},
   {id:'cockatoo',   name:'Cockatoo',   archetype:'The Bitter Satirist',        venue:'comedy_club', img:'2'},
@@ -28,7 +59,6 @@ const SUCCESS_DISPLAY = {
 };
 
 const TOKEN_GOAL = 3;
-const DEFAULT_TOKEN_NAME = 'Prop Token';
 
 // ===== STATE =====
 
@@ -48,6 +78,7 @@ function defaultState() {
     drawnCard: null,        // card number currently in play this turn
     drawnPromptPos: null,   // position of the prompt being performed
     pendingOutcome: null,   // 'animal' | 'venue' | 'power'
+    nextTokenIndex: 0,
     familyMode: false,
   };
 }
@@ -118,8 +149,10 @@ function venueMatchCards(player) {
   return player.hand.filter(n => cardByNumber(n).venue === ch.venue);
 }
 
-function awardToken(player, name) {
-  player.tokens.push({ name: name || DEFAULT_TOKEN_NAME });
+function awardToken(player) {
+  const idx = (state.nextTokenIndex || 0) % PROP_TOKENS.length;
+  state.nextTokenIndex = idx + 1;
+  player.tokens.push({ ...PROP_TOKENS[idx] });
 }
 
 function hasWon(player) {
@@ -266,12 +299,7 @@ function renderTurn() {
     chips.appendChild(empty);
   } else {
     player.tokens.forEach((t, ti) => {
-      const chip = document.createElement('button');
-      chip.className = 'token-chip';
-      chip.textContent = `🪙 ${t.name}`;
-      chip.title = 'Tap to rename';
-      chip.addEventListener('click', () => renameToken(state.currentPlayerIndex, ti));
-      chips.appendChild(chip);
+      chips.appendChild(buildTokenChip(t, () => renameToken(state.currentPlayerIndex, ti)));
     });
   }
   bar.appendChild(chips);
@@ -438,11 +466,7 @@ function renderPossessions() {
       chipWrap.appendChild(e);
     } else {
       player.tokens.forEach((t, ti) => {
-        const chip = document.createElement('button');
-        chip.className = 'token-chip';
-        chip.textContent = `🪙 ${t.name}`;
-        chip.addEventListener('click', () => renameToken(idx, ti));
-        chipWrap.appendChild(chip);
+        chipWrap.appendChild(buildTokenChip(t, () => renameToken(idx, ti)));
       });
     }
     tokControls.appendChild(minus);
@@ -630,7 +654,7 @@ function applyOutcome(outcome) {
   const card = cardByNumber(state.drawnCard);
 
   if (outcome === 'animal') {
-    awardToken(player, DEFAULT_TOKEN_NAME);
+    awardToken(player);
     state.discard.push(card.number); // cashed for a token, card leaves play
   } else {
     // venue or power: keep the card face-up in hand
@@ -658,7 +682,7 @@ function doCashPair() {
     if (i !== -1) player.hand.splice(i, 1);
     state.discard.push(n);
   });
-  awardToken(player, DEFAULT_TOKEN_NAME);
+  awardToken(player);
   save();
   if (hasWon(player)) { goToWin(state.currentPlayerIndex); return; }
   renderTurn();
@@ -667,7 +691,7 @@ function doCashPair() {
 function adjustToken(playerIndex, delta) {
   const player = state.players[playerIndex];
   if (delta > 0) {
-    awardToken(player, DEFAULT_TOKEN_NAME);
+    awardToken(player);
     if (hasWon(player)) {
       save();
       document.getElementById('possessions-overlay').classList.add('hidden');
@@ -688,7 +712,7 @@ function renameToken(playerIndex, tokenIndex) {
   if (!current) return;
   const name = window.prompt('Token name:', current.name);
   if (name === null) return;
-  current.name = name.trim() || DEFAULT_TOKEN_NAME;
+  current.name = name.trim() || current.name;
   save();
   renderPossessions();
   if (state.phase === 'turn') renderTurn();
