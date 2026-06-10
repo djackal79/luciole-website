@@ -424,7 +424,27 @@ function renderSetup() {
 
 // ===== RENDER: JOIN =====
 
+function showJoinScreen() {
+  showPhase('join');
+  renderJoin();
+}
+
 function renderJoin() {
+  const isSwitching = myPlayerIndex !== null;
+  document.getElementById('join-subtitle').textContent = isSwitching
+    ? 'Switch to a different player'
+    : 'Game in progress — who are you?';
+
+  const backRow = document.getElementById('join-back-row');
+  const backBtn = document.getElementById('join-back-btn');
+  if (isSwitching) {
+    const me = state.players[myPlayerIndex];
+    backBtn.textContent = `← Stay as ${me?.name || `Player ${myPlayerIndex + 1}`}`;
+    backRow.classList.remove('hidden');
+  } else {
+    backRow.classList.add('hidden');
+  }
+
   const list = document.getElementById('join-player-list');
   list.innerHTML = '';
 
@@ -453,6 +473,16 @@ function renderJoin() {
     const stats = document.createElement('div');
     stats.className = 'join-player-stats';
     stats.textContent = `🪙 ${player.tokens.length} token${player.tokens.length !== 1 ? 's' : ''} · ${player.hand.length} card${player.hand.length !== 1 ? 's' : ''}`;
+
+    if (idx === state.currentPlayerIndex) {
+      const turn = document.createElement('div');
+      turn.className = 'join-player-turn';
+      turn.textContent = '← their turn';
+      info.appendChild(turn);
+    }
+    if (idx === myPlayerIndex) {
+      card.classList.add('active');
+    }
 
     info.appendChild(name);
     info.appendChild(meta);
@@ -992,6 +1022,8 @@ function wireTurn() {
     save();
   });
 
+  document.getElementById('switch-player-btn').addEventListener('click', showJoinScreen);
+
   document.getElementById('reset-btn').addEventListener('click', () => {
     if (confirm('Reset the whole game? This clears all hands, tokens and progress.')) {
       clearMyPlayerSlot();
@@ -1071,11 +1103,12 @@ function wireCardSheet() {
 }
 
 function wireJoin() {
-  // Join player cards are rendered dynamically in renderJoin(); no static wiring needed.
+  document.getElementById('join-back-btn').addEventListener('click', renderCurrentPhase);
 }
 
 function wireSpectate() {
   document.getElementById('spectate-allplayers-btn').addEventListener('click', openPossessions);
+  document.getElementById('spectate-switch-btn').addEventListener('click', showJoinScreen);
 }
 
 // ===== INIT =====

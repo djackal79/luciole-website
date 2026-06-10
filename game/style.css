@@ -621,3 +621,28 @@ select option { background: #2a2a2a; }
 .spectate-drawn-title { font-size: 0.88rem; font-weight: 600; }
 
 .spectate-hand-section { flex: 1; padding: 1rem 1.1rem; overflow-y: auto; }
+
+.spectate-footer {
+  padding: 0.6rem 1.1rem 1rem;
+  border-top: 1px solid #2a2a2a;
+  display: flex;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ===== SETTINGS ROW BUTTONS ===== */
+.settings-btns { display: flex; gap: 0.4rem; }
+
+/* ===== JOIN SCREEN EXTRAS ===== */
+.join-back-row { padding: 0 0 0.5rem; }
+.join-back-btn { font-size: 0.85rem; }
+.join-player-card.active {
+  border-color: var(--gold);
+  background: rgba(227,178,60,0.08);
+}
+.join-player-turn {
+  font-size: 0.72rem;
+  color: var(--gold);
+  font-weight: 600;
+  margin-top: 0.25rem;
+}
