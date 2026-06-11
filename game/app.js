@@ -267,6 +267,8 @@ function showPhase(phase) {
   ['setup','turn','draw','verdict','win','join','spectate','sim'].forEach(p => {
     document.getElementById(`${p}-screen`).classList.toggle('hidden', phase !== p);
   });
+  document.body.dataset.phase = phase;
+  closeGameMenu();
 }
 
 // Central routing: always call this after state changes (locally or from realtime)
@@ -287,6 +289,7 @@ function renderCurrentPhase() {
   }
 
   if (state.phase === 'setup') {
+    clearMyPlayerSlot();
     showPhase('setup');
     renderSetup();
     return;
@@ -1176,6 +1179,62 @@ function wireSpectate() {
   document.getElementById('spectate-switch-btn').addEventListener('click', showJoinScreen);
 }
 
+// ===== GAME MENU =====
+
+function openGameMenu() {
+  const panel = document.getElementById('game-menu-panel');
+  const btn = document.getElementById('game-menu-btn');
+  const inGame = state.phase !== 'setup' && state.players && state.players.length > 0;
+  document.getElementById('gm-allplayers').classList.toggle('hidden', !inGame);
+  document.getElementById('gm-switch').classList.toggle('hidden', !inGame);
+  document.getElementById('gm-save').classList.toggle('hidden', !inGame);
+  document.getElementById('gm-log').classList.toggle('hidden', !inGame);
+  panel.classList.remove('hidden');
+  btn.classList.add('open');
+}
+
+function closeGameMenu() {
+  const panel = document.getElementById('game-menu-panel');
+  const btn = document.getElementById('game-menu-btn');
+  if (panel) panel.classList.add('hidden');
+  if (btn) btn.classList.remove('open');
+}
+
+function wireGameMenu() {
+  document.getElementById('game-menu-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    const open = !document.getElementById('game-menu-panel').classList.contains('hidden');
+    if (open) closeGameMenu(); else openGameMenu();
+  });
+
+  document.getElementById('gm-allplayers').addEventListener('click', () => {
+    closeGameMenu(); openPossessions();
+  });
+  document.getElementById('gm-switch').addEventListener('click', () => {
+    closeGameMenu(); showJoinScreen();
+  });
+  document.getElementById('gm-save').addEventListener('click', () => {
+    closeGameMenu(); openSaveModal();
+  });
+  document.getElementById('gm-log').addEventListener('click', () => {
+    closeGameMenu(); openLogModal();
+  });
+  document.getElementById('gm-reset').addEventListener('click', () => {
+    closeGameMenu();
+    if (confirm('Reset the whole game? This clears all hands, tokens and progress.')) {
+      clearMyPlayerSlot();
+      state = defaultState();
+      save();
+      renderCurrentPhase();
+    }
+  });
+
+  document.addEventListener('click', e => {
+    const wrap = document.getElementById('game-menu-wrap');
+    if (wrap && !wrap.contains(e.target)) closeGameMenu();
+  });
+}
+
 // ===== SAVE GAME =====
 
 async function openSaveModal() {
@@ -1910,6 +1969,7 @@ async function init() {
   wireCardSheet();
   wireJoin();
   wireSpectate();
+  wireGameMenu();
   wireSaveModal();
   wireLogModal();
   wireSimScreen();

@@ -828,3 +828,65 @@ select option { background: #2a2a2a; }
 .log-outcome-badge.cash_pair { background: rgba(212,168,42,0.15); color: var(--gold); }
 .log-entry-detail { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.25rem; }
 .log-entry-powers { font-size: 0.75rem; color: #c8a84b; margin-top: 0.2rem; }
+
+/* ===== PERSISTENT GAME MENU ===== */
+#game-menu-wrap {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 200;
+}
+
+/* Hide on draw screen (back button conflict) and sim screen */
+body[data-phase="draw"] #game-menu-wrap,
+body[data-phase="sim"] #game-menu-wrap { display: none; }
+
+#game-menu-btn {
+  width: 36px;
+  height: 36px;
+  background: rgba(26,26,26,0.88);
+  border: 1px solid #484848;
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: background 0.15s;
+}
+#game-menu-btn:hover,
+#game-menu-btn.open { background: rgba(50,50,50,0.96); border-color: #666; }
+
+#game-menu-panel {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  background: var(--surface);
+  border: 1px solid #3a3a3a;
+  border-radius: var(--radius);
+  min-width: 188px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.65);
+  overflow: hidden;
+}
+
+.game-menu-item {
+  display: block;
+  width: 100%;
+  padding: 0.72rem 1rem;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #2a2a2a;
+  color: var(--text);
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.game-menu-item:last-child { border-bottom: none; }
+.game-menu-item:hover { background: var(--surface-2); }
+.game-menu-item.danger { color: #ef9a9a; }
+.game-menu-sep { height: 1px; background: #3a3a3a; }
