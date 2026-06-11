@@ -48,6 +48,7 @@
     </div>
 
     <button id="start-game-btn" class="btn-primary">Start Game</button>
+    <button id="simulate-btn" class="btn-ghost sim-entry-btn">🎲 Simulate</button>
   </div>
 </div>
 
@@ -90,8 +91,10 @@
       </label>
     </div>
     <div class="settings-btns">
-      <button class="btn-ghost" id="switch-player-btn">Switch Player</button>
-      <button class="btn-ghost" id="reset-btn">Reset Game</button>
+      <button class="btn-ghost" id="save-game-btn">💾 Save</button>
+      <button class="btn-ghost" id="log-btn">📋 Log</button>
+      <button class="btn-ghost" id="switch-player-btn">Switch</button>
+      <button class="btn-ghost" id="reset-btn">Reset</button>
     </div>
   </div>
 </div>
@@ -244,6 +247,93 @@
       <div class="sheet-affinity" id="card-sheet-affinity"></div>
       <div class="sheet-actions" id="card-sheet-actions"></div>
     </div>
+  </div>
+</div>
+
+<!-- SIMULATION SCREEN -->
+<div id="sim-screen" class="screen hidden">
+  <div class="sim-header">
+    <button class="back-btn" id="sim-back-btn">← Back</button>
+    <div class="sim-title">🎲 Simulation</div>
+  </div>
+  <div class="sim-body">
+    <div class="sim-section">
+      <div class="form-label">Players</div>
+      <div class="count-selector" id="sim-player-count">
+        <button class="count-btn" data-count="2">2</button>
+        <button class="count-btn" data-count="3">3</button>
+        <button class="count-btn active" data-count="4">4</button>
+        <button class="count-btn" data-count="5">5</button>
+        <button class="count-btn" data-count="6">6</button>
+        <button class="count-btn" data-count="7">7</button>
+        <button class="count-btn" data-count="8">8</button>
+      </div>
+    </div>
+    <div class="sim-section">
+      <div class="form-label">Games to Simulate</div>
+      <div class="count-selector" id="sim-count-sel">
+        <button class="count-btn" data-count="100">100</button>
+        <button class="count-btn active" data-count="500">500</button>
+        <button class="count-btn" data-count="1000">1000</button>
+        <button class="count-btn" data-count="5000">5000</button>
+      </div>
+    </div>
+    <div class="sim-section">
+      <div class="family-mode-row">
+        <label class="toggle-label" for="sim-family-mode">Family Mode</label>
+        <label class="toggle"><input type="checkbox" id="sim-family-mode"><span class="toggle-slider"></span></label>
+      </div>
+    </div>
+    <div class="sim-section">
+      <div class="form-label">Success Rate per Venue</div>
+      <div class="sim-slider-group" id="sim-success-sliders"></div>
+    </div>
+    <div class="sim-section">
+      <div class="form-label">Power Card Play Probability</div>
+      <div class="sim-hint">Base probability of playing each card when its timing is right.</div>
+      <div class="sim-slider-group" id="sim-power-sliders"></div>
+    </div>
+    <div class="sim-section">
+      <div class="form-label">Situational Multipliers</div>
+      <div class="sim-hint">Multiplies base probability in specific game situations.</div>
+      <div class="sim-slider-group" id="sim-sit-sliders"></div>
+    </div>
+    <div class="sim-section">
+      <button class="btn-primary" id="sim-run-btn">🎲 Run Simulation</button>
+    </div>
+    <div class="sim-results hidden" id="sim-results"></div>
+  </div>
+</div>
+
+<!-- SAVE / LOAD MODAL -->
+<div id="save-modal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-backdrop" id="save-modal-backdrop"></div>
+  <div class="modal-content tall">
+    <div class="modal-header">
+      <h2>Save / Load Game</h2>
+      <button class="modal-close" id="save-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-label">Save Current Game</div>
+      <div class="save-name-row">
+        <input type="text" id="save-name-input" placeholder="Save name…">
+        <button class="btn-save-now" id="save-confirm-btn">Save</button>
+      </div>
+      <div class="form-label" style="margin-top:1.25rem">Saved Games</div>
+      <div id="saves-list"><div class="saves-empty">No saves yet.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- GAME LOG MODAL -->
+<div id="log-modal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-backdrop" id="log-modal-backdrop"></div>
+  <div class="modal-content tall">
+    <div class="modal-header">
+      <h2>Game Log</h2>
+      <button class="modal-close" id="log-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body" id="log-body"><div class="saves-empty">No turns yet.</div></div>
   </div>
 </div>
 

@@ -84,6 +84,9 @@ function defaultState() {
     pendingOutcome: null,
     nextTokenIndex: 0,
     familyMode: false,
+    turnNumber: 0,
+    turnLog: [],
+    currentTurn: null,
   };
 }
 
@@ -261,7 +264,7 @@ function updateTimerDisplay() {
 // ===== NAVIGATION =====
 
 function showPhase(phase) {
-  ['setup','turn','draw','verdict','win','join','spectate'].forEach(p => {
+  ['setup','turn','draw','verdict','win','join','spectate','sim'].forEach(p => {
     document.getElementById(`${p}-screen`).classList.toggle('hidden', phase !== p);
   });
 }
@@ -865,6 +868,16 @@ function discardFromHand(playerIndex, cardNumber) {
     player.hand.splice(i, 1);
     state.discard.push(cardNumber);
   }
+  if (state.currentTurn) {
+    const c = cardByNumber(cardNumber);
+    state.currentTurn.powerCardsPlayed.push({
+      playerIndex,
+      playerName: state.players[playerIndex]?.name || `Player ${playerIndex + 1}`,
+      cardNumber,
+      title: c ? c.title : '?',
+    });
+  }
+
   closeCardSheet();
   save();
   renderCurrentPhase();
@@ -877,11 +890,38 @@ function doDraw() {
   ensureDeck();
   if (state.deck.length === 0) return;
   state.drawnCard = state.deck.pop();
+
+  const player = state.players[state.currentPlayerIndex];
+  const card = cardByNumber(state.drawnCard);
+  state.turnNumber = (state.turnNumber || 0) + 1;
+  state.currentTurn = {
+    type: 'draw',
+    turnNumber: state.turnNumber,
+    playerIndex: state.currentPlayerIndex,
+    playerName: player.name || `Player ${state.currentPlayerIndex + 1}`,
+    character: player.character,
+    venue: card.venue,
+    cardNumber: card.number,
+    cardTitle: card.title,
+    cardAnimal: card.animal,
+    powerCardsPlayed: [],
+    outcome: null,
+    timestamp: new Date().toISOString(),
+  };
+
   goToDraw();
 }
 
 function doFail() {
   if (state.drawnCard != null) state.discard.push(state.drawnCard);
+
+  if (state.currentTurn) {
+    state.currentTurn.outcome = 'fail';
+    if (!state.turnLog) state.turnLog = [];
+    state.turnLog.push(state.currentTurn);
+    state.currentTurn = null;
+  }
+
   stopTimer();
   advancePlayer();
   goToTurn();
@@ -912,6 +952,13 @@ function applyOutcome(outcome) {
     player.hand.push(card.number);
   }
 
+  if (state.currentTurn) {
+    state.currentTurn.outcome = outcome;
+    if (!state.turnLog) state.turnLog = [];
+    state.turnLog.push(state.currentTurn);
+    state.currentTurn = null;
+  }
+
   const winner = state.currentPlayerIndex;
   state.drawnCard = null;
   state.drawnPromptPos = null;
@@ -933,6 +980,20 @@ function doCashPair() {
     state.discard.push(n);
   });
   awardToken(player);
+
+  if (!state.turnLog) state.turnLog = [];
+  state.turnLog.push({
+    type: 'cash_pair',
+    turnNumber: state.turnNumber || 0,
+    playerIndex: state.currentPlayerIndex,
+    playerName: player.name || `Player ${state.currentPlayerIndex + 1}`,
+    character: player.character,
+    cardsDiscarded: toDiscard,
+    outcome: 'token',
+    powerCardsPlayed: [],
+    timestamp: new Date().toISOString(),
+  });
+
   if (hasWon(player)) { save(); goToWin(state.currentPlayerIndex); return; }
   save();
   renderCurrentPhase();
@@ -987,6 +1048,8 @@ function wireSetup() {
     state.familyMode = e.target.checked;
   });
 
+  document.getElementById('simulate-btn').addEventListener('click', showSimScreen);
+
   document.getElementById('start-game-btn').addEventListener('click', () => {
     const players = [];
     for (let i = 0; i < state.numPlayers; i++) {
@@ -1022,6 +1085,8 @@ function wireTurn() {
     save();
   });
 
+  document.getElementById('save-game-btn').addEventListener('click', openSaveModal);
+  document.getElementById('log-btn').addEventListener('click', openLogModal);
   document.getElementById('switch-player-btn').addEventListener('click', showJoinScreen);
 
   document.getElementById('reset-btn').addEventListener('click', () => {
@@ -1111,6 +1176,726 @@ function wireSpectate() {
   document.getElementById('spectate-switch-btn').addEventListener('click', showJoinScreen);
 }
 
+// ===== SAVE GAME =====
+
+async function openSaveModal() {
+  document.getElementById('save-modal').classList.remove('hidden');
+  const defaultName = `Turn ${state.turnNumber || 0} — ${new Date().toLocaleDateString()}`;
+  document.getElementById('save-name-input').value = defaultName;
+  await renderSaves();
+}
+
+function closeSaveModal() {
+  document.getElementById('save-modal').classList.add('hidden');
+}
+
+async function renderSaves() {
+  const list = document.getElementById('saves-list');
+  list.innerHTML = '<div class="saves-empty">Loading…</div>';
+  try {
+    const { data } = await supabase
+      .from('game_saves')
+      .select('id, name, created_at, state')
+      .eq('session_id', SESSION_ID)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (!data || data.length === 0) {
+      list.innerHTML = '<div class="saves-empty">No saves yet.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    data.forEach(savedGame => {
+      const item = document.createElement('div');
+      item.className = 'save-item';
+
+      const info = document.createElement('div');
+      info.className = 'save-item-info';
+      const nm = document.createElement('div');
+      nm.className = 'save-item-name';
+      nm.textContent = savedGame.name;
+      const meta = document.createElement('div');
+      meta.className = 'save-item-meta';
+      const d = new Date(savedGame.created_at);
+      const players = savedGame.state?.players || [];
+      const tokens = players.map(p => p.tokens?.length || 0).join(', ');
+      meta.textContent = `${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})} — ${players.length} players · tokens [${tokens}]`;
+      info.append(nm, meta);
+
+      const btns = document.createElement('div');
+      btns.className = 'save-item-btns';
+
+      const restoreBtn = document.createElement('button');
+      restoreBtn.className = 'btn-save-action';
+      restoreBtn.textContent = '↩ Restore';
+      restoreBtn.addEventListener('click', () => {
+        if (confirm(`Restore "${savedGame.name}"? Current game will be replaced.`)) {
+          state = savedGame.state;
+          if (myPlayerIndex !== null && state.players.length > 0 && myPlayerIndex >= state.players.length) {
+            clearMyPlayerSlot();
+          }
+          save();
+          closeSaveModal();
+          renderCurrentPhase();
+        }
+      });
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn-save-action delete';
+      delBtn.textContent = '✕';
+      delBtn.addEventListener('click', async () => {
+        await supabase.from('game_saves').delete().eq('id', savedGame.id);
+        renderSaves();
+      });
+
+      btns.append(restoreBtn, delBtn);
+      item.append(info, btns);
+      list.appendChild(item);
+    });
+  } catch(e) {
+    list.innerHTML = '<div class="saves-empty">Could not load saves.</div>';
+  }
+}
+
+async function saveCurrentGame(name) {
+  const btn = document.getElementById('save-confirm-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try {
+    await supabase.from('game_saves').insert({
+      session_id: SESSION_ID,
+      name: name || 'Quick Save',
+      state: state,
+    });
+    await renderSaves();
+  } catch(e) {
+    console.error('Save failed:', e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save';
+  }
+}
+
+function wireSaveModal() {
+  document.getElementById('save-modal-close').addEventListener('click', closeSaveModal);
+  document.getElementById('save-modal-backdrop').addEventListener('click', closeSaveModal);
+  document.getElementById('save-confirm-btn').addEventListener('click', () => {
+    const name = document.getElementById('save-name-input').value.trim() || 'Quick Save';
+    saveCurrentGame(name);
+  });
+}
+
+// ===== GAME LOG =====
+
+function openLogModal() {
+  renderLog();
+  document.getElementById('log-modal').classList.remove('hidden');
+}
+
+function closeLogModal() {
+  document.getElementById('log-modal').classList.add('hidden');
+}
+
+function renderLog() {
+  const body = document.getElementById('log-body');
+  body.innerHTML = '';
+  const log = state.turnLog || [];
+  if (log.length === 0) {
+    body.innerHTML = '<div class="saves-empty">No turns yet.</div>';
+    return;
+  }
+
+  const OUTCOME_LABELS = {
+    animal: '🐾 Token', venue: '✅ Keep', power: '🃏 Keep', fail: '✗ Fail',
+  };
+
+  [...log].reverse().forEach(entry => {
+    const el = document.createElement('div');
+    el.className = 'log-entry';
+
+    const head = document.createElement('div');
+    head.className = 'log-entry-head';
+
+    const num = document.createElement('span');
+    num.className = 'log-turn-num';
+    num.textContent = `T${entry.turnNumber}`;
+
+    const pname = document.createElement('span');
+    pname.className = 'log-player-name';
+    pname.textContent = entry.playerName || `Player ${entry.playerIndex + 1}`;
+
+    const badge = document.createElement('span');
+    if (entry.type === 'cash_pair') {
+      badge.className = 'log-outcome-badge cash_pair';
+      badge.textContent = '🔁 Cash Pair → Token';
+    } else {
+      badge.className = `log-outcome-badge ${entry.outcome}`;
+      badge.textContent = OUTCOME_LABELS[entry.outcome] || entry.outcome;
+    }
+
+    head.append(num, pname, badge);
+    el.appendChild(head);
+
+    if (entry.type === 'draw') {
+      const venue = VENUES[entry.venue];
+      const detail = document.createElement('div');
+      detail.className = 'log-entry-detail';
+      detail.textContent = `${entry.cardTitle} · ${animalName(entry.cardAnimal)} · ${venue ? venue.icon + ' ' + venue.name : entry.venue}`;
+      el.appendChild(detail);
+    }
+
+    if (entry.powerCardsPlayed && entry.powerCardsPlayed.length > 0) {
+      const powers = document.createElement('div');
+      powers.className = 'log-entry-powers';
+      powers.textContent = '⚡ ' + entry.powerCardsPlayed.map(p => `${p.title} (${p.playerName})`).join(', ');
+      el.appendChild(powers);
+    }
+
+    body.appendChild(el);
+  });
+}
+
+function wireLogModal() {
+  document.getElementById('log-modal-close').addEventListener('click', closeLogModal);
+  document.getElementById('log-modal-backdrop').addEventListener('click', closeLogModal);
+}
+
+// ===== SIMULATION =====
+
+const DEFAULT_SIM_CONFIG = {
+  numPlayers: 4,
+  simCount: 500,
+  familyMode: false,
+  successRates: { comedy_club: 0.65, rsl: 0.65, royal_show: 0.65, school_play: 0.65 },
+  powerPlay: {
+    'The Ad-Lib': 0.75, 'Warm-Up Act': 0.5, 'Standing Ovation': 0.6,
+    'Prop Master': 0.4, 'Improviser': 0.6, 'Heckler': 0.5,
+    'Pie In The Face': 0.35, 'Stage Hook': 0.4, 'Intermission': 0.45,
+    'Clap Back': 0.5, 'Mime Time': 0.5, 'Stage Left Stage Right': 0.2, 'Giggle Box': 0.45,
+  },
+  situational: { offSuit: 1.3, sameSuit: 0.7, leading: 0.75, losing: 1.4, opponentNearWin: 2.5 },
+};
+
+let simConfig = JSON.parse(JSON.stringify(DEFAULT_SIM_CONFIG));
+
+function showSimScreen() {
+  showPhase('sim');
+  renderSimScreen();
+}
+
+function renderSimScreen() {
+  document.querySelectorAll('#sim-player-count .count-btn').forEach(b =>
+    b.classList.toggle('active', parseInt(b.dataset.count) === simConfig.numPlayers));
+  document.querySelectorAll('#sim-count-sel .count-btn').forEach(b =>
+    b.classList.toggle('active', parseInt(b.dataset.count) === simConfig.simCount));
+  document.getElementById('sim-family-mode').checked = simConfig.familyMode;
+
+  const successGrp = document.getElementById('sim-success-sliders');
+  if (!successGrp.children.length) {
+    [
+      { id: 'comedy_club', icon: '🎤', name: 'Comedy Club' },
+      { id: 'rsl',         icon: '🎵', name: 'RSL' },
+      { id: 'royal_show',  icon: '🎪', name: 'Royal Show' },
+      { id: 'school_play', icon: '🎭', name: 'School Play' },
+    ].forEach(v => successGrp.appendChild(buildSliderRow(
+      `succ-${v.id}`, `${v.icon} ${v.name}`, 0, 100, 5,
+      Math.round(simConfig.successRates[v.id] * 100),
+      val => { simConfig.successRates[v.id] = val / 100; }, '%'
+    )));
+  }
+
+  const powerGrp = document.getElementById('sim-power-sliders');
+  if (!powerGrp.children.length) {
+    [
+      'The Ad-Lib','Warm-Up Act','Standing Ovation','Prop Master','Improviser',
+      'Heckler','Pie In The Face','Stage Hook','Intermission','Clap Back',
+      'Mime Time','Stage Left Stage Right','Giggle Box',
+    ].forEach(title => powerGrp.appendChild(buildSliderRow(
+      `power-${title}`, title, 0, 100, 5,
+      Math.round((simConfig.powerPlay[title] || 0) * 100),
+      val => { simConfig.powerPlay[title] = val / 100; }, '%'
+    )));
+  }
+
+  const sitGrp = document.getElementById('sim-sit-sliders');
+  if (!sitGrp.children.length) {
+    [
+      { id: 'offSuit',         label: 'Off-suit draw' },
+      { id: 'sameSuit',        label: 'Same-suit draw' },
+      { id: 'leading',         label: 'When leading' },
+      { id: 'losing',          label: 'When losing' },
+      { id: 'opponentNearWin', label: 'Opponent near win' },
+    ].forEach(s => {
+      const initVal = Math.round(simConfig.situational[s.id] * 10);
+      sitGrp.appendChild(buildSliderRow(
+        `sit-${s.id}`, s.label, 0, 50, 1, initVal,
+        val => { simConfig.situational[s.id] = val / 10; },
+        '×', v => (v / 10).toFixed(1) + '×'
+      ));
+    });
+  }
+}
+
+function buildSliderRow(id, label, min, max, step, initVal, onChange, unit, displayFn) {
+  const row = document.createElement('div');
+  row.className = 'sim-slider-row';
+
+  const lbl = document.createElement('label');
+  lbl.className = 'sim-slider-label';
+  lbl.htmlFor = id;
+  lbl.textContent = label;
+
+  const valEl = document.createElement('span');
+  valEl.className = 'sim-slider-val';
+  valEl.textContent = displayFn ? displayFn(initVal) : (initVal + unit);
+
+  const input = document.createElement('input');
+  input.type = 'range';
+  input.id = id;
+  input.min = min;
+  input.max = max;
+  input.step = step;
+  input.value = initVal;
+  input.className = 'sim-range';
+  input.addEventListener('input', () => {
+    const v = parseInt(input.value);
+    valEl.textContent = displayFn ? displayFn(v) : (v + unit);
+    onChange(v);
+  });
+
+  row.append(lbl, valEl, input);
+  return row;
+}
+
+function runSimAndShow() {
+  const btn = document.getElementById('sim-run-btn');
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  setTimeout(() => {
+    try {
+      const results = simRun(simConfig);
+      renderSimResults(results);
+      document.getElementById('sim-results').classList.remove('hidden');
+      document.getElementById('sim-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🎲 Run Simulation';
+    }
+  }, 20);
+}
+
+function renderSimResults(results) {
+  const el = document.getElementById('sim-results');
+  el.innerHTML = '';
+
+  const { simCount, wins, turnCounts, totalTokenSources, totalPowerPlayed } = results;
+  const sorted = turnCounts.slice().sort((a, b) => a - b);
+  const avg = sorted.reduce((s, n) => s + n, 0) / sorted.length;
+  const median = sorted[Math.floor(sorted.length / 2)];
+
+  function section(labelText) {
+    const s = document.createElement('div');
+    s.className = 'sim-section';
+    if (labelText) {
+      const h = document.createElement('div');
+      h.className = 'form-label';
+      h.textContent = labelText;
+      s.appendChild(h);
+    }
+    el.appendChild(s);
+    return s;
+  }
+
+  function statRow(label, val, parent) {
+    const r = document.createElement('div');
+    r.className = 'sim-stat-row';
+    r.innerHTML = `<span>${escapeHtml(label)}</span><span class="sim-stat-val">${escapeHtml(String(val))}</span>`;
+    parent.appendChild(r);
+  }
+
+  function barRow(label, pct, parent) {
+    const r = document.createElement('div');
+    r.className = 'sim-bar-row';
+    r.innerHTML = `<span class="sim-bar-label">${escapeHtml(label)}</span><div class="sim-bar-track"><div class="sim-bar-fill" style="width:${pct}%"></div></div><span class="sim-bar-pct">${pct}%</span>`;
+    parent.appendChild(r);
+  }
+
+  const s1 = section(`Results — ${simCount.toLocaleString()} games`);
+  statRow('Average turns to win', avg.toFixed(1), s1);
+  statRow('Median turns', String(median), s1);
+  statRow('Range', `${sorted[0]} – ${sorted[sorted.length - 1]}`, s1);
+
+  const s2 = section('Win Rates by Position');
+  wins.forEach((count, i) => {
+    const pct = ((count / simCount) * 100).toFixed(1);
+    const ch = CHARACTERS[i % CHARACTERS.length];
+    barRow(ch.name, pct, s2);
+  });
+
+  const totalTokens = Object.values(totalTokenSources).reduce((s, n) => s + n, 0) || 1;
+  const TOKEN_LABELS = {
+    animal: '🐾 Animal affinity', venuePair: '✅ Venue pair',
+    improviser: '⚡ Improviser', propMaster: '🎭 Prop Master',
+  };
+  const s3 = section('Token Sources');
+  Object.entries(totalTokenSources).sort((a, b) => b[1] - a[1]).forEach(([key, count]) => {
+    const pct = ((count / totalTokens) * 100).toFixed(1);
+    barRow(TOKEN_LABELS[key] || key, pct, s3);
+  });
+
+  const s4 = section('Power Cards Played (per game avg)');
+  Object.entries(totalPowerPlayed).sort((a, b) => b[1] - a[1]).forEach(([title, count]) => {
+    statRow(title, (count / simCount).toFixed(2) + '×', s4);
+  });
+}
+
+function wireSimScreen() {
+  document.getElementById('sim-back-btn').addEventListener('click', () => {
+    showPhase('setup');
+    renderSetup();
+  });
+  document.getElementById('sim-player-count').addEventListener('click', e => {
+    const btn = e.target.closest('.count-btn');
+    if (!btn) return;
+    simConfig.numPlayers = parseInt(btn.dataset.count);
+    document.querySelectorAll('#sim-player-count .count-btn').forEach(b =>
+      b.classList.toggle('active', parseInt(b.dataset.count) === simConfig.numPlayers));
+  });
+  document.getElementById('sim-count-sel').addEventListener('click', e => {
+    const btn = e.target.closest('.count-btn');
+    if (!btn) return;
+    simConfig.simCount = parseInt(btn.dataset.count);
+    document.querySelectorAll('#sim-count-sel .count-btn').forEach(b =>
+      b.classList.toggle('active', parseInt(b.dataset.count) === simConfig.simCount));
+  });
+  document.getElementById('sim-family-mode').addEventListener('change', e => {
+    simConfig.familyMode = e.target.checked;
+  });
+  document.getElementById('sim-run-btn').addEventListener('click', runSimAndShow);
+}
+
+// ===== SIMULATION ENGINE =====
+
+function simBuildDeck(familyMode) {
+  let pool = cards.map(c => c.number);
+  if (familyMode) pool = pool.filter(n => !FAMILY_REMOVED_TITLES.includes(cardByNumber(n).title));
+  return shuffle(pool);
+}
+
+function simEnsureDeck(deck, discard) {
+  if (deck.length === 0) {
+    const refill = shuffle(discard.splice(0));
+    deck.push(...refill);
+  }
+}
+
+function simCardValue(card, player) {
+  if (!card) return 0;
+  if (card.animal === player.character) return 3;
+  if (card.venue === player.venue) return 2;
+  return 1;
+}
+
+function simGetSituation(players, idx, drawnVenue) {
+  const player = players[idx];
+  const toks = players.map(p => p.tokens);
+  const maxT = Math.max(...toks);
+  const minT = Math.min(...toks);
+  return {
+    isLeading: player.tokens === maxT && maxT > minT,
+    isLosing:  player.tokens === minT && maxT > minT,
+    opponentNearWin: players.some((p, i) => i !== idx && p.tokens >= TOKEN_GOAL - 1),
+    offSuit:  drawnVenue ? drawnVenue !== player.venue : false,
+    sameSuit: drawnVenue ? drawnVenue === player.venue : false,
+  };
+}
+
+function simShouldPlay(title, cfg, sit, isYourTurn) {
+  let p = cfg.powerPlay[title] ?? 0;
+  if (p <= 0) return false;
+  if (isYourTurn) {
+    if (sit.offSuit)  p *= cfg.situational.offSuit;
+    if (sit.sameSuit) p *= cfg.situational.sameSuit;
+  }
+  if (sit.isLeading)       p *= cfg.situational.leading;
+  if (sit.isLosing)        p *= cfg.situational.losing;
+  if (sit.opponentNearWin) p *= cfg.situational.opponentNearWin;
+  return Math.random() < Math.min(1, p);
+}
+
+function simRemoveCard(hand, title) {
+  const idx = hand.findIndex(n => { const c = cardByNumber(n); return c && c.title === title; });
+  if (idx === -1) return null;
+  return hand.splice(idx, 1)[0];
+}
+
+function simHasCard(hand, title) {
+  return hand.some(n => { const c = cardByNumber(n); return c && c.title === title; });
+}
+
+function simAwardToken(player, source, tokenSources) {
+  player.tokens++;
+  tokenSources[source] = (tokenSources[source] || 0) + 1;
+}
+
+function simPerformTurn(cardNum, player, players, deck, discard, cfg, tokenSources, powerPlayed, depth) {
+  if ((depth || 0) > 2) { discard.push(cardNum); return; }
+
+  const card = cardByNumber(cardNum);
+  if (!card) return;
+
+  function track(title) { powerPlayed[title] = (powerPlayed[title] || 0) + 1; }
+
+  // MIME TIME / GIGGLE BOX → silence → auto-fail
+  let silenced = false;
+  outer: for (const opp of players) {
+    if (opp.idx === player.idx) continue;
+    for (const title of ['Mime Time', 'Giggle Box']) {
+      if (simHasCard(opp.hand, title) &&
+          simShouldPlay(title, cfg, simGetSituation(players, opp.idx, null), false)) {
+        const c = simRemoveCard(opp.hand, title);
+        if (c) discard.push(c);
+        track(title);
+        silenced = true;
+        break outer;
+      }
+    }
+  }
+
+  let success = !silenced && Math.random() < (cfg.successRates[card.venue] || 0.65);
+
+  if (!success) {
+    // THE AD-LIB: retry once on fail
+    if (!silenced && simHasCard(player.hand, 'The Ad-Lib')) {
+      const sit = simGetSituation(players, player.idx, card.venue);
+      if (simShouldPlay('The Ad-Lib', cfg, sit, true)) {
+        const ac = simRemoveCard(player.hand, 'The Ad-Lib');
+        if (ac) discard.push(ac);
+        discard.push(cardNum);
+        track('The Ad-Lib');
+        simEnsureDeck(deck, discard);
+        if (deck.length > 0) simPerformTurn(deck.pop(), player, players, deck, discard, cfg, tokenSources, powerPlayed, (depth || 0) + 1);
+        return;
+      }
+    }
+    discard.push(cardNum);
+    return;
+  }
+
+  // HECKLER: force re-perform
+  for (const opp of players) {
+    if (opp.idx === player.idx) continue;
+    if (simHasCard(opp.hand, 'Heckler') &&
+        simShouldPlay('Heckler', cfg, simGetSituation(players, opp.idx, null), false)) {
+      let countered = false;
+      for (const ct of ['Standing Ovation', 'Clap Back']) {
+        if (simHasCard(player.hand, ct) && Math.random() < (cfg.powerPlay[ct] || 0)) {
+          const cc = simRemoveCard(player.hand, ct);
+          if (cc) discard.push(cc);
+          track(ct);
+          countered = true;
+          break;
+        }
+      }
+      if (!countered) {
+        const hc = simRemoveCard(opp.hand, 'Heckler');
+        if (hc) discard.push(hc);
+        track('Heckler');
+        success = Math.random() < (cfg.successRates[card.venue] || 0.65);
+      }
+      break;
+    }
+  }
+
+  if (!success) { discard.push(cardNum); return; }
+
+  // OUTCOME
+  let outcome = card.animal === player.character ? 'animal' : (card.venue === player.venue ? 'venue' : 'power');
+
+  if (outcome === 'animal') {
+    simAwardToken(player, 'animal', tokenSources);
+    discard.push(cardNum);
+  } else if (outcome === 'venue') {
+    // IMPROVISER: convert venue match to token
+    if (simHasCard(player.hand, 'Improviser')) {
+      const sit = simGetSituation(players, player.idx, card.venue);
+      if (simShouldPlay('Improviser', cfg, sit, true)) {
+        const ic = simRemoveCard(player.hand, 'Improviser');
+        if (ic) discard.push(ic);
+        track('Improviser');
+        simAwardToken(player, 'improviser', tokenSources);
+        discard.push(cardNum);
+        return;
+      }
+    }
+    player.hand.push(cardNum);
+    // Cash pair check
+    const matches = player.hand.filter(n => { const c = cardByNumber(n); return c && c.venue === player.venue; });
+    if (matches.length >= 2) {
+      matches.slice(0, 2).forEach(n => {
+        const i = player.hand.indexOf(n);
+        if (i !== -1) player.hand.splice(i, 1);
+        discard.push(n);
+      });
+      simAwardToken(player, 'venuePair', tokenSources);
+    }
+  } else {
+    player.hand.push(cardNum);
+  }
+}
+
+function simRunGame(cfg) {
+  const numP = Math.min(cfg.numPlayers, CHARACTERS.length);
+  const players = CHARACTERS.slice(0, numP).map((ch, i) => ({
+    idx: i, character: ch.id, venue: ch.venue, tokens: 0, hand: [],
+  }));
+  const deck = simBuildDeck(cfg.familyMode);
+  const discard = [];
+  const tokenSources = {};
+  const powerPlayed = {};
+  let current = 0;
+
+  function track(t) { powerPlayed[t] = (powerPlayed[t] || 0) + 1; }
+
+  for (let turn = 0; turn < 600; turn++) {
+    const player = players[current];
+    const sit0 = simGetSituation(players, current, null);
+
+    // INTERMISSION
+    let skipped = false;
+    for (const opp of players) {
+      if (opp.idx === current) continue;
+      if (simHasCard(opp.hand, 'Intermission') &&
+          simShouldPlay('Intermission', cfg, simGetSituation(players, opp.idx, null), false)) {
+        const ic = simRemoveCard(opp.hand, 'Intermission');
+        if (ic) discard.push(ic);
+        track('Intermission');
+        skipped = true;
+        break;
+      }
+    }
+
+    if (!skipped) {
+      // PROP MASTER
+      let propMastered = false;
+      if (simHasCard(player.hand, 'Prop Master') && simShouldPlay('Prop Master', cfg, sit0, true)) {
+        const pc = simRemoveCard(player.hand, 'Prop Master');
+        if (pc) discard.push(pc);
+        track('Prop Master');
+        simAwardToken(player, 'propMaster', tokenSources);
+        propMastered = true;
+      }
+
+      if (!propMastered) {
+        // WARM-UP ACT
+        let usedWarmUp = false;
+        if (simHasCard(player.hand, 'Warm-Up Act') && simShouldPlay('Warm-Up Act', cfg, sit0, true)) {
+          const wc = simRemoveCard(player.hand, 'Warm-Up Act');
+          if (wc) discard.push(wc);
+          track('Warm-Up Act');
+          simEnsureDeck(deck, discard);
+          const c1 = deck.length > 0 ? deck.pop() : null;
+          simEnsureDeck(deck, discard);
+          const c2 = deck.length > 0 ? deck.pop() : null;
+          if (c1 && c2) {
+            const v1 = simCardValue(cardByNumber(c1), player);
+            const v2 = simCardValue(cardByNumber(c2), player);
+            const [kept, ret] = v1 >= v2 ? [c1, c2] : [c2, c1];
+            deck.unshift(ret);
+            simPerformTurn(kept, player, players, deck, discard, cfg, tokenSources, powerPlayed, 0);
+          } else if (c1) {
+            simPerformTurn(c1, player, players, deck, discard, cfg, tokenSources, powerPlayed, 0);
+          }
+          usedWarmUp = true;
+        }
+
+        if (!usedWarmUp) {
+          simEnsureDeck(deck, discard);
+          if (deck.length === 0) break;
+          simPerformTurn(deck.pop(), player, players, deck, discard, cfg, tokenSources, powerPlayed, 0);
+        }
+      }
+
+      // POST-TURN: Stage Hook
+      if (simHasCard(player.hand, 'Stage Hook') &&
+          simShouldPlay('Stage Hook', cfg, simGetSituation(players, current, null), true)) {
+        const target = players.filter(p => p.idx !== current && p.hand.length > 0)
+          .sort((a, b) => b.tokens - a.tokens)[0];
+        if (target) {
+          const sc = simRemoveCard(player.hand, 'Stage Hook');
+          if (sc) discard.push(sc);
+          track('Stage Hook');
+          let bestV = -1, bestI = -1;
+          target.hand.forEach((n, i) => { const v = simCardValue(cardByNumber(n), target); if (v > bestV) { bestV = v; bestI = i; } });
+          if (bestI !== -1) discard.push(target.hand.splice(bestI, 1)[0]);
+        }
+      }
+
+      // POST-TURN: Pie In The Face
+      if (simHasCard(player.hand, 'Pie In The Face') &&
+          simShouldPlay('Pie In The Face', cfg, simGetSituation(players, current, null), true)) {
+        const target = players.filter(p => p.idx !== current && p.hand.length > 0)
+          .sort((a, b) => b.tokens - a.tokens)[0];
+        if (target) {
+          const pc = simRemoveCard(player.hand, 'Pie In The Face');
+          if (pc) discard.push(pc);
+          track('Pie In The Face');
+          let bestV = -1, bestI = -1;
+          target.hand.forEach((n, i) => { const v = simCardValue(cardByNumber(n), player); if (v > bestV) { bestV = v; bestI = i; } });
+          if (bestI !== -1) player.hand.push(target.hand.splice(bestI, 1)[0]);
+        }
+      }
+
+      // POST-TURN: Stage Left Stage Right
+      if (simHasCard(player.hand, 'Stage Left Stage Right') &&
+          simShouldPlay('Stage Left Stage Right', cfg, simGetSituation(players, current, null), true)) {
+        const slc = simRemoveCard(player.hand, 'Stage Left Stage Right');
+        if (slc) discard.push(slc);
+        track('Stage Left Stage Right');
+        // Each player passes their least-valuable card to the left
+        const passed = players.map(p => {
+          if (p.hand.length === 0) return null;
+          let worstV = Infinity, worstI = -1;
+          p.hand.forEach((n, i) => { const v = simCardValue(cardByNumber(n), p); if (v < worstV) { worstV = v; worstI = i; } });
+          return worstI !== -1 ? p.hand.splice(worstI, 1)[0] : null;
+        });
+        players.forEach((p, i) => { const r = passed[(i - 1 + players.length) % players.length]; if (r != null) p.hand.push(r); });
+      }
+    }
+
+    if (player.tokens >= TOKEN_GOAL) {
+      return { winner: current, turns: turn + 1, tokenSources, powerPlayed };
+    }
+    current = (current + 1) % numP;
+  }
+
+  // Safety fallback
+  const best = players.reduce((a, b) => b.tokens > a.tokens ? b : a, players[0]);
+  return { winner: best.idx, turns: 600, tokenSources, powerPlayed };
+}
+
+function simRun(cfg) {
+  const results = {
+    simCount: cfg.simCount,
+    wins: new Array(cfg.numPlayers).fill(0),
+    turnCounts: [],
+    totalTokenSources: {},
+    totalPowerPlayed: {},
+  };
+  for (let i = 0; i < cfg.simCount; i++) {
+    const game = simRunGame(cfg);
+    if (game.winner >= 0 && game.winner < cfg.numPlayers) results.wins[game.winner]++;
+    results.turnCounts.push(game.turns);
+    Object.entries(game.tokenSources).forEach(([k, v]) => {
+      results.totalTokenSources[k] = (results.totalTokenSources[k] || 0) + v;
+    });
+    Object.entries(game.powerPlayed).forEach(([k, v]) => {
+      results.totalPowerPlayed[k] = (results.totalPowerPlayed[k] || 0) + v;
+    });
+  }
+  return results;
+}
+
 // ===== INIT =====
 
 async function init() {
@@ -1125,6 +1910,9 @@ async function init() {
   wireCardSheet();
   wireJoin();
   wireSpectate();
+  wireSaveModal();
+  wireLogModal();
+  wireSimScreen();
 
   await load();
   subscribeRealtime();
