@@ -1,0 +1,9 @@
+{
+  "name": "pull-another-one",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Pull Another One — static site, no build step",
+  "scripts": {
+    "build": "echo 'Static site — nothing to build'"
+  }
+}
