@@ -4,6 +4,6 @@
   "version": "1.0.0",
   "description": "Pull Another One — static site, no build step",
   "scripts": {
-    "build": "echo 'Static site — nothing to build'"
+    "build": "rm -rf dist && mkdir dist && cp -r *.html *.css *.js assets data dist/"
   }
 }
