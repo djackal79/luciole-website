@@ -829,6 +829,87 @@ select option { background: #2a2a2a; }
 .log-entry-detail { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.25rem; }
 .log-entry-powers { font-size: 0.75rem; color: #c8a84b; margin-top: 0.2rem; }
 
+/* ===== TUTORIAL OVERLAY ===== */
+.tutorial-content {
+  border-top: 3px solid var(--gold);
+  max-height: 88vh;
+}
+
+.tutorial-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem 0.75rem;
+  flex-shrink: 0;
+}
+.tutorial-tag {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: rgba(227,178,60,0.1);
+  border: 1px solid #5a4a20;
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+}
+
+.tutorial-body {
+  text-align: center;
+  padding: 0.5rem 1.5rem 1rem;
+}
+
+.tutorial-portrait {
+  width: 110px;
+  aspect-ratio: 2 / 3;
+  margin: 0 auto 0.9rem;
+  border-radius: var(--radius);
+  background-color: var(--surface-2);
+  background-size: cover;
+  background-position: center;
+  border: 2px solid var(--gold);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+}
+
+.tutorial-icon { font-size: 2.6rem; margin-bottom: 0.4rem; }
+.tutorial-title { font-size: 1.35rem; font-weight: 700; margin-bottom: 0.8rem; }
+
+.tutorial-text {
+  text-align: left;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+.tutorial-text .tut-strategy {
+  color: var(--gold);
+  background: rgba(227,178,60,0.08);
+  border: 1px solid #5a4a20;
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.tutorial-footer {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.5rem 1.5rem;
+  flex-shrink: 0;
+}
+.tutorial-dots { display: flex; gap: 0.4rem; flex-shrink: 0; }
+.tutorial-dots:empty { display: none; }
+.tut-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #3a3a3a;
+  transition: background 0.2s;
+}
+.tut-dot.active { background: var(--gold); }
+.tutorial-next { flex: 1; }
+
 /* ===== PERSISTENT GAME MENU ===== */
 #game-menu-wrap {
   position: fixed;

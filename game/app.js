@@ -1,5 +1,6 @@
 import { prompts } from './data/prompts.js';
 import { cards, cardByNumber, FAMILY_REMOVED_TITLES } from './data/cards.js';
+import { INTRO_STEPS, CHARACTER_BACKSTORIES, PHASE_TIPS } from './data/tutorial.js';
 import { supabase, SESSION_ID } from './supabase.js';
 
 // ===== CONSTANTS =====
@@ -84,6 +85,7 @@ function defaultState() {
     pendingOutcome: null,
     nextTokenIndex: 0,
     familyMode: false,
+    tutorialMode: false,
     turnNumber: 0,
     turnLog: [],
     currentTurn: null,
@@ -148,6 +150,8 @@ function loadMyPlayerIndex() {
 function claimPlayerSlot(idx) {
   myPlayerIndex = idx;
   localStorage.setItem('pao_my_player', String(idx));
+  const player = state && state.players && state.players[idx];
+  if (player) maybeShowBackstory(player.character);
 }
 
 function clearMyPlayerSlot() {
@@ -366,10 +370,12 @@ function renderSetup() {
     btn.classList.toggle('active', parseInt(btn.dataset.count) === state.numPlayers);
   });
   document.getElementById('setup-family-mode').checked = state.familyMode;
+  document.getElementById('setup-tutorial-mode').checked = !!state.tutorialMode;
 
   const container = document.getElementById('player-rows');
   container.innerHTML = '';
 
+  const assignedChars = [];
   for (let i = 0; i < state.numPlayers; i++) {
     const existing = state.players[i] || {};
     const row = document.createElement('div');
@@ -393,10 +399,10 @@ function renderSetup() {
       charSelect.appendChild(opt);
     });
     if (!existing.character) {
-      const usedChars = state.players.slice(0, i).map(p => p && p.character);
-      const unused = CHARACTERS.find(c => !usedChars.includes(c.id));
+      const unused = CHARACTERS.find(c => !assignedChars.includes(c.id));
       if (unused) charSelect.value = unused.id;
     }
+    assignedChars.push(charSelect.value);
 
     const cardSelect = document.createElement('select');
     cardSelect.dataset.playerIndex = i;
@@ -571,6 +577,9 @@ function renderSpectate() {
   const myHand = me ? me.hand : [];
   myHand.forEach(n => grid.appendChild(buildHandCard(n)));
   document.getElementById('spectate-hand-empty').classList.toggle('hidden', myHand.length > 0);
+
+  maybeShowTutorial('first_spectate');
+  maybeShowMidgameTip();
 }
 
 // ===== RENDER: TURN =====
@@ -615,6 +624,9 @@ function renderTurn() {
   document.getElementById('turn-hand-empty').classList.toggle('hidden', player.hand.length > 0);
 
   document.getElementById('cash-pair-btn').classList.toggle('hidden', venueMatchCards(player).length < 2);
+
+  maybeShowTutorial('first_turn');
+  maybeShowMidgameTip();
 }
 
 function addTypeBadge(el, card) {
@@ -690,6 +702,8 @@ function renderDraw() {
     timerBlock.classList.add('hidden');
     successBlock.classList.add('hidden');
   }
+
+  maybeShowTutorial('first_draw');
 }
 
 // ===== RENDER: VERDICT =====
@@ -723,6 +737,10 @@ function renderVerdict() {
   document.getElementById('verdict-message').textContent = info.msg(card, ch);
   document.getElementById('verdict-card').style.backgroundImage = `url('assets/venues/${card.number}.jpg')`;
   document.getElementById('verdict-override').classList.add('hidden');
+
+  if (['animal','venue','power'].includes(state.pendingOutcome)) {
+    maybeShowTutorial(`first_verdict_${state.pendingOutcome}`);
+  }
 }
 
 // ===== RENDER: POSSESSIONS OVERLAY =====
@@ -857,6 +875,8 @@ function openCardSheet(cardNumber, source, playerIndex) {
   actions.appendChild(useBtn);
 
   document.getElementById('card-sheet').classList.remove('hidden');
+
+  if (source === 'hand') maybeShowTutorial('first_hand_card');
 }
 
 function closeCardSheet() {
@@ -1051,6 +1071,14 @@ function wireSetup() {
     state.familyMode = e.target.checked;
   });
 
+  document.getElementById('setup-tutorial-mode').addEventListener('change', e => {
+    state.tutorialMode = e.target.checked;
+    if (e.target.checked) {
+      resetTutorialSeen();
+      showTutorialPages([...INTRO_STEPS]);
+    }
+  });
+
   document.getElementById('simulate-btn').addEventListener('click', showSimScreen);
 
   document.getElementById('start-game-btn').addEventListener('click', () => {
@@ -1072,6 +1100,7 @@ function wireSetup() {
     state.currentPlayerIndex = 0;
     state.deck = buildDeck(state.familyMode);
     state.discard = [];
+    if (state.tutorialMode) resetTutorialSeen();
     claimPlayerSlot(0); // host becomes player 1
     goToTurn();
   });
@@ -1179,6 +1208,159 @@ function wireSpectate() {
   document.getElementById('spectate-switch-btn').addEventListener('click', showJoinScreen);
 }
 
+// ===== TUTORIAL MODE =====
+
+let tutorialQueue = [];      // queue of page-arrays awaiting display
+let tutorialPages = [];      // pages of the currently open sequence
+let tutorialPageIndex = 0;
+
+function tutorialSeen() {
+  try { return JSON.parse(localStorage.getItem('pao_tutorial_seen')) || []; }
+  catch { return []; }
+}
+
+function markTutorialSeen(stepId) {
+  const seen = tutorialSeen();
+  if (!seen.includes(stepId)) {
+    seen.push(stepId);
+    localStorage.setItem('pao_tutorial_seen', JSON.stringify(seen));
+  }
+}
+
+function resetTutorialSeen() {
+  localStorage.removeItem('pao_tutorial_seen');
+}
+
+function backstoryPage(charId) {
+  const bs = CHARACTER_BACKSTORIES[charId];
+  const ch = CHARACTERS.find(c => c.id === charId);
+  if (!bs || !ch) return null;
+  return {
+    portrait: ch.img,
+    title: `${ch.name} — ${bs.title}`,
+    body: [bs.story],
+    strategy: bs.strategy,
+  };
+}
+
+function tutorialOverlayOpen() {
+  return !document.getElementById('tutorial-overlay').classList.contains('hidden');
+}
+
+function showTutorialPages(pages) {
+  if (!pages || pages.length === 0) return;
+  if (tutorialOverlayOpen()) {
+    tutorialQueue.push(pages);
+    return;
+  }
+  tutorialPages = pages;
+  tutorialPageIndex = 0;
+  renderTutorialPage();
+  document.getElementById('tutorial-overlay').classList.remove('hidden');
+}
+
+function renderTutorialPage() {
+  const page = tutorialPages[tutorialPageIndex];
+  if (!page) return;
+
+  const portrait = document.getElementById('tutorial-portrait');
+  const icon = document.getElementById('tutorial-icon');
+  if (page.portrait) {
+    portrait.style.backgroundImage = `url('assets/characters/${page.portrait}.jpg')`;
+    portrait.classList.remove('hidden');
+    icon.classList.add('hidden');
+  } else {
+    portrait.classList.add('hidden');
+    icon.classList.remove('hidden');
+    icon.textContent = page.icon || '🎓';
+  }
+
+  document.getElementById('tutorial-title').textContent = page.title;
+
+  const text = document.getElementById('tutorial-text');
+  text.innerHTML = '';
+  (page.body || []).forEach(para => {
+    const p = document.createElement('p');
+    p.textContent = para;
+    text.appendChild(p);
+  });
+  if (page.strategy) {
+    const s = document.createElement('div');
+    s.className = 'tut-strategy';
+    s.textContent = `💡 ${page.strategy}`;
+    text.appendChild(s);
+  }
+
+  const dots = document.getElementById('tutorial-dots');
+  dots.innerHTML = '';
+  if (tutorialPages.length > 1) {
+    tutorialPages.forEach((_, i) => {
+      const d = document.createElement('span');
+      d.className = 'tut-dot' + (i === tutorialPageIndex ? ' active' : '');
+      dots.appendChild(d);
+    });
+  }
+
+  const last = tutorialPageIndex >= tutorialPages.length - 1;
+  document.getElementById('tutorial-next-btn').textContent = last ? 'Got it' : 'Next →';
+}
+
+function tutorialAdvance() {
+  if (tutorialPageIndex < tutorialPages.length - 1) {
+    tutorialPageIndex++;
+    renderTutorialPage();
+    return;
+  }
+  // Sequence done — show next queued sequence, or close
+  if (tutorialQueue.length > 0) {
+    tutorialPages = tutorialQueue.shift();
+    tutorialPageIndex = 0;
+    renderTutorialPage();
+    return;
+  }
+  document.getElementById('tutorial-overlay').classList.add('hidden');
+}
+
+function tutorialDismissAll() {
+  tutorialQueue = [];
+  document.getElementById('tutorial-overlay').classList.add('hidden');
+}
+
+// One-shot contextual tip: shows once per device, only in tutorial mode.
+function maybeShowTutorial(stepId) {
+  if (!state || !state.tutorialMode) return;
+  if (tutorialSeen().includes(stepId)) return;
+  const tip = PHASE_TIPS[stepId];
+  if (!tip) return;
+  markTutorialSeen(stepId);
+  showTutorialPages([tip]);
+}
+
+// Character backstory: shows once per character per device.
+function maybeShowBackstory(charId) {
+  if (!state || !state.tutorialMode) return;
+  const stepId = `backstory_${charId}`;
+  if (tutorialSeen().includes(stepId)) return;
+  const page = backstoryPage(charId);
+  if (!page) return;
+  markTutorialSeen(stepId);
+  showTutorialPages([page]);
+}
+
+// Once anyone reaches 2 tokens, surface the endgame strategy tip.
+function maybeShowMidgameTip() {
+  if (!state || !state.tutorialMode || !state.players) return;
+  if (state.players.some(p => p.tokens.length >= 2)) {
+    maybeShowTutorial('strategy_midgame');
+  }
+}
+
+function wireTutorial() {
+  document.getElementById('tutorial-next-btn').addEventListener('click', tutorialAdvance);
+  document.getElementById('tutorial-close').addEventListener('click', tutorialDismissAll);
+  document.getElementById('tutorial-backdrop').addEventListener('click', tutorialDismissAll);
+}
+
 // ===== GAME MENU =====
 
 function openGameMenu() {
@@ -1218,6 +1400,16 @@ function wireGameMenu() {
   });
   document.getElementById('gm-log').addEventListener('click', () => {
     closeGameMenu(); openLogModal();
+  });
+  document.getElementById('gm-tutorial').addEventListener('click', () => {
+    closeGameMenu();
+    const pages = [...INTRO_STEPS];
+    if (state.players && state.players.length > 0 && myPlayerIndex !== null) {
+      const me = state.players[myPlayerIndex];
+      const bs = me && backstoryPage(me.character);
+      if (bs) pages.push(bs);
+    }
+    showTutorialPages(pages);
   });
   document.getElementById('gm-reset').addEventListener('click', () => {
     closeGameMenu();
@@ -1970,6 +2162,7 @@ async function init() {
   wireJoin();
   wireSpectate();
   wireGameMenu();
+  wireTutorial();
   wireSaveModal();
   wireLogModal();
   wireSimScreen();

@@ -47,6 +47,19 @@
       </div>
     </div>
 
+    <div class="form-section">
+      <div class="family-mode-row">
+        <label class="toggle-label" for="setup-tutorial-mode">
+          Tutorial Mode 🎓
+          <span class="toggle-hint">Guides new players through rules, characters &amp; strategy</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="setup-tutorial-mode">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
     <button id="start-game-btn" class="btn-primary">Start Game</button>
     <button id="simulate-btn" class="btn-ghost sim-entry-btn">🎲 Simulate</button>
   </div>
@@ -338,6 +351,27 @@
 </div>
 
 <script type="module" src="app.js"></script>
+<!-- TUTORIAL OVERLAY -->
+<div id="tutorial-overlay" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-backdrop" id="tutorial-backdrop"></div>
+  <div class="modal-content tutorial-content">
+    <div class="tutorial-header">
+      <span class="tutorial-tag">🎓 Tutorial</span>
+      <button class="modal-close" id="tutorial-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body tutorial-body">
+      <div class="tutorial-portrait hidden" id="tutorial-portrait"></div>
+      <div class="tutorial-icon" id="tutorial-icon">🎄</div>
+      <h2 class="tutorial-title" id="tutorial-title"></h2>
+      <div class="tutorial-text" id="tutorial-text"></div>
+    </div>
+    <div class="tutorial-footer">
+      <div class="tutorial-dots" id="tutorial-dots"></div>
+      <button class="btn-primary tutorial-next" id="tutorial-next-btn">Next →</button>
+    </div>
+  </div>
+</div>
+
 <!-- PERSISTENT GAME MENU -->
 <div id="game-menu-wrap">
   <button id="game-menu-btn" aria-label="Menu">☰</button>
@@ -346,6 +380,7 @@
     <button class="game-menu-item" id="gm-switch">👤 Switch Player</button>
     <button class="game-menu-item" id="gm-save">💾 Save Game</button>
     <button class="game-menu-item" id="gm-log">📋 Game Log</button>
+    <button class="game-menu-item" id="gm-tutorial">🎓 Tutorial</button>
     <div class="game-menu-sep"></div>
     <button class="game-menu-item danger" id="gm-reset">↩ Reset Game</button>
   </div>
