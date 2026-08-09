@@ -1,0 +1,19 @@
+{
+  "$comment": "Site-level confirmed facts and UI labels. THE RULE: no confirmed fact is ever written inline in a component. Per-SKU catalogue data lives in products.json; line-level and organisational facts live here. Anything unconfirmed is a {{ }} placeholder and renders in the draft style.",
+  "line": "Nocturnal Series",
+  "labelName": "{{ LABEL NAME — Carl & Pris }}",
+  "market": "Australia",
+  "garment": "V-neck tee",
+  "motif": "Luna moth — Actias luna",
+  "leadProductHandle": "nocturnal-series-v-neck",
+  "labels": {
+    "available": "Available",
+    "unavailable": "Not yet for sale",
+    "noImagery": ["No approved", "photography yet"]
+  },
+  "seo": {
+    "description": "The Nocturnal Series — a V-neck tee carrying a Luna moth motif. In development.",
+    "productCategory": "Apparel > Tops > T-Shirts",
+    "addressCountry": "AU"
+  }
+}
