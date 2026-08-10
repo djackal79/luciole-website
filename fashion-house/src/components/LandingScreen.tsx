@@ -79,6 +79,10 @@ export default function LandingScreen() {
             Start New Game
           </button>
 
+          <button className="btn-outline w-full" onClick={() => setScreen('lobby')}>
+            ◉ Play Online — Multiplayer
+          </button>
+
           {hasGame && (
             <button className="btn-outline w-full" onClick={() => setScreen('board')}>
               Continue Game

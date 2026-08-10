@@ -1,6 +1,7 @@
 export type Screen =
   | 'landing'
   | 'setup'
+  | 'lobby'
   | 'board'
   | 'collection-builder'
   | 'card-draw'
@@ -8,6 +9,13 @@ export type Screen =
   | 'brand-dashboard'
   | 'gallery'
   | 'instructions';
+
+export interface LobbyPlayer {
+  id: string;
+  name: string;
+  role: PlayerRole;
+  isHost: boolean;
+}
 
 export type PlayerRole = 'Designer' | 'Stylist' | 'Buyer' | 'Entrepreneur';
 

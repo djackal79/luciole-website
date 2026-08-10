@@ -1,7 +1,9 @@
+import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useGameStore } from './store/gameStore';
 import LandingScreen from './components/LandingScreen';
 import SetupScreen from './components/SetupScreen';
+import LobbyScreen from './components/LobbyScreen';
 import GameBoard from './components/GameBoard';
 import CardDrawScreen from './components/CardDrawScreen';
 import CollectionBuilder from './components/CollectionBuilder';
@@ -18,13 +20,20 @@ const pageTransition = {
 };
 
 export default function App() {
-  const { screen } = useGameStore();
+  const { screen, setScreen } = useGameStore();
+
+  // Redirect to lobby if URL contains ?room=
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('room')) setScreen('lobby');
+  }, [setScreen]);
 
   return (
     <AnimatePresence mode="wait">
       <motion.div key={screen} {...pageTransition} className="min-h-screen">
         {screen === 'landing' && <LandingScreen />}
         {screen === 'setup' && <SetupScreen />}
+        {screen === 'lobby' && <LobbyScreen />}
         {screen === 'board' && <GameBoard />}
         {screen === 'card-draw' && <CardDrawScreen />}
         {screen === 'collection-builder' && <CollectionBuilder />}

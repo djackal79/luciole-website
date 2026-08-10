@@ -63,18 +63,28 @@ export default function GameBoard() {
   const {
     players, currentPlayerIndex, boardSpaces, lastDiceRoll,
     rollDice, endTurn, setScreen, turn, openBoutique, winner, resetGame,
+    isMultiplayer, localPlayerId, multiplayerRoomId,
   } = useGameStore();
 
   const [selectedSpace, setSelectedSpace] = useState<typeof boardSpaces[0] | null>(null);
   const [rollingDice, setRollingDice] = useState(false);
   const [diceDisplay, setDiceDisplay] = useState(1);
   const [showStats, setShowStats] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const currentPlayer = players[currentPlayerIndex];
   const hasRolled = lastDiceRoll !== null;
+  const isMyTurn = !isMultiplayer || players[currentPlayerIndex]?.id === localPlayerId;
+
+  const copyRoomLink = () => {
+    const url = `${window.location.origin}${window.location.pathname}?room=${multiplayerRoomId}`;
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const handleRoll = () => {
-    if (hasRolled || rollingDice) return;
+    if (hasRolled || rollingDice || !isMyTurn) return;
     setRollingDice(true);
 
     // Animate dice
@@ -105,6 +115,18 @@ export default function GameBoard() {
 
   return (
     <div className="min-h-screen bg-cream flex flex-col">
+      {/* Multiplayer status banner */}
+      {isMultiplayer && (
+        <div className={`px-4 py-2 flex items-center justify-between text-[10px] font-sans ${isMyTurn ? 'bg-gold/20 border-b border-gold/40' : 'bg-charcoal border-b border-charcoal'}`}>
+          <span className={isMyTurn ? 'text-obsidian' : 'text-pearl/70'}>
+            {isMyTurn ? '✦ Your turn — make your move' : `Waiting for ${currentPlayer?.name ?? '…'} to play`}
+          </span>
+          <button onClick={copyRoomLink} className={`uppercase tracking-widest ${isMyTurn ? 'text-obsidian/60 hover:text-obsidian' : 'text-pearl/40 hover:text-pearl/80'} transition-colors`}>
+            {copied ? 'Copied!' : `Room: ${multiplayerRoomId}`}
+          </button>
+        </div>
+      )}
+
       {/* Top bar */}
       <div className="border-b border-gold/20 px-4 py-3 flex items-center justify-between bg-pearl">
         <button onClick={() => setScreen('landing')} className="text-mink hover:text-charcoal text-xs tracking-widest uppercase font-sans">
@@ -285,7 +307,13 @@ export default function GameBoard() {
 
           {/* Action buttons */}
           <div className="flex flex-col gap-2 mt-auto">
-            {!hasRolled ? (
+            {!isMyTurn ? (
+              <div className="bg-charcoal/5 border border-gold/10 p-3 text-center">
+                <p className="text-[9px] text-mink font-sans italic">
+                  Waiting for {currentPlayer.name}…
+                </p>
+              </div>
+            ) : !hasRolled ? (
               <button className="btn-gold w-full text-[10px]" onClick={handleRoll}>
                 Roll Dice
               </button>
