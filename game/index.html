@@ -2,389 +2,277 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Pull Another One</title>
-  <link rel="stylesheet" href="style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pull Another One — The Christmas Cracker Comedy Party Game</title>
+  <meta name="description" content="Pull Another One is a party game for 3–8 players. Draw a card, perform on the spot, and race to collect 3 Prop Tokens. From Luciole Designs.">
+  <link rel="stylesheet" href="site.css">
 </head>
 <body>
 
-<!-- SETUP SCREEN -->
-<div id="setup-screen" class="screen">
-  <div class="setup-header">
-    <div class="game-logo">🎄</div>
-    <h1>Pull Another One</h1>
-    <p class="subtitle">First to 3 Prop Tokens wins</p>
+<nav class="site-nav">
+  <div class="wrap">
+    <a class="brand" href="index.html"><span class="brand-mark">🎄</span> Pull Another One</a>
+    <div class="nav-links">
+      <a href="rules.html">How to Play</a>
+      <a href="index.html#characters">Characters</a>
+      <a href="support.html">Support</a>
+      <a class="nav-cta" href="play.html">Try the App</a>
+    </div>
   </div>
+</nav>
 
-  <div class="setup-body">
-    <div class="form-section">
-      <label class="form-label">Number of Players</label>
-      <div class="count-selector" id="player-count-selector">
-        <button class="count-btn" data-count="3">3</button>
-        <button class="count-btn" data-count="4">4</button>
-        <button class="count-btn active" data-count="5">5</button>
-        <button class="count-btn" data-count="6">6</button>
-        <button class="count-btn" data-count="7">7</button>
-        <button class="count-btn" data-count="8">8</button>
+<!-- HERO -->
+<header class="hero">
+  <div class="wrap">
+    <span class="badge">🎄 Coming Soon</span>
+    <h1>Pull another one.<br>See what happens.</h1>
+    <p class="tagline">The Christmas cracker comedy party game for 3–8 players. Draw a card, perform on the spot — a joke, a song, a mime, a scene — and race your table to 3 Prop Tokens.</p>
+    <div class="btn-row">
+      <a class="btn btn-gold" href="#notify">🔔 Notify Me at Launch</a>
+      <a class="btn btn-outline" href="play.html">🎲 Try the Free Digital Companion</a>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat"><b>3–8</b><span>Players</span></div>
+      <div class="hero-stat"><b>4</b><span>Venues</span></div>
+      <div class="hero-stat"><b>8</b><span>Characters</span></div>
+      <div class="hero-stat"><b>52</b><span>Performance Cards</span></div>
+    </div>
+  </div>
+</header>
+
+<!-- WHAT IS IT -->
+<section class="block">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">The Game</div>
+      <h2>Everyone at the table is the entertainment</h2>
+      <p>No screens to hide behind, no downtime between turns. Every card sends someone into the spotlight — and everyone else gets a vote on whether they nailed it.</p>
+    </div>
+    <div class="info-grid">
+      <div class="info-card">
+        <div class="icon">🎴</div>
+        <h3>Draw &amp; Perform</h3>
+        <p>Flip a Performance Card. It sets your venue and your animal. Perform the next prompt from your own Prompt Card — jokes, songs, mime, or acting, in order, no cherry-picking.</p>
+      </div>
+      <div class="info-card">
+        <div class="icon">🗳️</div>
+        <h3>The Table Decides</h3>
+        <p>Depending on the prompt, you're judged by majority vote, by whether the table can see it happen, or by a single named judge. No mercy, no re-dos.</p>
+      </div>
+      <div class="info-card">
+        <div class="icon">🏆</div>
+        <h3>Race to 3 Tokens</h3>
+        <p>Match your Character's animal or venue to bank rewards fast, or hoard Performance Cards for their chaos powers. First to 3 Prop Tokens takes a bow and wins.</p>
       </div>
     </div>
+  </div>
+</section>
 
-    <div class="form-section">
-      <label class="form-label">Players (Character &amp; Prompt Card)</label>
-      <div id="player-rows"></div>
+<!-- VENUES -->
+<section class="block alt">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Four Stages</div>
+      <h2>Every card sends you to a different venue</h2>
+      <p>Each venue calls for a different kind of performance — and only Characters who belong there can cash cards in fast.</p>
     </div>
-
-    <div class="form-section">
-      <div class="family-mode-row">
-        <label class="toggle-label" for="setup-family-mode">
-          Family Mode
-          <span class="toggle-hint">Removes Heckler &amp; Mime Time, hides adult prompts</span>
-        </label>
-        <label class="toggle">
-          <input type="checkbox" id="setup-family-mode">
-          <span class="toggle-slider"></span>
-        </label>
+    <div class="venue-grid">
+      <div class="venue-card comedy" style="background-image:url('assets/venues/1.jpg')">
+        <div class="venue-card-body">
+          <div class="venue-icon">🎤</div>
+          <h3>The Comedy Club</h3>
+          <p>Tell jokes — setup, punchline, deadpan delivery.</p>
+        </div>
       </div>
-    </div>
-
-    <div class="form-section">
-      <div class="family-mode-row">
-        <label class="toggle-label" for="setup-tutorial-mode">
-          Tutorial Mode 🎓
-          <span class="toggle-hint">Guides new players through rules, characters &amp; strategy</span>
-        </label>
-        <label class="toggle">
-          <input type="checkbox" id="setup-tutorial-mode">
-          <span class="toggle-slider"></span>
-        </label>
+      <div class="venue-card rsl" style="background-image:url('assets/venues/14.jpg')">
+        <div class="venue-card-body">
+          <div class="venue-icon">🎵</div>
+          <h3>The RSL</h3>
+          <p>Sing or rhyme — lyrics, rhythm, improvised verse.</p>
+        </div>
       </div>
-    </div>
-
-    <button id="start-game-btn" class="btn-primary">Start Game</button>
-    <button id="simulate-btn" class="btn-ghost sim-entry-btn">🎲 Simulate</button>
-  </div>
-</div>
-
-<!-- TURN SCREEN -->
-<div id="turn-screen" class="screen hidden">
-  <div class="turn-header">
-    <div class="char-card-wrap" id="turn-char-card" aria-hidden="true"></div>
-    <div class="player-info">
-      <div class="player-name-display" id="turn-player-name">Player 1</div>
-      <div class="player-meta">
-        <span id="turn-player-character">Kookaburra</span>
-        <span class="dot">·</span>
-        <span id="turn-player-venue">🎤 Comedy Club</span>
+      <div class="venue-card show" style="background-image:url('assets/venues/27.jpg')">
+        <div class="venue-card-body">
+          <div class="venue-icon">🎪</div>
+          <h3>The Royal Show</h3>
+          <p>Clown around — mime, physical stunts, slapstick.</p>
+        </div>
       </div>
-    </div>
-    <button class="btn-allplayers" id="turn-allplayers-btn">All Players</button>
-  </div>
-
-  <div class="token-bar" id="turn-token-bar"></div>
-
-  <div class="turn-body">
-    <div class="hand-section">
-      <div class="section-title">Hand <span class="section-hint">tap a card to use its power</span></div>
-      <div class="hand-grid" id="turn-hand-grid"></div>
-      <div class="hand-empty" id="turn-hand-empty">No Performance Cards yet — draw and perform to collect them.</div>
-    </div>
-  </div>
-
-  <div class="turn-actions">
-    <button class="btn-cash hidden" id="cash-pair-btn">🔁 Cash a Pair → Token</button>
-    <button class="btn-primary" id="draw-btn">🎴 Draw Performance Card</button>
-  </div>
-
-  <div class="settings-row">
-    <div class="family-mode-row">
-      <label class="toggle-label small" for="turn-family-mode">Family Mode</label>
-      <label class="toggle">
-        <input type="checkbox" id="turn-family-mode">
-        <span class="toggle-slider"></span>
-      </label>
-    </div>
-    <div class="settings-btns">
-      <button class="btn-ghost" id="save-game-btn">💾 Save</button>
-      <button class="btn-ghost" id="log-btn">📋 Log</button>
-      <button class="btn-ghost" id="switch-player-btn">Switch</button>
-      <button class="btn-ghost" id="reset-btn">Reset</button>
-    </div>
-  </div>
-</div>
-
-<!-- DRAW / PERFORM SCREEN -->
-<div id="draw-screen" class="screen hidden">
-  <div class="draw-header" id="draw-header">
-    <button class="back-btn" id="draw-back-btn">← Back</button>
-    <div class="draw-venue-label" id="draw-venue-label">🎤 The Comedy Club</div>
-    <button class="btn-allplayers small" id="draw-allplayers-btn">All</button>
-  </div>
-
-  <div class="draw-body">
-    <div class="drawn-card" id="drawn-card"></div>
-    <div class="drawn-card-meta">
-      <div class="drawn-card-title" id="drawn-card-title">The Ad-Lib</div>
-      <div class="drawn-card-animal" id="drawn-card-animal">🐾 Kookaburra · 🎤 Comedy Club</div>
-      <div class="drawn-card-power" id="drawn-card-power"></div>
-    </div>
-
-    <div class="perform-block">
-      <div class="section-title">Your Prompt <span class="section-hint" id="perform-cardno">Card #1</span></div>
-      <div class="prompt-text" id="draw-prompt-text">Tell a joke about the person to your left.</div>
-
-      <div class="timer-block hidden" id="timer-block">
-        <div class="timer-display" id="timer-display">0:30</div>
-        <button class="btn-timer" id="timer-btn">Start Timer</button>
-      </div>
-
-      <div class="success-block" id="draw-success-block">
-        <span class="success-icon" id="success-icon">🗳️</span>
-        <div class="success-text-wrap">
-          <div class="success-label" id="success-label">Majority vote</div>
-          <div class="success-text" id="success-text"></div>
+      <div class="venue-card play" style="background-image:url('assets/venues/40.jpg')">
+        <div class="venue-card-body">
+          <div class="venue-icon">🎭</div>
+          <h3>The School Play</h3>
+          <p>Act — accents, emotions, roleplay, impressions.</p>
         </div>
       </div>
     </div>
   </div>
+</section>
 
-  <div class="prompt-footer">
-    <button class="btn-fail" id="fail-btn">✗ Fail</button>
-    <button class="btn-pass" id="success-btn">✓ Nailed It</button>
-  </div>
-</div>
-
-<!-- VERDICT SCREEN -->
-<div id="verdict-screen" class="screen hidden">
-  <div class="verdict-topbar">
-    <button class="btn-allplayers small" id="verdict-allplayers-btn">All Players</button>
-  </div>
-  <div class="verdict-content">
-    <div class="verdict-icon" id="verdict-icon">🐾</div>
-    <h2 id="verdict-title">Animal Affinity!</h2>
-    <p id="verdict-message">The animal matches your character — take a Prop Token.</p>
-    <div class="verdict-card" id="verdict-card"></div>
-    <button class="btn-primary" id="verdict-continue-btn">Continue →</button>
-    <button class="btn-ghost verdict-change" id="verdict-change-btn">Wrong call? Change…</button>
-    <div class="verdict-override hidden" id="verdict-override">
-      <button class="override-btn" data-outcome="animal">🐾 Animal match → Token</button>
-      <button class="override-btn" data-outcome="venue">✅ Venue match → Keep card</button>
-      <button class="override-btn" data-outcome="power">❌ No match → Keep card</button>
+<!-- CHARACTERS -->
+<section class="block" id="characters">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Pick Your Animal</div>
+      <h2>8 Australian characters, 8 comic archetypes</h2>
+      <p>Every Character fixes your home venue and your animal — the two things every Performance Card checks against.</p>
+    </div>
+    <div class="char-grid">
+      <div class="char-card">
+        <div class="char-photo" style="background-image:url('assets/characters/1.jpg')"></div>
+        <div class="char-card-body">
+          <h3>Kookaburra</h3>
+          <p class="char-archetype">The Heckled Stand-up</p>
+          <span class="char-venue-pill pill-comedy">🎤 Comedy Club</span>
+        </div>
+      </div>
+      <div class="char-card">
+        <div class="char-photo" style="background-image:url('assets/characters/2.jpg')"></div>
+        <div class="char-card-body">
+          <h3>Cockatoo</h3>
+          <p class="char-archetype">The Bitter Satirist</p>
+          <span class="char-venue-pill pill-comedy">🎤 Comedy Club</span>
+        </div>
+      </div>
+      <div class="char-card">
+        <div class="char-photo" style="background-image:url('assets/characters/3.jpg')"></div>
+        <div class="char-card-body">
+          <h3>Quokka</h3>
+          <p class="char-archetype">The Sweaty Warm-up Act</p>
+          <span class="char-venue-pill pill-rsl">🎵 The RSL</span>
+        </div>
+      </div>
+      <div class="char-card">
+        <div class="char-photo" style="background-image:url('assets/characters/4.jpg')"></div>
+        <div class="char-card-body">
+          <h3>Magpie</h3>
+          <p class="char-archetype">The Tragic Songbird</p>
+          <span class="char-venue-pill pill-rsl">🎵 The RSL</span>
+        </div>
+      </div>
+      <div class="char-card">
+        <div class="char-photo" style="background-image:url('assets/characters/5.jpg')"></div>
+        <div class="char-card-body">
+          <h3>Emu</h3>
+          <p class="char-archetype">The Chaotic Prop Comic</p>
+          <span class="char-venue-pill pill-show">🎪 Royal Show</span>
+        </div>
+      </div>
+      <div class="char-card">
+        <div class="char-photo" style="background-image:url('assets/characters/6.jpg')"></div>
+        <div class="char-card-body">
+          <h3>Galah</h3>
+          <p class="char-archetype">The Drunken Clown</p>
+          <span class="char-venue-pill pill-show">🎪 Royal Show</span>
+        </div>
+      </div>
+      <div class="char-card">
+        <div class="char-photo" style="background-image:url('assets/characters/7.jpg')"></div>
+        <div class="char-card-body">
+          <h3>Echidna</h3>
+          <p class="char-archetype">The Pretentious Improviser</p>
+          <span class="char-venue-pill pill-play">🎭 School Play</span>
+        </div>
+      </div>
+      <div class="char-card">
+        <div class="char-photo" style="background-image:url('assets/characters/8.jpg')"></div>
+        <div class="char-card-body">
+          <h3>Platypus</h3>
+          <p class="char-archetype">The Deadpan Magician</p>
+          <span class="char-venue-pill pill-play">🎭 School Play</span>
+        </div>
+      </div>
     </div>
   </div>
-</div>
+</section>
 
-<!-- WIN SCREEN -->
-<div id="win-screen" class="screen hidden">
-  <div class="win-content">
-    <div class="win-icon">🏆</div>
-    <h2>Take a Bow!</h2>
-    <p id="win-message">Player 1 collected 3 Prop Tokens and wins.</p>
-    <button class="btn-primary" id="win-newgame-btn">New Game</button>
-  </div>
-</div>
-
-<!-- JOIN SCREEN -->
-<div id="join-screen" class="screen hidden">
-  <div class="join-header">
-    <div class="game-logo">🎄</div>
-    <h1>Pull Another One</h1>
-    <p class="subtitle" id="join-subtitle">Game in progress — who are you?</p>
-  </div>
-  <div class="join-body">
-    <div id="join-back-row" class="hidden">
-      <button class="btn-ghost join-back-btn" id="join-back-btn">← Back</button>
+<!-- TOKENS -->
+<section class="block alt">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">The Goal</div>
+      <h2>First to 3 Prop Tokens wins</h2>
+      <p>Eight collectible tokens, each with its own name and story. Grab any three and take your bow.</p>
     </div>
-    <div id="join-player-list"></div>
+    <div class="token-strip">
+      <div class="token-item"><div class="token-img" style="background-image:url('assets/token/1. The golden mike.png')"></div><span>The Golden Mic</span></div>
+      <div class="token-item"><div class="token-img" style="background-image:url('assets/token/2. The script scroll.png')"></div><span>The Script Scroll</span></div>
+      <div class="token-item"><div class="token-img" style="background-image:url('assets/token/3. The gilden gavel.png')"></div><span>The Giggle Gavel</span></div>
+      <div class="token-item"><div class="token-img" style="background-image:url('assets/token/4. the tiny trombone.png')"></div><span>The Tiny Trombone</span></div>
+      <div class="token-item"><div class="token-img" style="background-image:url('assets/token/5. The rubber chicken.png')"></div><span>The Rubber Chicken</span></div>
+      <div class="token-item"><div class="token-img" style="background-image:url('assets/token/6 The banana skin.png')"></div><span>The Banana Skin</span></div>
+      <div class="token-item"><div class="token-img" style="background-image:url('assets/token/7. The mask of comedy.png')"></div><span>The Mask of Comedy</span></div>
+      <div class="token-item"><div class="token-img" style="background-image:url('assets/token/8. The prop box.png')"></div><span>The Prop Box</span></div>
+    </div>
   </div>
-</div>
+</section>
 
-<!-- SPECTATE SCREEN -->
-<div id="spectate-screen" class="screen hidden">
-  <div class="spectate-header">
-    <div class="spectate-turn-info">
-      <div class="char-card-wrap" id="spectate-active-char" aria-hidden="true"></div>
+<!-- COMPANION APP -->
+<section class="block">
+  <div class="wrap">
+    <div class="feature-split">
       <div>
-        <div class="spectate-active-name" id="spectate-active-name">Player 1</div>
-        <div class="spectate-active-meta" id="spectate-active-meta">Kookaburra · 🎤 Comedy Club</div>
-        <div class="spectate-phase-label" id="spectate-phase-label">Drawing…</div>
+        <div class="eyebrow">Free Digital Companion</div>
+        <h2>The app plays referee, so you don't have to</h2>
+        <p style="color:var(--text-muted); margin-top:0.75rem;">No rulebook flipping mid-performance. The Companion App tracks decks, hands, tokens and powers for you, and works on any phone or tablet at the table.</p>
+        <ul class="feature-list">
+          <li>Auto-detects Animal Affinity and Venue Match — no manual scoring</li>
+          <li>Built-in Tutorial Mode walks new players through their first game</li>
+          <li>Family Mode removes adult prompts and two chaos cards instantly</li>
+          <li>Real-time multiplayer — pass devices, or everyone joins from their own</li>
+          <li>Save games, review the turn log, or run a rules simulation</li>
+        </ul>
+        <div class="btn-row" style="margin-top:1.75rem;">
+          <a class="btn btn-gold" href="play.html">🎲 Open the Companion App</a>
+          <a class="btn btn-outline" href="rules.html">Read the Full Rules</a>
+        </div>
+      </div>
+      <div class="phone-mock">
+        <div class="emoji">🎄</div>
+        <h4>Pull Another One</h4>
+        <p>First to 3 Prop Tokens wins</p>
+        <a class="btn btn-outline" href="play.html" style="width:100%;">Start a Game →</a>
       </div>
     </div>
-    <button class="btn-allplayers" id="spectate-allplayers-btn">All Players</button>
   </div>
+</section>
 
-  <div class="spectate-drawn-wrap hidden" id="spectate-drawn-wrap">
-    <div class="spectate-drawn-card" id="spectate-drawn-card"></div>
-    <div class="spectate-drawn-title" id="spectate-drawn-title"></div>
+<!-- NOTIFY -->
+<section class="block alt" id="notify">
+  <div class="wrap notify-card">
+    <div class="eyebrow">Coming Soon</div>
+    <h2>Be the first to know when it hits shelves</h2>
+    <p style="color:var(--text-muted); margin-top:0.75rem;">Pull Another One is in final testing. Drop your email and we'll let you know the moment it's available.</p>
+    <form class="notify-row" action="mailto:carl.heinrich@gmail.com" method="post" enctype="text/plain">
+      <input type="email" name="email" placeholder="you@example.com" required>
+      <button type="submit" class="btn btn-gold">Notify Me</button>
+    </form>
+    <p class="notify-note">Or just email us directly at <a href="mailto:carl.heinrich@gmail.com" style="color:var(--gold);">carl.heinrich@gmail.com</a> — no spam, just a launch heads-up.</p>
   </div>
+</section>
 
-  <div class="token-bar" id="spectate-token-bar"></div>
-
-  <div class="spectate-hand-section">
-    <div class="section-title">Your Hand <span class="section-hint">tap a card to use its power</span></div>
-    <div class="hand-grid" id="spectate-hand-grid"></div>
-    <div class="hand-empty" id="spectate-hand-empty">No Performance Cards yet.</div>
-  </div>
-
-  <div class="spectate-footer">
-    <button class="btn-ghost" id="spectate-switch-btn">👤 Switch Player</button>
-  </div>
-</div>
-
-<!-- ALL PLAYERS (POSSESSIONS) OVERLAY -->
-<div id="possessions-overlay" class="modal hidden" role="dialog" aria-modal="true">
-  <div class="modal-backdrop" id="possessions-backdrop"></div>
-  <div class="modal-content tall">
-    <div class="modal-header">
-      <h2>All Players</h2>
-      <button class="modal-close" id="possessions-close" aria-label="Close">✕</button>
+<footer class="site-footer">
+  <div class="wrap footer-inner">
+    <div>
+      <div class="footer-brand">🎄 Pull Another One</div>
+      <p class="footer-tag">A party game by Luciole Designs. Blending playful design with technology.</p>
     </div>
-    <div class="modal-body" id="possessions-body"></div>
-  </div>
-</div>
-
-<!-- CARD / POWER SHEET -->
-<div id="card-sheet" class="modal hidden" role="dialog" aria-modal="true">
-  <div class="modal-backdrop" id="card-sheet-backdrop"></div>
-  <div class="modal-content">
-    <div class="modal-header">
-      <h2 id="card-sheet-title">Card</h2>
-      <button class="modal-close" id="card-sheet-close" aria-label="Close">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="sheet-card" id="card-sheet-img"></div>
-      <div class="sheet-animal" id="card-sheet-animal"></div>
-      <div class="sheet-type" id="card-sheet-type"></div>
-      <div class="sheet-timing-note hidden" id="card-sheet-timing-note"></div>
-      <div class="sheet-power-label">Power</div>
-      <div class="sheet-power" id="card-sheet-power"></div>
-      <div class="sheet-affinity" id="card-sheet-affinity"></div>
-      <div class="sheet-actions" id="card-sheet-actions"></div>
-    </div>
-  </div>
-</div>
-
-<!-- SIMULATION SCREEN -->
-<div id="sim-screen" class="screen hidden">
-  <div class="sim-header">
-    <button class="back-btn" id="sim-back-btn">← Back</button>
-    <div class="sim-title">🎲 Simulation</div>
-  </div>
-  <div class="sim-body">
-    <div class="sim-section">
-      <div class="form-label">Players</div>
-      <div class="count-selector" id="sim-player-count">
-        <button class="count-btn" data-count="2">2</button>
-        <button class="count-btn" data-count="3">3</button>
-        <button class="count-btn active" data-count="4">4</button>
-        <button class="count-btn" data-count="5">5</button>
-        <button class="count-btn" data-count="6">6</button>
-        <button class="count-btn" data-count="7">7</button>
-        <button class="count-btn" data-count="8">8</button>
+    <div class="footer-links">
+      <div class="footer-col">
+        <h4>Game</h4>
+        <a href="rules.html">How to Play</a>
+        <a href="index.html#characters">Characters</a>
+        <a href="play.html">Digital Companion</a>
+      </div>
+      <div class="footer-col">
+        <h4>Help</h4>
+        <a href="support.html">Support &amp; FAQ</a>
+        <a href="mailto:carl.heinrich@gmail.com">Contact Us</a>
       </div>
     </div>
-    <div class="sim-section">
-      <div class="form-label">Games to Simulate</div>
-      <div class="count-selector" id="sim-count-sel">
-        <button class="count-btn" data-count="100">100</button>
-        <button class="count-btn active" data-count="500">500</button>
-        <button class="count-btn" data-count="1000">1000</button>
-        <button class="count-btn" data-count="5000">5000</button>
-      </div>
-    </div>
-    <div class="sim-section">
-      <div class="family-mode-row">
-        <label class="toggle-label" for="sim-family-mode">Family Mode</label>
-        <label class="toggle"><input type="checkbox" id="sim-family-mode"><span class="toggle-slider"></span></label>
-      </div>
-    </div>
-    <div class="sim-section">
-      <div class="form-label">Success Rate per Venue</div>
-      <div class="sim-slider-group" id="sim-success-sliders"></div>
-    </div>
-    <div class="sim-section">
-      <div class="form-label">Power Card Play Probability</div>
-      <div class="sim-hint">Base probability of playing each card when its timing is right.</div>
-      <div class="sim-slider-group" id="sim-power-sliders"></div>
-    </div>
-    <div class="sim-section">
-      <div class="form-label">Situational Multipliers</div>
-      <div class="sim-hint">Multiplies base probability in specific game situations.</div>
-      <div class="sim-slider-group" id="sim-sit-sliders"></div>
-    </div>
-    <div class="sim-section">
-      <button class="btn-primary" id="sim-run-btn">🎲 Run Simulation</button>
-    </div>
-    <div class="sim-results hidden" id="sim-results"></div>
   </div>
-</div>
-
-<!-- SAVE / LOAD MODAL -->
-<div id="save-modal" class="modal hidden" role="dialog" aria-modal="true">
-  <div class="modal-backdrop" id="save-modal-backdrop"></div>
-  <div class="modal-content tall">
-    <div class="modal-header">
-      <h2>Save / Load Game</h2>
-      <button class="modal-close" id="save-modal-close" aria-label="Close">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-label">Save Current Game</div>
-      <div class="save-name-row">
-        <input type="text" id="save-name-input" placeholder="Save name…">
-        <button class="btn-save-now" id="save-confirm-btn">Save</button>
-      </div>
-      <div class="form-label" style="margin-top:1.25rem">Saved Games</div>
-      <div id="saves-list"><div class="saves-empty">No saves yet.</div></div>
-    </div>
-  </div>
-</div>
-
-<!-- GAME LOG MODAL -->
-<div id="log-modal" class="modal hidden" role="dialog" aria-modal="true">
-  <div class="modal-backdrop" id="log-modal-backdrop"></div>
-  <div class="modal-content tall">
-    <div class="modal-header">
-      <h2>Game Log</h2>
-      <button class="modal-close" id="log-modal-close" aria-label="Close">✕</button>
-    </div>
-    <div class="modal-body" id="log-body"><div class="saves-empty">No turns yet.</div></div>
-  </div>
-</div>
-
-<script type="module" src="app.js"></script>
-<!-- TUTORIAL OVERLAY -->
-<div id="tutorial-overlay" class="modal hidden" role="dialog" aria-modal="true">
-  <div class="modal-backdrop" id="tutorial-backdrop"></div>
-  <div class="modal-content tutorial-content">
-    <div class="tutorial-header">
-      <span class="tutorial-tag">🎓 Tutorial</span>
-      <button class="modal-close" id="tutorial-close" aria-label="Close">✕</button>
-    </div>
-    <div class="modal-body tutorial-body">
-      <div class="tutorial-portrait hidden" id="tutorial-portrait"></div>
-      <div class="tutorial-icon" id="tutorial-icon">🎄</div>
-      <h2 class="tutorial-title" id="tutorial-title"></h2>
-      <div class="tutorial-text" id="tutorial-text"></div>
-    </div>
-    <div class="tutorial-footer">
-      <div class="tutorial-dots" id="tutorial-dots"></div>
-      <button class="btn-primary tutorial-next" id="tutorial-next-btn">Next →</button>
-    </div>
-  </div>
-</div>
-
-<!-- PERSISTENT GAME MENU -->
-<div id="game-menu-wrap">
-  <button id="game-menu-btn" aria-label="Menu">☰</button>
-  <div id="game-menu-panel" class="hidden">
-    <button class="game-menu-item" id="gm-allplayers">🎭 All Players</button>
-    <button class="game-menu-item" id="gm-switch">👤 Switch Player</button>
-    <button class="game-menu-item" id="gm-save">💾 Save Game</button>
-    <button class="game-menu-item" id="gm-log">📋 Game Log</button>
-    <button class="game-menu-item" id="gm-tutorial">🎓 Tutorial</button>
-    <div class="game-menu-sep"></div>
-    <button class="game-menu-item danger" id="gm-reset">↩ Reset Game</button>
-  </div>
-</div>
+  <p class="footer-bottom">© 2026 Luciole Designs. Pull Another One is currently in development.</p>
+</footer>
 
 </body>
 </html>
