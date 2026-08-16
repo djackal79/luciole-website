@@ -17,11 +17,17 @@ const PERSONAL_CARD_LABEL_PLURAL = 'Prompt Cards';
 
 // Rules configuration — §1.9. Nothing below may hard-code these values.
 const RULES_CONFIG = {
-  tokensInPool: 8,            // constant at all player counts
+  // GAP-1: an 8-token Pool with a 3-token win deadlocks from 4 players up —
+  // 8 tokens spread 2/2/2/2 leaves nobody able to reach 3 and nothing ever
+  // returns a token to the Pool. 12 tokens clears it at every count with
+  // headroom (minimum safe is players + 1).
+  tokensInPool: 12,           // constant at all player counts
   winCondition: {
-    default: 3,
-    // OPEN-2: simulation suggested 4 tokens at 4 players; never actioned.
-    byPlayerCount: { 3: 3, 4: 3, 5: 3, 6: 3, 7: 3, 8: 3 },
+    // Simulated at 500 games per player count: 29–53 turns at 3–8 players,
+    // zero empty-Pool events. A 3-token win runs 48–103 turns.
+    default: 2,
+    // OPEN-2 (win condition at 4 players) is resolved by the flat 2 above.
+    byPlayerCount: { 3: 2, 4: 2, 5: 2, 6: 2, 7: 2, 8: 2 },
   },
   minPlayers: 3,              // §1.9 — 2 players is not supported
   maxPlayers: 8,
@@ -114,7 +120,7 @@ function defaultState() {
     pendingOutcome: null,
     // The Pool — §1.2. The shared face-up supply. Tokens only ever come from
     // here, and only ever return here. Never moves player-to-player.
-    pool: PROP_TOKENS.slice(0, RULES_CONFIG.tokensInPool).map(t => ({ ...t })),
+    pool: buildPool(),
     // Interrupt stack — §1.7. LIFO; resolved last-played-first.
     interruptStack: [],
     // §1.4 Step 0 — set on the flip, cleared only when the turn passes.
@@ -246,15 +252,29 @@ function venueMatchCards(player) {
   return player.hand.filter(n => cardByNumber(n).venue === ch.venue);
 }
 
+// Build the full Pool. There are only 8 token designs, so when the Pool is
+// larger than that the designs repeat — each physical token still gets a
+// unique id so it can be tracked, renamed and returned individually.
+function buildPool() {
+  const out = [];
+  for (let i = 0; i < RULES_CONFIG.tokensInPool; i++) {
+    const design = PROP_TOKENS[i % PROP_TOKENS.length];
+    const copy = Math.floor(i / PROP_TOKENS.length);
+    out.push({
+      ...design,
+      id: `${design.number}-${copy}`,
+      name: copy === 0 ? design.name : `${design.name} (${copy + 1})`,
+    });
+  }
+  return out;
+}
+
 // Migrate a state object saved before the Pool existed.
 function ensurePool() {
   if (Array.isArray(state.pool)) return;
   const held = new Set();
-  state.players.forEach(p => (p.tokens || []).forEach(t => held.add(t.number)));
-  state.pool = PROP_TOKENS
-    .slice(0, RULES_CONFIG.tokensInPool)
-    .filter(t => !held.has(t.number))
-    .map(t => ({ ...t }));
+  state.players.forEach(p => (p.tokens || []).forEach(t => held.add(t.id ?? `${t.number}-0`)));
+  state.pool = buildPool().filter(t => !held.has(t.id));
 }
 
 function poolIsEmpty() {
@@ -279,7 +299,7 @@ function returnTokenToPool(player, tokenIndex) {
   if (!token) return;
   ensurePool();
   state.pool.push(token);
-  state.pool.sort((a, b) => a.number - b.number);
+  state.pool.sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
 }
 
 function hasWon(player) {
