@@ -10,11 +10,11 @@
   --accent: #8B3A2A;
   --comedy: #D4A82A;
   --comedy-dark: #7a5e10;
-  --rsl: #A8341F;
-  --rsl-dark: #6B2010;
-  --show: #2A4F6E;
+  --club: #B25140;
+  --club-dark: #6B2010;
+  --show: #1B6CA8;
   --show-dark: #1A3245;
-  --play: #2A6B45;
+  --play: #1A3A2A;
   --play-dark: #1A4A2E;
   --gold: #E3B23C;
   --radius: 12px;
@@ -325,7 +325,7 @@ select option { background: #2a2a2a; }
   padding: 0.8rem 1.1rem;
 }
 .draw-header.comedy { background: var(--comedy-dark); }
-.draw-header.rsl { background: var(--rsl-dark); }
+.draw-header.the_club { background: var(--club-dark); }
 .draw-header.royal_show { background: var(--show-dark); }
 .draw-header.school_play { background: var(--play-dark); }
 .draw-venue-label { flex: 1; font-size: 1rem; font-weight: 600; }
@@ -1006,8 +1006,8 @@ body[data-phase="sim"] #game-menu-wrap { display: none; }
   border-bottom: 1px solid #2f2f2f;
 }
 .pool-bar .pool-count { color: var(--gold); font-weight: 700; }
-.pool-bar.empty { color: var(--rsl); }
-.pool-bar.empty .pool-count { color: var(--rsl); }
+.pool-bar.empty { color: var(--club); }
+.pool-bar.empty .pool-count { color: var(--club); }
 
 /* ===== INTERRUPT STACK ===== */
 #interrupt-stack {
@@ -1063,3 +1063,30 @@ body[data-phase="sim"] #game-menu-wrap { display: none; }
   cursor: pointer;
 }
 .btn-primary.disabled, .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Experimental / unverified rules toggle (MINI-CANON §3) */
+.unverified-tag {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: #1A1A1A;
+  background: var(--gold);
+  border-radius: 3px;
+  padding: 0.1rem 0.35rem;
+  margin-left: 0.35rem;
+  vertical-align: middle;
+  align-self: flex-start;  /* toggle-label is a flex column; do not stretch */
+  width: fit-content;
+}
+.unverified-banner {
+  background: rgba(227,178,60,0.12);
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.75rem;
+  font-size: 0.72rem;
+  text-align: center;
+  margin: 0 1rem 0.5rem;
+}
+.unverified-banner.hidden { display: none; }

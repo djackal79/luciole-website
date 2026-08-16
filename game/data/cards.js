@@ -9,36 +9,24 @@ const TITLES = [
   'Mime Time', 'Stage Left Stage Right', 'Giggle Box',
 ];
 
+// MINI-CANON §5.5 — card text is final. Every power's full printed text is
+// the single sentence below. There is deliberately no secondary per-character
+// affinity bonus; the AFFINITY map that used to live here was never part of
+// the ruleset and has been deleted.
 const POWER = {
-  'The Ad-Lib':            "When you fail a prompt, discard this card to ignore the failure. Draw a new Power Card and perform the new venue prompt instead.",
-  'Warm-Up Act':           "At the start of your turn, discard this card to draw 2 Power Cards instead of 1. Choose which venue to perform. Place the other face-down at the bottom of the deck.",
-  'Standing Ovation':      "When another player attempts to use a card power that targets you or your held cards, discard this card to cancel that power completely. It has no effect.",
-  'Prop Master':           "On your turn, discard this card to take 1 Prop Token from the Pool without performing. This replaces your normal draw and perform step entirely.",
-  'Improviser':            "After you successfully perform a prompt, discard this card to count that performance as matching your venue — even if it does not. Earn a Prop Token from the Pool instead of keeping the card.",
-  'Heckler':               "When another player successfully completes a prompt, discard this card before they collect their reward. They must immediately perform a second prompt for the same venue. If they succeed, they collect their reward as normal. If they fail, they get nothing.",
-  'Pie In The Face':       "On your turn, discard this card to take any 1 Power Card currently held by any other player and add it to your own held cards. You may use its power as normal.",
-  'Stage Hook':            "On your turn, discard this card to force any other player to discard 1 of their held Power Cards. You choose which card they lose. It goes to the discard pile.",
-  'Intermission':          "On any other player's turn, before they draw, discard this card to skip their entire turn. They draw nothing and perform nothing. Play passes to the next player.",
-  'Clap Back':             "When another player plays a card power that targets you, discard this card to reverse it. The power now targets the player who played it instead of you.",
-  'Mime Time':             "On any other player's turn, before they perform, discard this card to silence them for that prompt. They may not speak. If their prompt requires speaking, they automatically fail.",
-  'Stage Left Stage Right':"On your turn, discard this card to force every player to pass 1 of their held Power Cards to the player on their left simultaneously. All players must pass — including you.",
-  'Giggle Box':            "On any other player's turn, before they perform, discard this card. That player must maintain eye contact with you for the entire duration of their prompt. If they smile, laugh, or look away, they automatically fail.",
-};
-
-const AFFINITY = {
-  'The Ad-Lib':            "Kookaburra? You choose — Prop Token or Power Card on the new draw.",
-  'Warm-Up Act':          "",
-  'Standing Ovation':     "Platypus? Block the steal AND draw a bonus Power Card.",
-  'Prop Master':          "",
-  'Improviser':           "Galah? Take the Prop Token AND keep this card. Both. Somehow.",
-  'Heckler':              "Magpie? If they fail, swoop a Power Card from them too.",
-  'Pie In The Face':      "Emu? Steal it AND fire its effect immediately. Chaos.",
-  'Stage Hook':           "",
-  'Intermission':         "",
-  'Clap Back':            "",
-  'Mime Time':            "Echidna? You also pick which venue they must attempt. Prickly.",
-  'Stage Left Stage Right':"Quokka? You call it — pass left or right. Your chaos.",
-  'Giggle Box':           "Cockatoo? If they crack, steal their turn's reward too.",
+  'The Ad-Lib':            "Ignore a failure. Draw a new Power Card and perform that venue's prompt instead.",
+  'Warm-Up Act':           "Draw 2 instead of 1. Choose which venue to perform. Other card to bottom of deck.",
+  'Standing Ovation':      "Cancel a power targeting you or your held cards. No effect.",
+  'Prop Master':           "Take 1 token from the Pool without performing. Replaces draw + performance entirely.",
+  'Improviser':            "Count a success as on-venue even when it isn't. Discard this, take a token.",
+  'Heckler':               "Opponent who just succeeded must perform a second same-venue prompt before collecting. Fail = nothing.",
+  'Pie In The Face':       "Take any 1 held card from any other player.",
+  'Stage Hook':            "Force any other player to discard 1 held card, your choice which.",
+  'Intermission':          "Skip an opponent's entire turn.",
+  'Clap Back':             "Reverse a power targeting you back onto whoever played it.",
+  'Mime Time':             "Silence an opponent for their prompt. Verbal prompt = auto-fail.",
+  'Stage Left Stage Right':"Every player passes 1 held card left, simultaneously, including you.",
+  'Giggle Box':            "Opponent must hold eye contact throughout. Smile/laugh/look away = auto-fail.",
 };
 
 const TIMING = {
@@ -108,8 +96,8 @@ const TITLE_ANIMALS = {
 };
 
 function venueOf(n) {
-  if (n <= 13) return 'comedy_club';
-  if (n <= 26) return 'rsl';
+  if (n <= 13) return 'comedy_lounge';
+  if (n <= 26) return 'the_club';
   if (n <= 39) return 'royal_show';
   return 'school_play';
 }
@@ -123,7 +111,6 @@ for (let n = 1; n <= 52; n++) {
     venue: venueOf(n),
     animal: TITLE_ANIMALS[title],
     power_text: POWER[title],
-    affinity_text: AFFINITY[title],
     timing: TIMING[title],
     timing_label: TIMING_LABEL[title],
     family_safe: FAMILY_SAFE[title],

@@ -8,7 +8,7 @@ export const INTRO_STEPS = [
     body: [
       "Christmas. Crackers. Terrible jokes. Now make it a blood sport.",
       "You're a washed-up Aussie animal performer — a heckled kookaburra, a woozy galah, a magpie with a tragic past — clawing your way back to the big time one dreadful gig at a time.",
-      "First performer to collect 2 Prop Tokens takes the final bow and wins.",
+      "First performer to collect 3 Prop Tokens takes the final bow and wins.",
     ],
   },
   {
@@ -144,7 +144,7 @@ export const PHASE_TIPS = {
     body: [
       "You're watching another player's turn, but you're not powerless.",
       "🛡️ Interrupt cards fire right now: Intermission skips their whole turn, Mime Time silences their performance, Heckler forces them to do it all again, Giggle Box makes them hold eye contact with you.",
-      "Watch the leader. The moment someone gets close to 2 tokens, it's everyone's job to ruin their night.",
+      "Watch the leader. The moment someone gets close to 3 tokens, it's everyone's job to ruin their night.",
     ],
   },
   strategy_midgame: {

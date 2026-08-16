@@ -23,7 +23,7 @@
   <div class="setup-header">
     <div class="game-logo">🎄</div>
     <h1 data-game-title>Pull Another One</h1>
-    <p class="subtitle">First to 2 Prop Tokens wins</p>
+    <p class="subtitle">First to 3 Prop Tokens wins</p>
   </div>
 
   <div class="setup-body">
@@ -65,6 +65,19 @@
         </label>
         <label class="toggle">
           <input type="checkbox" id="setup-tutorial-mode">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="family-mode-row">
+        <label class="toggle-label" for="setup-fast-game">
+          Fast game <span class="unverified-tag">UNVERIFIED</span>
+          <span class="toggle-hint">Win at 2 Prop Tokens instead of 3. Not the confirmed ruleset — never play-tested at any player count.</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="setup-fast-game">
           <span class="toggle-slider"></span>
         </label>
       </div>
@@ -188,7 +201,7 @@
   <div class="win-content">
     <div class="win-icon">🏆</div>
     <h2>Take a Bow!</h2>
-    <p id="win-message">Player 1 collected 2 Prop Tokens and wins.</p>
+    <p id="win-message">Player 1 collected 3 Prop Tokens and wins.</p>
     <button class="btn-primary" id="win-newgame-btn">New Game</button>
   </div>
 </div>

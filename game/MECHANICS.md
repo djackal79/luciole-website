@@ -6,7 +6,7 @@ hand of kept Power Cards, and their Prop Tokens.
 
 ## The Goal
 
-Be the first to collect **2 Prop Tokens**.
+Be the first to collect **3 Prop Tokens**.
 
 ## The 4 Venues
 
@@ -90,7 +90,7 @@ going.
 
 ## Winning
 
-The moment a player reaches their 2nd Prop Token, the game ends and that
+The moment a player reaches their 3rd Prop Token, the game ends and that
 player takes a bow.
 
 ## Family Mode

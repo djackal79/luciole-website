@@ -16,28 +16,37 @@ const PERSONAL_CARD_LABEL = 'Prompt Card';
 const PERSONAL_CARD_LABEL_PLURAL = 'Prompt Cards';
 
 // Rules configuration — §1.9. Nothing below may hard-code these values.
+// MINI-CANON §3. 3 is the last CONFIRMED value. Do not lower it silently —
+// a previous session changed the default to 2 without flagging it, which is
+// the exact failure this config comments against. Any value below 3 is
+// unverified and must reach the player as a labelled experimental choice.
 const RULES_CONFIG = {
-  // GAP-1: an 8-token Pool with a 3-token win deadlocks from 4 players up —
-  // 8 tokens spread 2/2/2/2 leaves nobody able to reach 3 and nothing ever
-  // returns a token to the Pool. 12 tokens clears it at every count with
-  // headroom (minimum safe is players + 1).
-  tokensInPool: 12,           // constant at all player counts
+  tokensInPool: 8,
   winCondition: {
-    // Simulated at 500 games per player count: 29–53 turns at 3–8 players,
-    // zero empty-Pool events. A 3-token win runs 48–103 turns.
-    default: 2,
-    // OPEN-2 (win condition at 4 players) is resolved by the flat 2 above.
-    byPlayerCount: { 3: 2, 4: 2, 5: 2, 6: 2, 7: 2, 8: 2 },
+    default: 3,
+    byPlayerCount: {
+      3: 3,   // untested
+      4: 3,   // simulation found this too fast; 4 was the untested recommendation, never actioned
+      5: 3,   // CONFIRMED TOO SLOW / STALLS — needs a real fix, not a silent number change
+      6: 3,   // confirmed correct
+      7: 3,   // untested
+      8: 3,   // untested, Pool can plausibly run empty — see §7
+    },
   },
-  minPlayers: 3,              // §1.9 — 2 players is not supported
+  minPlayers: 3,              // §7 — 2 players is explicitly not supported
   maxPlayers: 8,
   familyMode: false,
-  // OPEN-3: 3-player Intermission consolation draw. Default off.
-  threePlayerIntermissionConsolation: false,
+  // Labelled experimental override, surfaced in the UI as "Fast game:
+  // 2 tokens, untested". Off by default so the confirmed ruleset is what
+  // runs unless the tester deliberately opts out of it.
+  fastGameUnverified: false,
+  fastGameTokens: 2,
 };
 
 // Win condition for the current table size. Never compare against a literal.
 function tokenGoal(numPlayers) {
+  // The experimental fast game is an explicit, labelled opt-in (§3).
+  if (state && state.fastGameUnverified) return RULES_CONFIG.fastGameTokens;
   const n = numPlayers != null ? numPlayers : (state && state.numPlayers);
   return RULES_CONFIG.winCondition.byPlayerCount[n] ?? RULES_CONFIG.winCondition.default;
 }
@@ -78,10 +87,10 @@ function buildTokenChip(token, clickFn) {
 // Heckled Stand-up". personalName is optional so older saved games without
 // it still render.
 const CHARACTERS = [
-  {id:'kookaburra', name:'Kookaburra', personalName:'Nev',   archetype:'The Heckled Stand-up',       venue:'comedy_club', img:'1'},
-  {id:'cockatoo',   name:'Cockatoo',   personalName:'Shazza',archetype:'The Bitter Satirist',        venue:'comedy_club', img:'2'},
-  {id:'quokka',     name:'Quokka',     personalName:'Trev',  archetype:'The Sweaty Warm-up Act',     venue:'rsl',         img:'3'},
-  {id:'magpie',     name:'Magpie',     personalName:'Timbo', archetype:'The Tragic Songbird',        venue:'rsl',         img:'4'},
+  {id:'kookaburra', name:'Kookaburra', personalName:'Nev',   archetype:'The Heckled Stand-up',       venue:'comedy_lounge', img:'1'},
+  {id:'cockatoo',   name:'Cockatoo',   personalName:'Shazza',archetype:'The Bitter Satirist',        venue:'comedy_lounge', img:'2'},
+  {id:'quokka',     name:'Quokka',     personalName:'Trev',  archetype:'The Sweaty Warm-up Act',     venue:'the_club',         img:'3'},
+  {id:'magpie',     name:'Magpie',     personalName:'Timbo', archetype:'The Tragic Songbird',        venue:'the_club',         img:'4'},
   {id:'emu',        name:'Emu',        personalName:'Bev',   archetype:'The Chaotic Prop Comic',     venue:'royal_show',  img:'5'},
   {id:'galah',      name:'Galah',      personalName:'Kel',   archetype:'The Woozy Clown',            venue:'royal_show',  img:'6'},
   {id:'echidna',    name:'Echidna',    personalName:'Simmo', archetype:'The Pretentious Improvisor', venue:'school_play', img:'7'},
@@ -89,8 +98,8 @@ const CHARACTERS = [
 ];
 
 const VENUES = {
-  comedy_club: {name:'Comedy Lounge',  icon:'🎤', cssClass:'comedy',     act:'Tell jokes'},
-  rsl:         {name:'The Club',       icon:'🎵', cssClass:'rsl',         act:'Sing or rhyme'},
+  comedy_lounge: {name:'Comedy Lounge',  icon:'🎤', cssClass:'comedy',     act:'Tell jokes'},
+  the_club:         {name:'The Club',       icon:'🎵', cssClass:'the_club',         act:'Sing or rhyme'},
   royal_show:  {name:'The Royal Show', icon:'🎪', cssClass:'royal_show',  act:'Clown around'},
   school_play: {name:'School Play',    icon:'🎭', cssClass:'school_play', act:'Act'},
 };
@@ -131,6 +140,7 @@ function defaultState() {
     drawnThisTurn: false,
     familyMode: false,
     tutorialMode: false,
+    fastGameUnverified: false,  // §3 — labelled experimental opt-in
     turnNumber: 0,
     turnLog: [],
     currentTurn: null,
@@ -160,7 +170,7 @@ async function load() {
       .select('state')
       .eq('id', SESSION_ID)
       .single();
-    if (data?.state) { state = data.state; return; }
+    if (data?.state) { state = data.state; migrateVenueKeys(); return; }
   } catch(e) {}
   state = defaultState();
 }
@@ -273,6 +283,22 @@ function buildPool() {
   return out;
 }
 
+// Venue keys were renamed for the RSL compliance fix (§1.1). Saved games and
+// live Supabase sessions still carry the old keys, so translate on load.
+const LEGACY_VENUE_KEYS = { rsl: 'the_club', comedy_club: 'comedy_lounge' };
+
+function migrateVenueKeys() {
+  if (!state || !Array.isArray(state.players)) return;
+  state.players.forEach(p => {
+    if (!p.used) return;
+    Object.entries(LEGACY_VENUE_KEYS).forEach(([oldKey, newKey]) => {
+      if (p.used[oldKey] === undefined) return;
+      p.used[newKey] = [...new Set([...(p.used[newKey] || []), ...p.used[oldKey]])];
+      delete p.used[oldKey];
+    });
+  });
+}
+
 // Migrate a state object saved before the Pool existed.
 function ensurePool() {
   if (Array.isArray(state.pool)) return;
@@ -332,9 +358,30 @@ function showPoolEmptyNotice() {
 }
 
 // Shows the shared supply on every in-game screen (§1.3 — the Pool is public).
+// §3 — while the experimental win condition is active the player must be able
+// to see, at any point in the game, that they are not on the confirmed rules.
+function renderUnverifiedBanner() {
+  if (!state || !state.players || state.players.length === 0) return;
+  ['turn-screen', 'draw-screen', 'spectate-screen'].forEach(id => {
+    const screen = document.getElementById(id);
+    if (!screen) return;
+    let bar = screen.querySelector('.unverified-banner');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.className = 'unverified-banner';
+      const anchor = screen.querySelector('.pool-bar') || screen.firstElementChild;
+      if (anchor && anchor.nextSibling) screen.insertBefore(bar, anchor.nextSibling);
+      else screen.appendChild(bar);
+    }
+    bar.textContent = `⚠️ Fast game — win at ${RULES_CONFIG.fastGameTokens} tokens. Unverified ruleset.`;
+    bar.classList.toggle('hidden', !state.fastGameUnverified);
+  });
+}
+
 function renderPoolBar() {
   if (!state || !state.players || state.players.length === 0) return;
   ensurePool();
+  renderUnverifiedBanner();
   const screens = ['turn-screen', 'draw-screen', 'spectate-screen'];
   screens.forEach(id => {
     const screen = document.getElementById(id);
@@ -523,6 +570,7 @@ function renderSetup() {
   });
   document.getElementById('setup-family-mode').checked = state.familyMode;
   document.getElementById('setup-tutorial-mode').checked = !!state.tutorialMode;
+  document.getElementById('setup-fast-game').checked = !!state.fastGameUnverified;
 
   const container = document.getElementById('player-rows');
   container.innerHTML = '';
@@ -1020,9 +1068,8 @@ function openCardSheet(cardNumber, source, playerIndex) {
     noteEl.classList.add('hidden');
   }
 
-  const aff = document.getElementById('card-sheet-affinity');
-  aff.textContent = card.affinity_text || '';
-  aff.classList.toggle('hidden', !card.affinity_text);
+  // MINI-CANON §5.5 — no affinity bonus text exists.
+  document.getElementById('card-sheet-affinity').classList.add('hidden');
 
   const actions = document.getElementById('card-sheet-actions');
   actions.innerHTML = '';
@@ -1366,6 +1413,14 @@ function wireSetup() {
     }
   });
 
+  document.getElementById('setup-fast-game').addEventListener('change', e => {
+    state.fastGameUnverified = e.target.checked;
+    if (e.target.checked) {
+      showToast(`⚠️ Fast game: win at ${RULES_CONFIG.fastGameTokens} tokens. This is NOT the confirmed ruleset and has never been play-tested.`);
+    }
+    renderCurrentPhase();
+  });
+
   document.getElementById('simulate-btn').addEventListener('click', showSimScreen);
 
   document.getElementById('start-game-btn').addEventListener('click', () => {
@@ -1380,7 +1435,7 @@ function wireSetup() {
         card_number: cardEl ? parseInt(cardEl.value) : (i + 1),
         tokens: [],
         hand: [],
-        used: {comedy_club:[], rsl:[], royal_show:[], school_play:[]},
+        used: {comedy_lounge:[], the_club:[], royal_show:[], school_play:[]},
       });
     }
     state.players = players;
@@ -1464,7 +1519,7 @@ function wireWin() {
     state = defaultState();
     state.numPlayers = keep.length;
     state.players = keep.map(p => ({
-      ...p, tokens: [], hand: [], used: {comedy_club:[], rsl:[], royal_show:[], school_play:[]},
+      ...p, tokens: [], hand: [], used: {comedy_lounge:[], the_club:[], royal_show:[], school_play:[]},
     }));
     // Keep myPlayerIndex — same player in new game
     save();
@@ -1904,7 +1959,7 @@ const DEFAULT_SIM_CONFIG = {
   numPlayers: 4,
   simCount: 500,
   familyMode: false,
-  successRates: { comedy_club: 0.65, rsl: 0.65, royal_show: 0.65, school_play: 0.65 },
+  successRates: { comedy_lounge: 0.65, the_club: 0.65, royal_show: 0.65, school_play: 0.65 },
   powerPlay: {
     'The Ad-Lib': 0.75, 'Warm-Up Act': 0.5, 'Standing Ovation': 0.6,
     'Prop Master': 0.4, 'Improviser': 0.6, 'Heckler': 0.5,
@@ -1931,8 +1986,8 @@ function renderSimScreen() {
   const successGrp = document.getElementById('sim-success-sliders');
   if (!successGrp.children.length) {
     [
-      { id: 'comedy_club', icon: '🎤', name: 'Comedy Lounge' },
-      { id: 'rsl',         icon: '🎵', name: 'The Club' },
+      { id: 'comedy_lounge', icon: '🎤', name: 'Comedy Lounge' },
+      { id: 'the_club',         icon: '🎵', name: 'The Club' },
       { id: 'royal_show',  icon: '🎪', name: 'Royal Show' },
       { id: 'school_play', icon: '🎭', name: 'School Play' },
     ].forEach(v => successGrp.appendChild(buildSliderRow(
