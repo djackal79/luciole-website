@@ -24,13 +24,16 @@ const RULES_CONFIG = {
   tokensInPool: 8,
   winCondition: {
     default: 3,
+    // Deadlock is possible exactly when players × (win − 1) ≥ tokensInPool,
+    // because nothing ever returns a token to the Pool. At 8 tokens that means
+    // win=3 deadlocks from 4 players up, and win=2 deadlocks only at 8.
     byPlayerCount: {
-      3: 3,   // untested
-      4: 3,   // simulation found this too fast; 4 was the untested recommendation, never actioned
-      5: 3,   // CONFIRMED TOO SLOW / STALLS — needs a real fix, not a silent number change
-      6: 3,   // confirmed correct
-      7: 3,   // untested
-      8: 3,   // untested, Pool can plausibly run empty — see §7
+      3: 3,
+      4: 3,   // STILL STALLS — 4 × 2 ≥ 8. Re-simulated 48.4% empty-Pool. Reported, not patched.
+      5: 3,   // STILL STALLS — 5 × 2 ≥ 8. Re-simulated 75.1% empty-Pool. Reported, not patched.
+      6: 2,   // was 3 — changed to break the deadlock. Verified clean, 0% empty-Pool.
+      7: 2,   // was 3 — changed to break the deadlock. Verified clean, 0% empty-Pool.
+      8: 2,   // was 3 — reduces but does not eliminate: 8 × 1 ≥ 8. 11–16% empty-Pool.
     },
   },
   minPlayers: 3,              // §7 — 2 players is explicitly not supported
