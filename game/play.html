@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Pull Another One — Play</title>
+  <title data-game-title-suffix=" — Play">Pull Another One — Play</title>
   <link rel="stylesheet" href="style.css">
   <style>
     #site-back-link{position:fixed;top:0.6rem;left:0.6rem;z-index:500;font-size:0.75rem;
@@ -11,6 +11,7 @@
       border-radius:999px;padding:0.35rem 0.75rem;text-decoration:none;
       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;}
     #site-back-link:hover{color:#F5ECD7;}
+    #site-back-link.hidden{display:none;}
   </style>
 </head>
 <body>
@@ -21,7 +22,7 @@
 <div id="setup-screen" class="screen">
   <div class="setup-header">
     <div class="game-logo">🎄</div>
-    <h1>Pull Another One</h1>
+    <h1 data-game-title>Pull Another One</h1>
     <p class="subtitle">First to 3 Prop Tokens wins</p>
   </div>
 
@@ -95,13 +96,13 @@
     <div class="hand-section">
       <div class="section-title">Hand <span class="section-hint">tap a card to use its power</span></div>
       <div class="hand-grid" id="turn-hand-grid"></div>
-      <div class="hand-empty" id="turn-hand-empty">No Performance Cards yet — draw and perform to collect them.</div>
+      <div class="hand-empty" id="turn-hand-empty">No Power Cards yet — draw and perform to collect them.</div>
     </div>
   </div>
 
   <div class="turn-actions">
     <button class="btn-cash hidden" id="cash-pair-btn">🔁 Cash a Pair → Token</button>
-    <button class="btn-primary" id="draw-btn">🎴 Draw Performance Card</button>
+    <button class="btn-primary" id="draw-btn">🎴 Draw Power Card</button>
   </div>
 
   <div class="settings-row">
@@ -196,7 +197,7 @@
 <div id="join-screen" class="screen hidden">
   <div class="join-header">
     <div class="game-logo">🎄</div>
-    <h1>Pull Another One</h1>
+    <h1 data-game-title>Pull Another One</h1>
     <p class="subtitle" id="join-subtitle">Game in progress — who are you?</p>
   </div>
   <div class="join-body">
@@ -231,7 +232,7 @@
   <div class="spectate-hand-section">
     <div class="section-title">Your Hand <span class="section-hint">tap a card to use its power</span></div>
     <div class="hand-grid" id="spectate-hand-grid"></div>
-    <div class="hand-empty" id="spectate-hand-empty">No Performance Cards yet.</div>
+    <div class="hand-empty" id="spectate-hand-empty">No Power Cards yet.</div>
   </div>
 
   <div class="spectate-footer">
@@ -282,7 +283,6 @@
     <div class="sim-section">
       <div class="form-label">Players</div>
       <div class="count-selector" id="sim-player-count">
-        <button class="count-btn" data-count="2">2</button>
         <button class="count-btn" data-count="3">3</button>
         <button class="count-btn active" data-count="4">4</button>
         <button class="count-btn" data-count="5">5</button>
