@@ -571,7 +571,7 @@ function renderSetup() {
     charPreview.className = 'char-preview-img';
     const getCharImg = (charId) => {
       const c = CHARACTERS.find(x => x.id === charId);
-      return c ? `url('assets/characters/${c.img}.jpg')` : '';
+      return c ? `url('assets/characters/${c.img}.png')` : '';
     };
     charPreview.style.backgroundImage = getCharImg(charSelect.value);
     charSelect.addEventListener('change', () => {
@@ -621,7 +621,7 @@ function renderJoin() {
 
     const img = document.createElement('div');
     img.className = 'join-char-img';
-    img.style.backgroundImage = `url('assets/characters/${ch.img}.jpg')`;
+    img.style.backgroundImage = `url('assets/characters/${ch.img}.png')`;
 
     const info = document.createElement('div');
     info.className = 'join-player-info';
@@ -672,7 +672,7 @@ function renderSpectate() {
   const venue = VENUES[ch.venue];
 
   document.getElementById('spectate-active-char').style.backgroundImage =
-    `url('assets/characters/${ch.img}.jpg')`;
+    `url('assets/characters/${ch.img}.png')`;
   document.getElementById('spectate-active-name').textContent =
     activePlayer.name || `Player ${state.currentPlayerIndex + 1}`;
   document.getElementById('spectate-active-meta').textContent =
@@ -691,7 +691,7 @@ function renderSpectate() {
   if (state.drawnCard && (state.phase === 'draw' || state.phase === 'verdict')) {
     const card = cardByNumber(state.drawnCard);
     document.getElementById('spectate-drawn-card').style.backgroundImage =
-      `url('assets/venues/${state.drawnCard}.jpg')`;
+      `url('assets/venues/${state.drawnCard}.png')`;
     document.getElementById('spectate-drawn-title').textContent =
       `${card.title} · ${animalName(card.animal)}`;
     drawnWrap.classList.remove('hidden');
@@ -748,7 +748,7 @@ function renderTurn() {
   document.getElementById('turn-family-mode').checked = state.familyMode;
 
   const charCard = document.getElementById('turn-char-card');
-  charCard.style.backgroundImage = `url('assets/characters/${ch.img}.jpg')`;
+  charCard.style.backgroundImage = `url('assets/characters/${ch.img}.png')`;
 
   const bar = document.getElementById('turn-token-bar');
   bar.innerHTML = '';
@@ -794,7 +794,7 @@ function buildHandCard(cardNumber) {
   const card = cardByNumber(cardNumber);
   const el = document.createElement('button');
   el.className = 'hand-card';
-  el.style.backgroundImage = `url('assets/venues/${cardNumber}.jpg')`;
+  el.style.backgroundImage = `url('assets/venues/${cardNumber}.png')`;
   addTypeBadge(el, card);
   const label = document.createElement('span');
   label.className = 'hand-card-label';
@@ -816,7 +816,7 @@ function renderDraw() {
   header.className = `draw-header ${venue.cssClass}`;
   document.getElementById('draw-venue-label').textContent = `${venue.icon} ${venue.name}`;
 
-  document.getElementById('drawn-card').style.backgroundImage = `url('assets/venues/${card.number}.jpg')`;
+  document.getElementById('drawn-card').style.backgroundImage = `url('assets/venues/${card.number}.png')`;
   document.getElementById('drawn-card-title').textContent = card.title;
   document.getElementById('drawn-card-animal').textContent =
     `🐾 ${animalName(card.animal)} · ${venue.icon} ${venue.name}`;
@@ -887,7 +887,7 @@ function renderVerdict() {
   document.getElementById('verdict-icon').textContent = info.icon;
   document.getElementById('verdict-title').textContent = info.title;
   document.getElementById('verdict-message').textContent = info.msg(card, ch);
-  document.getElementById('verdict-card').style.backgroundImage = `url('assets/venues/${card.number}.jpg')`;
+  document.getElementById('verdict-card').style.backgroundImage = `url('assets/venues/${card.number}.png')`;
   document.getElementById('verdict-override').classList.add('hidden');
 
   if (['animal','venue','power'].includes(state.pendingOutcome)) {
@@ -967,7 +967,7 @@ function renderPossessions() {
         const c = cardByNumber(n);
         const card = document.createElement('button');
         card.className = 'poss-card';
-        card.style.backgroundImage = `url('assets/venues/${n}.jpg')`;
+        card.style.backgroundImage = `url('assets/venues/${n}.png')`;
         card.title = c.title;
         card.addEventListener('click', () => openCardSheet(n, 'poss', idx));
         addTypeBadge(card, c);
@@ -996,7 +996,7 @@ function openCardSheet(cardNumber, source, playerIndex) {
   sheetContext = { cardNumber, source, playerIndex: playerIndex ?? state.currentPlayerIndex };
 
   document.getElementById('card-sheet-title').textContent = card.title;
-  document.getElementById('card-sheet-img').style.backgroundImage = `url('assets/venues/${cardNumber}.jpg')`;
+  document.getElementById('card-sheet-img').style.backgroundImage = `url('assets/venues/${cardNumber}.png')`;
   document.getElementById('card-sheet-animal').textContent = animalName(card.animal);
   document.getElementById('card-sheet-power').textContent = card.power_text;
 
@@ -1553,7 +1553,7 @@ function renderTutorialPage() {
   const portrait = document.getElementById('tutorial-portrait');
   const icon = document.getElementById('tutorial-icon');
   if (page.portrait) {
-    portrait.style.backgroundImage = `url('assets/characters/${page.portrait}.jpg')`;
+    portrait.style.backgroundImage = `url('assets/characters/${page.portrait}.png')`;
     portrait.classList.remove('hidden');
     icon.classList.add('hidden');
   } else {

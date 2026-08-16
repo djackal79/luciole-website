@@ -130,7 +130,9 @@ section.block.alt { background: var(--surface); border-top: 1px solid #2f2f2f; b
 /* ===== CHARACTERS ===== */
 .char-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.1rem; }
 .char-card { background: var(--surface); border: 1px solid #333; border-radius: var(--radius); overflow: hidden; text-align: center; }
-.char-photo { aspect-ratio: 2/3; background-size: cover; background-position: center; background-color: var(--surface-2); }
+/* Card art carries its own name, archetype and venue, so show it whole
+   rather than cropping to fill. */
+.char-photo { aspect-ratio: 744/1123; background-size: contain; background-repeat: no-repeat; background-position: center; background-color: var(--surface-2); }
 .char-card-body { padding: 0.85rem 0.75rem 1.1rem; }
 .char-card-body h3 { font-size: 1rem; font-weight: 800; }
 .char-archetype { font-size: 0.78rem; color: var(--text-muted); margin: 0.2rem 0 0.5rem; font-style: italic; }
