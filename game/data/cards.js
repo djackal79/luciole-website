@@ -1,5 +1,5 @@
 // The 52 Power Cards (the main deck).
-// Cards 1-13 = Comedy Club, 14-26 = RSL, 27-39 = Royal Show, 40-52 = School Play.
+// Cards 1-13 = Comedy Lounge, 14-26 = The Club, 27-39 = Royal Show, 40-52 = School Play.
 // Each venue group has the same 13 power "types" in the same order, but the
 // animal printed on each card varies (this drives the Animal Affinity check).
 

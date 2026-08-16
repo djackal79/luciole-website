@@ -7,7 +7,7 @@ export const INTRO_STEPS = [
     title: 'Pull Another One',
     body: [
       "Christmas. Crackers. Terrible jokes. Now make it a blood sport.",
-      "You're a washed-up Aussie animal performer — a heckled kookaburra, a drunken galah, a magpie with a tragic past — clawing your way back to the big time one dreadful gig at a time.",
+      "You're a washed-up Aussie animal performer — a heckled kookaburra, a woozy galah, a magpie with a tragic past — clawing your way back to the big time one dreadful gig at a time.",
       "First performer to collect 2 Prop Tokens takes the final bow and wins.",
     ],
   },
@@ -31,8 +31,8 @@ export const INTRO_STEPS = [
       "🏠 A home venue — their strong suit. Cards from this venue pair up into tokens, so pick a venue you can actually perform.",
       "🐾 An animal — exactly 4 cards in the deck carry your animal. Perform one successfully and it's an instant token.",
       "The four venues, and what they'll demand of you:",
-      "🎤 The Comedy Club — tell jokes. Setup, punchline, deadpan.",
-      "🎵 The RSL — sing or rhyme. Lyrics, rhythm, improvised verse.",
+      "🎤 The Comedy Lounge — tell jokes. Setup, punchline, deadpan.",
+      "🎵 The Club — sing or rhyme. Lyrics, rhythm, improvised verse.",
       "🎪 The Royal Show — clown around. Mime, stunts, slapstick.",
       "🎭 The School Play — act. Accents, emotions, impressions.",
       "Choose the venue that suits your talents — or your total lack of shame.",
@@ -44,22 +44,22 @@ export const CHARACTER_BACKSTORIES = {
   kookaburra: {
     title: 'The Heckled Stand-up',
     story: "Kooka laughs at his own material because, statistically, someone has to. Once the golden boy of the open-mic circuit, he's been booed off more stages than he's been booked on. But he keeps coming back — that unhinged cackle isn't joy, it's a survival mechanism. Deep down he knows one killer set could fix everything.",
-    strategy: "Home venue: 🎤 The Comedy Club. Hoard Comedy Club cards for pairs, and watch for the 4 kookaburra cards — each one performed is an instant token.",
+    strategy: "Home venue: 🎤 The Comedy Lounge. Hoard Comedy Lounge cards for pairs, and watch for the 4 kookaburra cards — each one performed is an instant token.",
   },
   cockatoo: {
     title: 'The Bitter Satirist',
     story: "Once the sharpest political wit on breakfast radio, Cocky was cancelled after The Incident (never ask about The Incident). Now he screeches truth to power at anyone within earshot, whether they bought a ticket or not. His crest rises when he's about to say something career-ending. It rises a lot.",
-    strategy: "Home venue: 🎤 The Comedy Club. Collect Comedy Club pairs, and hunt the 4 cockatoo cards for instant tokens.",
+    strategy: "Home venue: 🎤 The Comedy Lounge. Collect Comedy Lounge pairs, and hunt the 4 cockatoo cards for instant tokens.",
   },
   quokka: {
     title: 'The Sweaty Warm-up Act',
     story: "The happiest face in show business hides the deepest terror. Quokka has warmed up crowds for legends and been thanked by exactly none of them. Perpetually smiling, perpetually perspiring, she'd sell her own family for a headline slot. Tonight might finally be her night — if the flop sweat doesn't short out the microphone first.",
-    strategy: "Home venue: 🎵 The RSL. Pair up RSL cards for tokens, and grab the 4 quokka cards for instant wins.",
+    strategy: "Home venue: 🎵 The Club. Pair up The Club cards for tokens, and grab the 4 quokka cards for instant wins.",
   },
   magpie: {
     title: 'The Tragic Songbird',
     story: "Maggie had a voice that could stop traffic — then she started swooping the traffic instead, and the bookings dried up. Every ballad she sings is about betrayal, usually by a former bandmate, occasionally by the concept of spring. Audiences weep. Whether it's the music or fear of being swooped remains an open question.",
-    strategy: "Home venue: 🎵 The RSL. Stack RSL cards into pairs, and the 4 magpie cards are instant tokens when performed.",
+    strategy: "Home venue: 🎵 The Club. Stack The Club cards into pairs, and the 4 magpie cards are instant tokens when performed.",
   },
   emu: {
     title: 'The Chaotic Prop Comic',
@@ -67,19 +67,19 @@ export const CHARACTER_BACKSTORIES = {
     strategy: "Home venue: 🎪 The Royal Show. Pair Royal Show cards for tokens, and seize the 4 emu cards for instant glory.",
   },
   galah: {
-    title: 'The Drunken Clown',
+    title: 'The Woozy Clown',
     story: "Banned from three Royal Shows and legally required to stay 50 metres from a fourth, Galah is proof that talent and judgement are different things. Brilliant physical comedian, catastrophic decision-maker. He doesn't fall down drunk — he falls down professionally, and the crowd can never quite tell which. Neither can he.",
     strategy: "Home venue: 🎪 The Royal Show. Collect Royal Show pairs, and the 4 galah cards in the deck are instant tokens.",
   },
   echidna: {
-    title: 'The Pretentious Improviser',
+    title: 'The Pretentious Improvisor',
     story: "Echidna doesn't do comedy, darling — she does *theatre*. Every 'yes, and' comes with a lecture on Meisner technique. She once did a four-hour one-woman show about a spike. Critics called it 'long'. Prickly about feedback, prickly in general, she's certain the mainstream will catch up to her genius eventually. It has not.",
-    strategy: "Home venue: 🎭 The School Play. Pair School Play cards for tokens, and perform the 4 echidna cards for instant tokens.",
+    strategy: "Home venue: 🎭 School Play. Pair School Play cards for tokens, and perform the 4 echidna cards for instant tokens.",
   },
   platypus: {
     title: 'The Deadpan Magician',
     story: "Platypus has never smiled on stage. Or off it. Or possibly ever. His act — impossible tricks delivered with the enthusiasm of a tax audit — divides audiences into two camps: those who think he's a genius, and those who've checked if he's asleep. He is a mammal that lays eggs and detects electricity. The magic was never the act.",
-    strategy: "Home venue: 🎭 The School Play. Stack School Play pairs, and the 4 platypus cards are instant tokens when performed.",
+    strategy: "Home venue: 🎭 School Play. Stack School Play pairs, and the 4 platypus cards are instant tokens when performed.",
   },
 };
 

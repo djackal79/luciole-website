@@ -73,22 +73,26 @@ function buildTokenChip(token, clickFn) {
   return chip;
 }
 
+// Character card art (see game/data/card_manifest.csv) gives each animal a
+// proper name in addition to its species and archetype, e.g. "Nev — The
+// Heckled Stand-up". personalName is optional so older saved games without
+// it still render.
 const CHARACTERS = [
-  {id:'kookaburra', name:'Kookaburra', archetype:'The Heckled Stand-up',      venue:'comedy_club', img:'1'},
-  {id:'cockatoo',   name:'Cockatoo',   archetype:'The Bitter Satirist',        venue:'comedy_club', img:'2'},
-  {id:'quokka',     name:'Quokka',     archetype:'The Sweaty Warm-up Act',     venue:'rsl',         img:'3'},
-  {id:'magpie',     name:'Magpie',     archetype:'The Tragic Songbird',        venue:'rsl',         img:'4'},
-  {id:'emu',        name:'Emu',        archetype:'The Chaotic Prop Comic',     venue:'royal_show',  img:'5'},
-  {id:'galah',      name:'Galah',      archetype:'The Drunken Clown',          venue:'royal_show',  img:'6'},
-  {id:'echidna',    name:'Echidna',    archetype:'The Pretentious Improviser', venue:'school_play', img:'7'},
-  {id:'platypus',   name:'Platypus',   archetype:'The Deadpan Magician',       venue:'school_play', img:'8'},
+  {id:'kookaburra', name:'Kookaburra', personalName:'Nev',   archetype:'The Heckled Stand-up',       venue:'comedy_club', img:'1'},
+  {id:'cockatoo',   name:'Cockatoo',   personalName:'Shazza',archetype:'The Bitter Satirist',        venue:'comedy_club', img:'2'},
+  {id:'quokka',     name:'Quokka',     personalName:'Trev',  archetype:'The Sweaty Warm-up Act',     venue:'rsl',         img:'3'},
+  {id:'magpie',     name:'Magpie',     personalName:'Timbo', archetype:'The Tragic Songbird',        venue:'rsl',         img:'4'},
+  {id:'emu',        name:'Emu',        personalName:'Bev',   archetype:'The Chaotic Prop Comic',     venue:'royal_show',  img:'5'},
+  {id:'galah',      name:'Galah',      personalName:'Kel',   archetype:'The Woozy Clown',            venue:'royal_show',  img:'6'},
+  {id:'echidna',    name:'Echidna',    personalName:'Simmo', archetype:'The Pretentious Improvisor', venue:'school_play', img:'7'},
+  {id:'platypus',   name:'Platypus',   personalName:'Val',   archetype:'The Deadpan Magician',       venue:'school_play', img:'8'},
 ];
 
 const VENUES = {
-  comedy_club: {name:'The Comedy Club', icon:'🎤', cssClass:'comedy',     act:'Tell jokes'},
-  rsl:         {name:'The RSL',         icon:'🎵', cssClass:'rsl',         act:'Sing or rhyme'},
-  royal_show:  {name:'The Royal Show',  icon:'🎪', cssClass:'royal_show',  act:'Clown around'},
-  school_play: {name:'The School Play', icon:'🎭', cssClass:'school_play', act:'Act'},
+  comedy_club: {name:'Comedy Lounge',  icon:'🎤', cssClass:'comedy',     act:'Tell jokes'},
+  rsl:         {name:'The Club',       icon:'🎵', cssClass:'rsl',         act:'Sing or rhyme'},
+  royal_show:  {name:'The Royal Show', icon:'🎪', cssClass:'royal_show',  act:'Clown around'},
+  school_play: {name:'School Play',    icon:'🎭', cssClass:'school_play', act:'Act'},
 };
 
 const SUCCESS_DISPLAY = {
@@ -351,6 +355,15 @@ function renderPoolBar() {
   });
 }
 
+// "Nev — The Heckled Stand-up" style label from the character card art.
+function characterFullName(ch) {
+  return ch.personalName ? `${ch.personalName} — ${ch.archetype}` : ch.archetype;
+}
+
+function characterLabel(ch) {
+  return ch.personalName ? `${ch.name} (${ch.personalName})` : ch.name;
+}
+
 function animalName(id) {
   const c = CHARACTERS.find(x => x.id === id);
   return c ? c.name : id.charAt(0).toUpperCase() + id.slice(1);
@@ -533,7 +546,7 @@ function renderSetup() {
     CHARACTERS.forEach(c => {
       const opt = document.createElement('option');
       opt.value = c.id;
-      opt.textContent = `${c.name} — ${VENUES[c.venue].icon}`;
+      opt.textContent = `${characterLabel(c)} — ${VENUES[c.venue].icon}`;
       if (existing.character === c.id) opt.selected = true;
       charSelect.appendChild(opt);
     });
@@ -619,7 +632,7 @@ function renderJoin() {
 
     const meta = document.createElement('div');
     meta.className = 'join-player-meta';
-    meta.textContent = `${ch.name} · ${venue.icon} ${venue.name}`;
+    meta.textContent = `${characterLabel(ch)} · ${venue.icon} ${venue.name}`;
 
     const stats = document.createElement('div');
     stats.className = 'join-player-stats';
@@ -663,7 +676,7 @@ function renderSpectate() {
   document.getElementById('spectate-active-name').textContent =
     activePlayer.name || `Player ${state.currentPlayerIndex + 1}`;
   document.getElementById('spectate-active-meta').textContent =
-    `${ch.name} · ${venue.icon} ${venue.name}`;
+    `${characterLabel(ch)} · ${venue.icon} ${venue.name}`;
 
   const phaseLabels = {
     turn:    'Deciding what to do…',
@@ -730,7 +743,7 @@ function renderTurn() {
   const venue = VENUES[ch.venue];
 
   document.getElementById('turn-player-name').textContent = player.name || `Player ${state.currentPlayerIndex + 1}`;
-  document.getElementById('turn-player-character').textContent = ch.name;
+  document.getElementById('turn-player-character').textContent = characterLabel(ch);
   document.getElementById('turn-player-venue').textContent = `${venue.icon} ${venue.name}`;
   document.getElementById('turn-family-mode').checked = state.familyMode;
 
@@ -899,7 +912,7 @@ function renderPossessions() {
     head.className = 'poss-head';
     head.innerHTML = `
       <div class="poss-name">${escapeHtml(player.name || `Player ${idx+1}`)}</div>
-      <div class="poss-meta">${ch.name} · ${venue.icon} ${venue.name}</div>`;
+      <div class="poss-meta">${characterLabel(ch)} · ${venue.icon} ${venue.name}</div>`;
     section.appendChild(head);
 
     const tokRow = document.createElement('div');
@@ -1511,7 +1524,7 @@ function backstoryPage(charId) {
   if (!bs || !ch) return null;
   return {
     portrait: ch.img,
-    title: `${ch.name} — ${bs.title}`,
+    title: `${ch.name} — ${characterFullName(ch)}`,
     body: [bs.story],
     strategy: bs.strategy,
   };
@@ -1918,8 +1931,8 @@ function renderSimScreen() {
   const successGrp = document.getElementById('sim-success-sliders');
   if (!successGrp.children.length) {
     [
-      { id: 'comedy_club', icon: '🎤', name: 'Comedy Club' },
-      { id: 'rsl',         icon: '🎵', name: 'RSL' },
+      { id: 'comedy_club', icon: '🎤', name: 'Comedy Lounge' },
+      { id: 'rsl',         icon: '🎵', name: 'The Club' },
       { id: 'royal_show',  icon: '🎪', name: 'Royal Show' },
       { id: 'school_play', icon: '🎭', name: 'School Play' },
     ].forEach(v => successGrp.appendChild(buildSliderRow(

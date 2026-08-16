@@ -15,8 +15,8 @@ tells you what kind of performance is required:
 
 | Venue | What you do |
 |-------|-------------|
-| 🎤 The Comedy Club | Tell jokes — setup, punchline, deadpan delivery |
-| 🎵 The RSL | Sing or rhyme — lyrics, rhythm, improvised verse |
+| 🎤 Comedy Lounge | Tell jokes — setup, punchline, deadpan delivery |
+| 🎵 The Club | Sing or rhyme — lyrics, rhythm, improvised verse |
 | 🎪 The Royal Show | Clown around — mime, physical stunts, slapstick |
 | 🎭 The School Play | Act — accents, emotions, roleplay, impressions |
 
