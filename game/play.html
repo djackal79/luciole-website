@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title data-game-title-suffix=" — Play">Pull Another One — Play</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    #site-back-link{position:fixed;top:0.6rem;left:0.6rem;z-index:500;font-size:0.75rem;
+      color:#9A8E7A;background:rgba(36,36,36,0.85);border:1px solid #3a3a3a;
+      border-radius:999px;padding:0.35rem 0.75rem;text-decoration:none;
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;}
+    #site-back-link:hover{color:#F5ECD7;}
+    #site-back-link.hidden{display:none;}
+  </style>
+</head>
+<body>
+
+<a id="site-back-link" href="index.html">← Site</a>
+
+<!-- SETUP SCREEN -->
+<div id="setup-screen" class="screen">
+  <div class="setup-header">
+    <div class="game-logo">🎄</div>
+    <h1 data-game-title>Pull Another One</h1>
+    <p class="subtitle">First to 2 Prop Tokens wins</p>
+  </div>
+
+  <div class="setup-body">
+    <div class="form-section">
+      <label class="form-label">Number of Players</label>
+      <div class="count-selector" id="player-count-selector">
+        <button class="count-btn" data-count="3">3</button>
+        <button class="count-btn" data-count="4">4</button>
+        <button class="count-btn active" data-count="5">5</button>
+        <button class="count-btn" data-count="6">6</button>
+        <button class="count-btn" data-count="7">7</button>
+        <button class="count-btn" data-count="8">8</button>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <label class="form-label">Players (Character &amp; Prompt Card)</label>
+      <div id="player-rows"></div>
+    </div>
+
+    <div class="form-section">
+      <div class="family-mode-row">
+        <label class="toggle-label" for="setup-family-mode">
+          Family Mode
+          <span class="toggle-hint">Removes Heckler &amp; Mime Time, hides adult prompts</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="setup-family-mode">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="family-mode-row">
+        <label class="toggle-label" for="setup-tutorial-mode">
+          Tutorial Mode 🎓
+          <span class="toggle-hint">Guides new players through rules, characters &amp; strategy</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="setup-tutorial-mode">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <button id="start-game-btn" class="btn-primary">Start Game</button>
+    <button id="simulate-btn" class="btn-ghost sim-entry-btn">🎲 Simulate</button>
+  </div>
+</div>
+
+<!-- TURN SCREEN -->
+<div id="turn-screen" class="screen hidden">
+  <div class="turn-header">
+    <div class="char-card-wrap" id="turn-char-card" aria-hidden="true"></div>
+    <div class="player-info">
+      <div class="player-name-display" id="turn-player-name">Player 1</div>
+      <div class="player-meta">
+        <span id="turn-player-character">Kookaburra</span>
+        <span class="dot">·</span>
+        <span id="turn-player-venue">🎤 Comedy Club</span>
+      </div>
+    </div>
+    <button class="btn-allplayers" id="turn-allplayers-btn">All Players</button>
+  </div>
+
+  <div class="token-bar" id="turn-token-bar"></div>
+
+  <div class="turn-body">
+    <div class="hand-section">
+      <div class="section-title">Hand <span class="section-hint">tap a card to use its power</span></div>
+      <div class="hand-grid" id="turn-hand-grid"></div>
+      <div class="hand-empty" id="turn-hand-empty">No Power Cards yet — draw and perform to collect them.</div>
+    </div>
+  </div>
+
+  <div class="turn-actions">
+    <button class="btn-cash hidden" id="cash-pair-btn">🔁 Cash a Pair → Token</button>
+    <button class="btn-primary" id="draw-btn">🎴 Draw Power Card</button>
+  </div>
+
+  <div class="settings-row">
+    <div class="family-mode-row">
+      <label class="toggle-label small" for="turn-family-mode">Family Mode</label>
+      <label class="toggle">
+        <input type="checkbox" id="turn-family-mode">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="settings-btns">
+      <button class="btn-ghost" id="save-game-btn">💾 Save</button>
+      <button class="btn-ghost" id="log-btn">📋 Log</button>
+      <button class="btn-ghost" id="switch-player-btn">Switch</button>
+      <button class="btn-ghost" id="reset-btn">Reset</button>
+    </div>
+  </div>
+</div>
+
+<!-- DRAW / PERFORM SCREEN -->
+<div id="draw-screen" class="screen hidden">
+  <div class="draw-header" id="draw-header">
+    <button class="back-btn" id="draw-back-btn">← Back</button>
+    <div class="draw-venue-label" id="draw-venue-label">🎤 The Comedy Club</div>
+    <button class="btn-allplayers small" id="draw-allplayers-btn">All</button>
+  </div>
+
+  <div class="draw-body">
+    <div class="drawn-card" id="drawn-card"></div>
+    <div class="drawn-card-meta">
+      <div class="drawn-card-title" id="drawn-card-title">The Ad-Lib</div>
+      <div class="drawn-card-animal" id="drawn-card-animal">🐾 Kookaburra · 🎤 Comedy Club</div>
+      <div class="drawn-card-power" id="drawn-card-power"></div>
+    </div>
+
+    <div class="perform-block">
+      <div class="section-title">Your Prompt <span class="section-hint" id="perform-cardno">Card #1</span></div>
+      <div class="prompt-text" id="draw-prompt-text">Tell a joke about the person to your left.</div>
+
+      <div class="timer-block hidden" id="timer-block">
+        <div class="timer-display" id="timer-display">0:30</div>
+        <button class="btn-timer" id="timer-btn">Start Timer</button>
+      </div>
+
+      <div class="success-block" id="draw-success-block">
+        <span class="success-icon" id="success-icon">🗳️</span>
+        <div class="success-text-wrap">
+          <div class="success-label" id="success-label">Majority vote</div>
+          <div class="success-text" id="success-text"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="prompt-footer">
+    <button class="btn-fail" id="fail-btn">✗ Fail</button>
+    <button class="btn-pass" id="success-btn">✓ Nailed It</button>
+  </div>
+</div>
+
+<!-- VERDICT SCREEN -->
+<div id="verdict-screen" class="screen hidden">
+  <div class="verdict-topbar">
+    <button class="btn-allplayers small" id="verdict-allplayers-btn">All Players</button>
+  </div>
+  <div class="verdict-content">
+    <div class="verdict-icon" id="verdict-icon">🐾</div>
+    <h2 id="verdict-title">Animal Affinity!</h2>
+    <p id="verdict-message">The animal matches your character — take a Prop Token.</p>
+    <div class="verdict-card" id="verdict-card"></div>
+    <button class="btn-primary" id="verdict-continue-btn">Continue →</button>
+    <button class="btn-ghost verdict-change" id="verdict-change-btn">Wrong call? Change…</button>
+    <div class="verdict-override hidden" id="verdict-override">
+      <button class="override-btn" data-outcome="animal">🐾 Animal match → Token</button>
+      <button class="override-btn" data-outcome="venue">✅ Venue match → Keep card</button>
+      <button class="override-btn" data-outcome="power">❌ No match → Keep card</button>
+    </div>
+  </div>
+</div>
+
+<!-- WIN SCREEN -->
+<div id="win-screen" class="screen hidden">
+  <div class="win-content">
+    <div class="win-icon">🏆</div>
+    <h2>Take a Bow!</h2>
+    <p id="win-message">Player 1 collected 2 Prop Tokens and wins.</p>
+    <button class="btn-primary" id="win-newgame-btn">New Game</button>
+  </div>
+</div>
+
+<!-- JOIN SCREEN -->
+<div id="join-screen" class="screen hidden">
+  <div class="join-header">
+    <div class="game-logo">🎄</div>
+    <h1 data-game-title>Pull Another One</h1>
+    <p class="subtitle" id="join-subtitle">Game in progress — who are you?</p>
+  </div>
+  <div class="join-body">
+    <div id="join-back-row" class="hidden">
+      <button class="btn-ghost join-back-btn" id="join-back-btn">← Back</button>
+    </div>
+    <div id="join-player-list"></div>
+  </div>
+</div>
+
+<!-- SPECTATE SCREEN -->
+<div id="spectate-screen" class="screen hidden">
+  <div class="spectate-header">
+    <div class="spectate-turn-info">
+      <div class="char-card-wrap" id="spectate-active-char" aria-hidden="true"></div>
+      <div>
+        <div class="spectate-active-name" id="spectate-active-name">Player 1</div>
+        <div class="spectate-active-meta" id="spectate-active-meta">Kookaburra · 🎤 Comedy Club</div>
+        <div class="spectate-phase-label" id="spectate-phase-label">Drawing…</div>
+      </div>
+    </div>
+    <button class="btn-allplayers" id="spectate-allplayers-btn">All Players</button>
+  </div>
+
+  <div class="spectate-drawn-wrap hidden" id="spectate-drawn-wrap">
+    <div class="spectate-drawn-card" id="spectate-drawn-card"></div>
+    <div class="spectate-drawn-title" id="spectate-drawn-title"></div>
+  </div>
+
+  <div class="token-bar" id="spectate-token-bar"></div>
+
+  <div class="spectate-hand-section">
+    <div class="section-title">Your Hand <span class="section-hint">tap a card to use its power</span></div>
+    <div class="hand-grid" id="spectate-hand-grid"></div>
+    <div class="hand-empty" id="spectate-hand-empty">No Power Cards yet.</div>
+  </div>
+
+  <div class="spectate-footer">
+    <button class="btn-ghost" id="spectate-switch-btn">👤 Switch Player</button>
+  </div>
+</div>
+
+<!-- ALL PLAYERS (POSSESSIONS) OVERLAY -->
+<div id="possessions-overlay" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-backdrop" id="possessions-backdrop"></div>
+  <div class="modal-content tall">
+    <div class="modal-header">
+      <h2>All Players</h2>
+      <button class="modal-close" id="possessions-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body" id="possessions-body"></div>
+  </div>
+</div>
+
+<!-- CARD / POWER SHEET -->
+<div id="card-sheet" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-backdrop" id="card-sheet-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 id="card-sheet-title">Card</h2>
+      <button class="modal-close" id="card-sheet-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="sheet-card" id="card-sheet-img"></div>
+      <div class="sheet-animal" id="card-sheet-animal"></div>
+      <div class="sheet-type" id="card-sheet-type"></div>
+      <div class="sheet-timing-note hidden" id="card-sheet-timing-note"></div>
+      <div class="sheet-power-label">Power</div>
+      <div class="sheet-power" id="card-sheet-power"></div>
+      <div class="sheet-affinity" id="card-sheet-affinity"></div>
+      <div class="sheet-actions" id="card-sheet-actions"></div>
+    </div>
+  </div>
+</div>
+
+<!-- SIMULATION SCREEN -->
+<div id="sim-screen" class="screen hidden">
+  <div class="sim-header">
+    <button class="back-btn" id="sim-back-btn">← Back</button>
+    <div class="sim-title">🎲 Simulation</div>
+  </div>
+  <div class="sim-body">
+    <div class="sim-section">
+      <div class="form-label">Players</div>
+      <div class="count-selector" id="sim-player-count">
+        <button class="count-btn" data-count="3">3</button>
+        <button class="count-btn active" data-count="4">4</button>
+        <button class="count-btn" data-count="5">5</button>
+        <button class="count-btn" data-count="6">6</button>
+        <button class="count-btn" data-count="7">7</button>
+        <button class="count-btn" data-count="8">8</button>
+      </div>
+    </div>
+    <div class="sim-section">
+      <div class="form-label">Games to Simulate</div>
+      <div class="count-selector" id="sim-count-sel">
+        <button class="count-btn" data-count="100">100</button>
+        <button class="count-btn active" data-count="500">500</button>
+        <button class="count-btn" data-count="1000">1000</button>
+        <button class="count-btn" data-count="5000">5000</button>
+      </div>
+    </div>
+    <div class="sim-section">
+      <div class="family-mode-row">
+        <label class="toggle-label" for="sim-family-mode">Family Mode</label>
+        <label class="toggle"><input type="checkbox" id="sim-family-mode"><span class="toggle-slider"></span></label>
+      </div>
+    </div>
+    <div class="sim-section">
+      <div class="form-label">Success Rate per Venue</div>
+      <div class="sim-slider-group" id="sim-success-sliders"></div>
+    </div>
+    <div class="sim-section">
+      <div class="form-label">Power Card Play Probability</div>
+      <div class="sim-hint">Base probability of playing each card when its timing is right.</div>
+      <div class="sim-slider-group" id="sim-power-sliders"></div>
+    </div>
+    <div class="sim-section">
+      <div class="form-label">Situational Multipliers</div>
+      <div class="sim-hint">Multiplies base probability in specific game situations.</div>
+      <div class="sim-slider-group" id="sim-sit-sliders"></div>
+    </div>
+    <div class="sim-section">
+      <button class="btn-primary" id="sim-run-btn">🎲 Run Simulation</button>
+    </div>
+    <div class="sim-results hidden" id="sim-results"></div>
+  </div>
+</div>
+
+<!-- SAVE / LOAD MODAL -->
+<div id="save-modal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-backdrop" id="save-modal-backdrop"></div>
+  <div class="modal-content tall">
+    <div class="modal-header">
+      <h2>Save / Load Game</h2>
+      <button class="modal-close" id="save-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-label">Save Current Game</div>
+      <div class="save-name-row">
+        <input type="text" id="save-name-input" placeholder="Save name…">
+        <button class="btn-save-now" id="save-confirm-btn">Save</button>
+      </div>
+      <div class="form-label" style="margin-top:1.25rem">Saved Games</div>
+      <div id="saves-list"><div class="saves-empty">No saves yet.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- GAME LOG MODAL -->
+<div id="log-modal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-backdrop" id="log-modal-backdrop"></div>
+  <div class="modal-content tall">
+    <div class="modal-header">
+      <h2>Game Log</h2>
+      <button class="modal-close" id="log-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body" id="log-body"><div class="saves-empty">No turns yet.</div></div>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+<!-- TUTORIAL OVERLAY -->
+<div id="tutorial-overlay" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-backdrop" id="tutorial-backdrop"></div>
+  <div class="modal-content tutorial-content">
+    <div class="tutorial-header">
+      <span class="tutorial-tag">🎓 Tutorial</span>
+      <button class="modal-close" id="tutorial-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body tutorial-body">
+      <div class="tutorial-portrait hidden" id="tutorial-portrait"></div>
+      <div class="tutorial-icon" id="tutorial-icon">🎄</div>
+      <h2 class="tutorial-title" id="tutorial-title"></h2>
+      <div class="tutorial-text" id="tutorial-text"></div>
+    </div>
+    <div class="tutorial-footer">
+      <div class="tutorial-dots" id="tutorial-dots"></div>
+      <button class="btn-primary tutorial-next" id="tutorial-next-btn">Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- PERSISTENT GAME MENU -->
+<div id="game-menu-wrap">
+  <button id="game-menu-btn" aria-label="Menu">☰</button>
+  <div id="game-menu-panel" class="hidden">
+    <button class="game-menu-item" id="gm-allplayers">🎭 All Players</button>
+    <button class="game-menu-item" id="gm-switch">👤 Switch Player</button>
+    <button class="game-menu-item" id="gm-save">💾 Save Game</button>
+    <button class="game-menu-item" id="gm-log">📋 Game Log</button>
+    <button class="game-menu-item" id="gm-tutorial">🎓 Tutorial</button>
+    <div class="game-menu-sep"></div>
+    <button class="game-menu-item danger" id="gm-reset">↩ Reset Game</button>
+  </div>
+</div>
+
+</body>
+</html>

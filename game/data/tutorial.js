@@ -8,14 +8,14 @@ export const INTRO_STEPS = [
     body: [
       "Christmas. Crackers. Terrible jokes. Now make it a blood sport.",
       "You're a washed-up Aussie animal performer — a heckled kookaburra, a drunken galah, a magpie with a tragic past — clawing your way back to the big time one dreadful gig at a time.",
-      "First performer to collect 3 Prop Tokens takes the final bow and wins.",
+      "First performer to collect 2 Prop Tokens takes the final bow and wins.",
     ],
   },
   {
     icon: '🎴',
     title: 'How You Win',
     body: [
-      "On your turn, draw a Performance Card. It names a venue — that's tonight's gig. Your Prompt Card tells you exactly what to perform. Do it. Out loud. In front of everyone.",
+      "On your turn, draw a Power Card. It names a venue — that's tonight's gig. Your Prompt Card tells you exactly what to perform. Do it. Out loud. In front of everyone.",
       "Nail it and you're rewarded:",
       "🐾 Animal Affinity — the card's animal matches YOUR character → instant Prop Token.",
       "✅ Venue Match — the card's venue is your home turf → keep it. Two home-venue cards cash in for a token.",
@@ -89,8 +89,8 @@ export const PHASE_TIPS = {
     title: 'Your Turn',
     body: [
       "This is home base. Your Prop Tokens are up top — 3 wins the game.",
-      "Your Hand shows the Performance Cards you've kept. Tap any card to read its power and play it.",
-      "When you're ready, hit Draw Performance Card to take tonight's gig.",
+      "Your Hand shows the Power Cards you've kept. Tap any card to read its power and play it.",
+      "When you're ready, hit Draw Power Card to take tonight's gig.",
       "Got two cards from your home venue? A Cash a Pair button will appear — trade them for a token without performing a thing.",
     ],
   },
@@ -144,7 +144,7 @@ export const PHASE_TIPS = {
     body: [
       "You're watching another player's turn, but you're not powerless.",
       "🛡️ Interrupt cards fire right now: Intermission skips their whole turn, Mime Time silences their performance, Heckler forces them to do it all again, Giggle Box makes them hold eye contact with you.",
-      "Watch the leader. The moment someone gets close to 3 tokens, it's everyone's job to ruin their night.",
+      "Watch the leader. The moment someone gets close to 2 tokens, it's everyone's job to ruin their night.",
     ],
   },
   strategy_midgame: {

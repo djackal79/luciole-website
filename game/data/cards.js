@@ -1,4 +1,4 @@
-// The 52 Performance Cards (the main deck).
+// The 52 Power Cards (the main deck).
 // Cards 1-13 = Comedy Club, 14-26 = RSL, 27-39 = Royal Show, 40-52 = School Play.
 // Each venue group has the same 13 power "types" in the same order, but the
 // animal printed on each card varies (this drives the Animal Affinity check).
@@ -10,33 +10,33 @@ const TITLES = [
 ];
 
 const POWER = {
-  'The Ad-Lib':            "When you fail a prompt, discard this card to ignore the failure. Draw a new Performance Card and perform the new venue prompt instead.",
-  'Warm-Up Act':           "At the start of your turn, discard this card to draw 2 Performance Cards instead of 1. Choose which venue to perform. Place the other face-down at the bottom of the deck.",
+  'The Ad-Lib':            "When you fail a prompt, discard this card to ignore the failure. Draw a new Power Card and perform the new venue prompt instead.",
+  'Warm-Up Act':           "At the start of your turn, discard this card to draw 2 Power Cards instead of 1. Choose which venue to perform. Place the other face-down at the bottom of the deck.",
   'Standing Ovation':      "When another player attempts to use a card power that targets you or your held cards, discard this card to cancel that power completely. It has no effect.",
   'Prop Master':           "On your turn, discard this card to take 1 Prop Token from the Pool without performing. This replaces your normal draw and perform step entirely.",
   'Improviser':            "After you successfully perform a prompt, discard this card to count that performance as matching your venue — even if it does not. Earn a Prop Token from the Pool instead of keeping the card.",
   'Heckler':               "When another player successfully completes a prompt, discard this card before they collect their reward. They must immediately perform a second prompt for the same venue. If they succeed, they collect their reward as normal. If they fail, they get nothing.",
-  'Pie In The Face':       "On your turn, discard this card to take any 1 Performance Card currently held by any other player and add it to your own held cards. You may use its power as normal.",
-  'Stage Hook':            "On your turn, discard this card to force any other player to discard 1 of their held Performance Cards. You choose which card they lose. It goes to the discard pile.",
+  'Pie In The Face':       "On your turn, discard this card to take any 1 Power Card currently held by any other player and add it to your own held cards. You may use its power as normal.",
+  'Stage Hook':            "On your turn, discard this card to force any other player to discard 1 of their held Power Cards. You choose which card they lose. It goes to the discard pile.",
   'Intermission':          "On any other player's turn, before they draw, discard this card to skip their entire turn. They draw nothing and perform nothing. Play passes to the next player.",
   'Clap Back':             "When another player plays a card power that targets you, discard this card to reverse it. The power now targets the player who played it instead of you.",
   'Mime Time':             "On any other player's turn, before they perform, discard this card to silence them for that prompt. They may not speak. If their prompt requires speaking, they automatically fail.",
-  'Stage Left Stage Right':"On your turn, discard this card to force every player to pass 1 of their held Performance Cards to the player on their left simultaneously. All players must pass — including you.",
+  'Stage Left Stage Right':"On your turn, discard this card to force every player to pass 1 of their held Power Cards to the player on their left simultaneously. All players must pass — including you.",
   'Giggle Box':            "On any other player's turn, before they perform, discard this card. That player must maintain eye contact with you for the entire duration of their prompt. If they smile, laugh, or look away, they automatically fail.",
 };
 
 const AFFINITY = {
-  'The Ad-Lib':            "Kookaburra? You choose — coin or Power Card on the new draw.",
+  'The Ad-Lib':            "Kookaburra? You choose — Prop Token or Power Card on the new draw.",
   'Warm-Up Act':          "",
-  'Standing Ovation':     "Platypus? Block the steal AND draw a bonus Script Card.",
+  'Standing Ovation':     "Platypus? Block the steal AND draw a bonus Power Card.",
   'Prop Master':          "",
-  'Improviser':           "Galah? Take the coin AND keep this card. Both. Somehow.",
+  'Improviser':           "Galah? Take the Prop Token AND keep this card. Both. Somehow.",
   'Heckler':              "Magpie? If they fail, swoop a Power Card from them too.",
   'Pie In The Face':      "Emu? Steal it AND fire its effect immediately. Chaos.",
   'Stage Hook':           "",
   'Intermission':         "",
   'Clap Back':            "",
-  'Mime Time':            "Echidna? You also pick which suit they must attempt. Prickly.",
+  'Mime Time':            "Echidna? You also pick which venue they must attempt. Prickly.",
   'Stage Left Stage Right':"Quokka? You call it — pass left or right. Your chaos.",
   'Giggle Box':           "Cockatoo? If they crack, steal their turn's reward too.",
 };

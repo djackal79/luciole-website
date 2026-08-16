@@ -5,6 +5,43 @@ import { supabase, SESSION_ID } from './supabase.js';
 
 // ===== CONSTANTS =====
 
+// OPEN-7: game name is not locked ("Crack Up" is the leading alternative).
+// Every user-facing title string must read from this constant.
+const GAME_TITLE = 'Pull Another One';
+
+// OPEN-5: "Prompt Card" and "Power Card" are a near-rhyme and have been
+// confused inside this project. A rename of the personal card (candidate:
+// "Setlist") is under consideration — change these two lines only.
+const PERSONAL_CARD_LABEL = 'Prompt Card';
+const PERSONAL_CARD_LABEL_PLURAL = 'Prompt Cards';
+
+// Rules configuration — §1.9. Nothing below may hard-code these values.
+const RULES_CONFIG = {
+  // GAP-1: an 8-token Pool with a 3-token win deadlocks from 4 players up —
+  // 8 tokens spread 2/2/2/2 leaves nobody able to reach 3 and nothing ever
+  // returns a token to the Pool. 12 tokens clears it at every count with
+  // headroom (minimum safe is players + 1).
+  tokensInPool: 12,           // constant at all player counts
+  winCondition: {
+    // Simulated at 500 games per player count: 29–53 turns at 3–8 players,
+    // zero empty-Pool events. A 3-token win runs 48–103 turns.
+    default: 2,
+    // OPEN-2 (win condition at 4 players) is resolved by the flat 2 above.
+    byPlayerCount: { 3: 2, 4: 2, 5: 2, 6: 2, 7: 2, 8: 2 },
+  },
+  minPlayers: 3,              // §1.9 — 2 players is not supported
+  maxPlayers: 8,
+  familyMode: false,
+  // OPEN-3: 3-player Intermission consolation draw. Default off.
+  threePlayerIntermissionConsolation: false,
+};
+
+// Win condition for the current table size. Never compare against a literal.
+function tokenGoal(numPlayers) {
+  const n = numPlayers != null ? numPlayers : (state && state.numPlayers);
+  return RULES_CONFIG.winCondition.byPlayerCount[n] ?? RULES_CONFIG.winCondition.default;
+}
+
 const PROP_TOKENS = [
   { number:1, name:'The Golden Mic',      file:'1. The golden mike.png' },
   { number:2, name:'The Script Scroll',   file:'2. The script scroll.png' },
@@ -60,8 +97,6 @@ const SUCCESS_DISPLAY = {
   named_judge: {icon:'👤', label:'Judge — player to your left decides'},
 };
 
-const TOKEN_GOAL = 3;
-
 // ===== STATE =====
 
 let state = null;
@@ -83,7 +118,13 @@ function defaultState() {
     drawnCard: null,
     drawnPromptPos: null,
     pendingOutcome: null,
-    nextTokenIndex: 0,
+    // The Pool — §1.2. The shared face-up supply. Tokens only ever come from
+    // here, and only ever return here. Never moves player-to-player.
+    pool: buildPool(),
+    // Interrupt stack — §1.7. LIFO; resolved last-played-first.
+    interruptStack: [],
+    // §1.4 Step 0 — set on the flip, cleared only when the turn passes.
+    drawnThisTurn: false,
     familyMode: false,
     tutorialMode: false,
     turnNumber: 0,
@@ -211,14 +252,103 @@ function venueMatchCards(player) {
   return player.hand.filter(n => cardByNumber(n).venue === ch.venue);
 }
 
+// Build the full Pool. There are only 8 token designs, so when the Pool is
+// larger than that the designs repeat — each physical token still gets a
+// unique id so it can be tracked, renamed and returned individually.
+function buildPool() {
+  const out = [];
+  for (let i = 0; i < RULES_CONFIG.tokensInPool; i++) {
+    const design = PROP_TOKENS[i % PROP_TOKENS.length];
+    const copy = Math.floor(i / PROP_TOKENS.length);
+    out.push({
+      ...design,
+      id: `${design.number}-${copy}`,
+      name: copy === 0 ? design.name : `${design.name} (${copy + 1})`,
+    });
+  }
+  return out;
+}
+
+// Migrate a state object saved before the Pool existed.
+function ensurePool() {
+  if (Array.isArray(state.pool)) return;
+  const held = new Set();
+  state.players.forEach(p => (p.tokens || []).forEach(t => held.add(t.id ?? `${t.number}-0`)));
+  state.pool = buildPool().filter(t => !held.has(t.id));
+}
+
+function poolIsEmpty() {
+  ensurePool();
+  return state.pool.length === 0;
+}
+
+// §1.2 — the ONLY way a player gains a token. Draws from the Pool, never from
+// another player. Returns null when the Pool is exhausted (§1.9, 8 players).
 function awardToken(player) {
-  const idx = (state.nextTokenIndex || 0) % PROP_TOKENS.length;
-  state.nextTokenIndex = idx + 1;
-  player.tokens.push({ ...PROP_TOKENS[idx] });
+  ensurePool();
+  if (state.pool.length === 0) return null;
+  const token = state.pool.shift();
+  player.tokens.push(token);
+  return token;
+}
+
+// Return a token to the Pool — referee correction only, never a steal.
+function returnTokenToPool(player, tokenIndex) {
+  const idx = tokenIndex != null ? tokenIndex : player.tokens.length - 1;
+  const [token] = player.tokens.splice(idx, 1);
+  if (!token) return;
+  ensurePool();
+  state.pool.push(token);
+  state.pool.sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
 }
 
 function hasWon(player) {
-  return player.tokens.length >= TOKEN_GOAL;
+  return player.tokens.length >= tokenGoal();
+}
+
+// ===== TOAST =====
+
+let toastTimer = null;
+
+function showToast(message) {
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = message;
+  el.classList.add('visible');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('visible'), 3200);
+}
+
+function showPoolEmptyNotice() {
+  showToast('🪙 The Pool is empty — no tokens can be taken. Cash a pair or win with what you hold.');
+}
+
+// Shows the shared supply on every in-game screen (§1.3 — the Pool is public).
+function renderPoolBar() {
+  if (!state || !state.players || state.players.length === 0) return;
+  ensurePool();
+  const screens = ['turn-screen', 'draw-screen', 'spectate-screen'];
+  screens.forEach(id => {
+    const screen = document.getElementById(id);
+    if (!screen) return;
+    let bar = screen.querySelector('.pool-bar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.className = 'pool-bar';
+      const anchor = screen.querySelector('.token-bar') || screen.firstElementChild;
+      if (anchor && anchor.nextSibling) screen.insertBefore(bar, anchor.nextSibling);
+      else screen.appendChild(bar);
+    }
+    const n = state.pool.length;
+    bar.classList.toggle('empty', n === 0);
+    bar.innerHTML = n === 0
+      ? '🪙 <span class="pool-count">Pool empty</span> — no tokens can be taken'
+      : `🪙 Pool: <span class="pool-count">${n}</span> / ${RULES_CONFIG.tokensInPool} Prop Tokens left`;
+  });
 }
 
 function animalName(id) {
@@ -272,6 +402,10 @@ function showPhase(phase) {
     document.getElementById(`${p}-screen`).classList.toggle('hidden', phase !== p);
   });
   document.body.dataset.phase = phase;
+  // The "← Site" link would sit on top of the in-game back button, so it is
+  // only offered on the screens that have no back button of their own.
+  const siteLink = document.getElementById('site-back-link');
+  if (siteLink) siteLink.classList.toggle('hidden', !['setup','join','win'].includes(phase));
   closeGameMenu();
 }
 
@@ -282,11 +416,13 @@ function renderCurrentPhase() {
     clearMyPlayerSlot();
   }
 
+  renderPoolBar();
+
   if (state.phase === 'win') {
-    const winner = state.players.find(p => p.tokens.length >= TOKEN_GOAL);
+    const winner = state.players.find(p => p.tokens.length >= tokenGoal());
     if (winner) {
       document.getElementById('win-message').textContent =
-        `${winner.name || `Player ${state.players.indexOf(winner) + 1}`} collected ${TOKEN_GOAL} Prop Tokens and wins.`;
+        `${winner.name || `Player ${state.players.indexOf(winner) + 1}`} collected ${tokenGoal()} Prop Tokens and wins.`;
     }
     showPhase('win');
     return;
@@ -360,6 +496,9 @@ function goToWin(winnerIndex) {
 }
 
 function advancePlayer() {
+  // Any unresolved interrupts belong to the turn that just ended.
+  state.interruptStack = [];
+  state.drawnThisTurn = false;
   state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
 }
 
@@ -554,7 +693,7 @@ function renderSpectate() {
   if (me) {
     const label = document.createElement('div');
     label.className = 'token-bar-label';
-    label.textContent = `🪙 ${me.tokens.length} / ${TOKEN_GOAL}`;
+    label.textContent = `🪙 ${me.tokens.length} / ${tokenGoal()}`;
     tokenBar.appendChild(label);
     const chips = document.createElement('div');
     chips.className = 'token-chips';
@@ -602,7 +741,7 @@ function renderTurn() {
   bar.innerHTML = '';
   const label = document.createElement('div');
   label.className = 'token-bar-label';
-  label.textContent = `🪙 ${player.tokens.length} / ${TOKEN_GOAL}`;
+  label.textContent = `🪙 ${player.tokens.length} / ${tokenGoal()}`;
   bar.appendChild(label);
   const chips = document.createElement('div');
   chips.className = 'token-chips';
@@ -767,7 +906,7 @@ function renderPossessions() {
     tokRow.className = 'poss-tokens';
     const tokLabel = document.createElement('div');
     tokLabel.className = 'poss-subtitle';
-    tokLabel.textContent = `Prop Tokens (${player.tokens.length}/${TOKEN_GOAL})`;
+    tokLabel.textContent = `Prop Tokens (${player.tokens.length}/${tokenGoal()})`;
     tokRow.appendChild(tokLabel);
 
     const tokControls = document.createElement('div');
@@ -800,7 +939,7 @@ function renderPossessions() {
 
     const handLabel = document.createElement('div');
     handLabel.className = 'poss-subtitle';
-    handLabel.textContent = `Performance Cards (${player.hand.length})`;
+    handLabel.textContent = `Power Cards (${player.hand.length})`;
     section.appendChild(handLabel);
 
     const hand = document.createElement('div');
@@ -853,9 +992,15 @@ function openCardSheet(cardNumber, source, playerIndex) {
   typeEl.className = 'sheet-type ' + (interrupt ? 'interrupt' : 'your_turn');
   typeEl.textContent = (interrupt ? '🛡️ ' : '⚡ ') + card.timing_label;
 
+  // §1.4 Step 0 — Intermission is a HARD window. Once the card is flipped the
+  // window is closed and the power cannot be played at all this turn.
+  const blocked = intermissionWindowClosed(card);
   const noteEl = document.getElementById('card-sheet-timing-note');
-  if (card.title === 'Intermission' && state.drawnCard != null) {
-    noteEl.textContent = '⚠️ Current player has already drawn — cannot be played this turn.';
+  if (blocked) {
+    noteEl.textContent = '⛔ Window closed — the active player has already drawn. Intermission must be declared before the draw.';
+    noteEl.classList.remove('hidden');
+  } else if (card.title === 'Mime Time') {
+    noteEl.textContent = '♿ Accessibility: "whispers only" may be used instead of full silence.';
     noteEl.classList.remove('hidden');
   } else {
     noteEl.textContent = '';
@@ -871,7 +1016,15 @@ function openCardSheet(cardNumber, source, playerIndex) {
   const useBtn = document.createElement('button');
   useBtn.className = 'btn-primary';
   useBtn.textContent = '🎭 Play Power & Discard';
-  useBtn.addEventListener('click', () => discardFromHand(sheetContext.playerIndex, cardNumber));
+  useBtn.disabled = blocked;
+  if (blocked) useBtn.classList.add('disabled');
+  useBtn.addEventListener('click', () => {
+    if (intermissionWindowClosed(card)) {
+      showToast('⛔ Intermission must be declared before the draw. Window closed.');
+      return;
+    }
+    playPower(sheetContext.playerIndex, cardNumber);
+  });
   actions.appendChild(useBtn);
 
   document.getElementById('card-sheet').classList.remove('hidden');
@@ -884,27 +1037,137 @@ function closeCardSheet() {
   sheetContext = null;
 }
 
-function discardFromHand(playerIndex, cardNumber) {
+// ===== INTERRUPT STACK (§1.7) =====
+//
+// Powers are resolved physically at the table; the app's job is to enforce
+// *timing* and show the table the correct resolution order. The stack is LIFO
+// — last played is resolved first — and chains are legal, so Clap Back can
+// reverse a Stage Hook and the original player may then Standing Ovation the
+// reversed Stage Hook.
+
+const COUNTER_TITLES = ['Standing Ovation', 'Clap Back'];
+
+// §1.4 Step 0 — hard window. Closed the instant the card is flipped, and it
+// stays closed for the rest of the turn. Note this deliberately survives the
+// draw screen's "← Back" undo: physically the card has been flipped, and
+// backing out is an app convenience with no equivalent at the table.
+function intermissionWindowClosed(card) {
+  return card.title === 'Intermission' && !!state.drawnThisTurn;
+}
+
+function stack() {
+  if (!Array.isArray(state.interruptStack)) state.interruptStack = [];
+  return state.interruptStack;
+}
+
+// Clockwise priority from the active player — §1.7 "simultaneous interrupts
+// resolve clockwise from the active player".
+function clockwiseRank(playerIndex) {
+  const n = state.players.length;
+  return (playerIndex - state.currentPlayerIndex + n) % n;
+}
+
+function playPower(playerIndex, cardNumber) {
+  const card = cardByNumber(cardNumber);
+  if (!card) return;
+
+  if (intermissionWindowClosed(card)) {
+    showToast('⛔ Intermission must be declared before the draw. Window closed.');
+    return;
+  }
+
   const player = state.players[playerIndex];
   const i = player.hand.indexOf(cardNumber);
   if (i !== -1) {
     player.hand.splice(i, 1);
     state.discard.push(cardNumber);
   }
+
   if (state.currentTurn) {
-    const c = cardByNumber(cardNumber);
     state.currentTurn.powerCardsPlayed.push({
       playerIndex,
-      playerName: state.players[playerIndex]?.name || `Player ${playerIndex + 1}`,
+      playerName: player.name || `Player ${playerIndex + 1}`,
       cardNumber,
-      title: c ? c.title : '?',
+      title: card.title,
     });
   }
+
+  // A counter lands on top of the existing stack; anything else opens a new
+  // stack entry. Either way the newest entry resolves first.
+  stack().push({
+    cardNumber,
+    title: card.title,
+    playerIndex,
+    playerName: player.name || `Player ${playerIndex + 1}`,
+    isCounter: COUNTER_TITLES.includes(card.title),
+    rank: clockwiseRank(playerIndex),
+    at: new Date().toISOString(),
+  });
 
   closeCardSheet();
   save();
   renderCurrentPhase();
+  renderInterruptStack();
   if (!document.getElementById('possessions-overlay').classList.contains('hidden')) renderPossessions();
+}
+
+// Resolve the top of the stack (LIFO). The table performs the physical effect;
+// this pops the entry and reveals the next one down.
+function resolveTopOfStack() {
+  const s = stack();
+  if (s.length === 0) return;
+  s.pop();
+  save();
+  renderInterruptStack();
+  renderCurrentPhase();
+}
+
+function clearInterruptStack() {
+  state.interruptStack = [];
+  save();
+  renderInterruptStack();
+}
+
+function renderInterruptStack() {
+  const s = stack();
+  let el = document.getElementById('interrupt-stack');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'interrupt-stack';
+    document.body.appendChild(el);
+  }
+  if (s.length === 0) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+
+  el.classList.remove('hidden');
+  el.innerHTML = '';
+
+  const head = document.createElement('div');
+  head.className = 'istack-head';
+  head.textContent = `🛡️ Interrupt stack — resolve top first (${s.length})`;
+  el.appendChild(head);
+
+  // Newest first — that IS the resolution order.
+  s.slice().reverse().forEach((entry, i) => {
+    const row = document.createElement('div');
+    row.className = 'istack-row' + (i === 0 ? ' top' : '');
+    const label = document.createElement('span');
+    label.textContent = `${i === 0 ? '▶ ' : ''}${entry.title} — ${entry.playerName}`;
+    row.appendChild(label);
+    if (i === 0) {
+      const btn = document.createElement('button');
+      btn.className = 'istack-resolve';
+      btn.textContent = 'Resolved';
+      btn.addEventListener('click', resolveTopOfStack);
+      row.appendChild(btn);
+    }
+    el.appendChild(row);
+  });
+
+  const clear = document.createElement('button');
+  clear.className = 'istack-clear';
+  clear.textContent = 'Clear all';
+  clear.addEventListener('click', clearInterruptStack);
+  el.appendChild(clear);
 }
 
 // ===== ACTIONS =====
@@ -913,6 +1176,7 @@ function doDraw() {
   ensureDeck();
   if (state.deck.length === 0) return;
   state.drawnCard = state.deck.pop();
+  state.drawnThisTurn = true;  // §1.4 Step 0 — Intermission window now closed
 
   const player = state.players[state.currentPlayerIndex];
   const card = cardByNumber(state.drawnCard);
@@ -969,8 +1233,15 @@ function applyOutcome(outcome) {
   const card = cardByNumber(state.drawnCard);
 
   if (outcome === 'animal') {
-    awardToken(player);
-    state.discard.push(card.number);
+    // §1.6A — mandatory token, card to discard. If the Pool is empty no token
+    // can be taken by any route (§1.2); the card is kept instead of lost.
+    if (awardToken(player)) {
+      state.discard.push(card.number);
+    } else {
+      showPoolEmptyNotice();
+      player.hand.push(card.number);
+      outcome = 'power';
+    }
   } else {
     player.hand.push(card.number);
   }
@@ -996,6 +1267,9 @@ function doCashPair() {
   const player = state.players[state.currentPlayerIndex];
   const matches = venueMatchCards(player);
   if (matches.length < 2) return;
+  // §1.2 — no token can be taken by any route while the Pool is empty.
+  // Don't consume the pair for nothing.
+  if (poolIsEmpty()) { showPoolEmptyNotice(); return; }
   const toDiscard = matches.slice(0, 2);
   toDiscard.forEach(n => {
     const i = player.hand.indexOf(n);
@@ -1025,7 +1299,7 @@ function doCashPair() {
 function adjustToken(playerIndex, delta) {
   const player = state.players[playerIndex];
   if (delta > 0) {
-    awardToken(player);
+    if (!awardToken(player)) { showPoolEmptyNotice(); return; }
     if (hasWon(player)) {
       save();
       document.getElementById('possessions-overlay').classList.add('hidden');
@@ -1033,7 +1307,7 @@ function adjustToken(playerIndex, delta) {
       return;
     }
   } else if (player.tokens.length > 0) {
-    player.tokens.pop();
+    returnTokenToPool(player);
   }
   save();
   renderPossessions();
@@ -1624,7 +1898,7 @@ const DEFAULT_SIM_CONFIG = {
     'Pie In The Face': 0.35, 'Stage Hook': 0.4, 'Intermission': 0.45,
     'Clap Back': 0.5, 'Mime Time': 0.5, 'Stage Left Stage Right': 0.2, 'Giggle Box': 0.45,
   },
-  situational: { offSuit: 1.3, sameSuit: 0.7, leading: 0.75, losing: 1.4, opponentNearWin: 2.5 },
+  situational: { offVenue: 1.3, sameVenue: 0.7, leading: 0.75, losing: 1.4, opponentNearWin: 2.5 },
 };
 
 let simConfig = JSON.parse(JSON.stringify(DEFAULT_SIM_CONFIG));
@@ -1671,8 +1945,8 @@ function renderSimScreen() {
   const sitGrp = document.getElementById('sim-sit-sliders');
   if (!sitGrp.children.length) {
     [
-      { id: 'offSuit',         label: 'Off-suit draw' },
-      { id: 'sameSuit',        label: 'Same-suit draw' },
+      { id: 'offVenue',        label: 'Off-venue draw' },
+      { id: 'sameVenue',       label: 'Same-venue draw' },
       { id: 'leading',         label: 'When leading' },
       { id: 'losing',          label: 'When losing' },
       { id: 'opponentNearWin', label: 'Opponent near win' },
@@ -1855,9 +2129,9 @@ function simGetSituation(players, idx, drawnVenue) {
   return {
     isLeading: player.tokens === maxT && maxT > minT,
     isLosing:  player.tokens === minT && maxT > minT,
-    opponentNearWin: players.some((p, i) => i !== idx && p.tokens >= TOKEN_GOAL - 1),
-    offSuit:  drawnVenue ? drawnVenue !== player.venue : false,
-    sameSuit: drawnVenue ? drawnVenue === player.venue : false,
+    opponentNearWin: players.some((p, i) => i !== idx && p.tokens >= tokenGoal(players.length) - 1),
+    offVenue:  drawnVenue ? drawnVenue !== player.venue : false,
+    sameVenue: drawnVenue ? drawnVenue === player.venue : false,
   };
 }
 
@@ -1865,8 +2139,8 @@ function simShouldPlay(title, cfg, sit, isYourTurn) {
   let p = cfg.powerPlay[title] ?? 0;
   if (p <= 0) return false;
   if (isYourTurn) {
-    if (sit.offSuit)  p *= cfg.situational.offSuit;
-    if (sit.sameSuit) p *= cfg.situational.sameSuit;
+    if (sit.offVenue)  p *= cfg.situational.offVenue;
+    if (sit.sameVenue) p *= cfg.situational.sameVenue;
   }
   if (sit.isLeading)       p *= cfg.situational.leading;
   if (sit.isLosing)        p *= cfg.situational.losing;
@@ -1884,12 +2158,20 @@ function simHasCard(hand, title) {
   return hand.some(n => { const c = cardByNumber(n); return c && c.title === title; });
 }
 
-function simAwardToken(player, source, tokenSources) {
+// Mirrors awardToken() — the simulated Pool is finite, so an 8-player table
+// can exhaust it exactly as the physical game would (§1.9).
+function simAwardToken(player, source, tokenSources, pool) {
+  if (pool && pool.count <= 0) {
+    tokenSources.poolEmpty = (tokenSources.poolEmpty || 0) + 1;
+    return false;
+  }
+  if (pool) pool.count--;
   player.tokens++;
   tokenSources[source] = (tokenSources[source] || 0) + 1;
+  return true;
 }
 
-function simPerformTurn(cardNum, player, players, deck, discard, cfg, tokenSources, powerPlayed, depth) {
+function simPerformTurn(cardNum, player, players, deck, discard, cfg, tokenSources, powerPlayed, pool, depth) {
   if ((depth || 0) > 2) { discard.push(cardNum); return; }
 
   const card = cardByNumber(cardNum);
@@ -1925,7 +2207,7 @@ function simPerformTurn(cardNum, player, players, deck, discard, cfg, tokenSourc
         discard.push(cardNum);
         track('The Ad-Lib');
         simEnsureDeck(deck, discard);
-        if (deck.length > 0) simPerformTurn(deck.pop(), player, players, deck, discard, cfg, tokenSources, powerPlayed, (depth || 0) + 1);
+        if (deck.length > 0) simPerformTurn(deck.pop(), player, players, deck, discard, cfg, tokenSources, powerPlayed, pool, (depth || 0) + 1);
         return;
       }
     }
@@ -1964,7 +2246,7 @@ function simPerformTurn(cardNum, player, players, deck, discard, cfg, tokenSourc
   let outcome = card.animal === player.character ? 'animal' : (card.venue === player.venue ? 'venue' : 'power');
 
   if (outcome === 'animal') {
-    simAwardToken(player, 'animal', tokenSources);
+    simAwardToken(player, 'animal', tokenSources, pool);
     discard.push(cardNum);
   } else if (outcome === 'venue') {
     // IMPROVISER: convert venue match to token
@@ -1974,7 +2256,7 @@ function simPerformTurn(cardNum, player, players, deck, discard, cfg, tokenSourc
         const ic = simRemoveCard(player.hand, 'Improviser');
         if (ic) discard.push(ic);
         track('Improviser');
-        simAwardToken(player, 'improviser', tokenSources);
+        simAwardToken(player, 'improviser', tokenSources, pool);
         discard.push(cardNum);
         return;
       }
@@ -1982,13 +2264,14 @@ function simPerformTurn(cardNum, player, players, deck, discard, cfg, tokenSourc
     player.hand.push(cardNum);
     // Cash pair check
     const matches = player.hand.filter(n => { const c = cardByNumber(n); return c && c.venue === player.venue; });
-    if (matches.length >= 2) {
+    // §1.2 — an empty Pool blocks every token route. Don't burn the pair.
+    if (matches.length >= 2 && (!pool || pool.count > 0)) {
       matches.slice(0, 2).forEach(n => {
         const i = player.hand.indexOf(n);
         if (i !== -1) player.hand.splice(i, 1);
         discard.push(n);
       });
-      simAwardToken(player, 'venuePair', tokenSources);
+      simAwardToken(player, 'venuePair', tokenSources, pool);
     }
   } else {
     player.hand.push(cardNum);
@@ -2004,6 +2287,8 @@ function simRunGame(cfg) {
   const discard = [];
   const tokenSources = {};
   const powerPlayed = {};
+  // §1.9 — finite Pool. At 8 players an 8-token Pool can plausibly empty.
+  const pool = { count: RULES_CONFIG.tokensInPool };
   let current = 0;
 
   function track(t) { powerPlayed[t] = (powerPlayed[t] || 0) + 1; }
@@ -2033,7 +2318,7 @@ function simRunGame(cfg) {
         const pc = simRemoveCard(player.hand, 'Prop Master');
         if (pc) discard.push(pc);
         track('Prop Master');
-        simAwardToken(player, 'propMaster', tokenSources);
+        simAwardToken(player, 'propMaster', tokenSources, pool);
         propMastered = true;
       }
 
@@ -2053,9 +2338,9 @@ function simRunGame(cfg) {
             const v2 = simCardValue(cardByNumber(c2), player);
             const [kept, ret] = v1 >= v2 ? [c1, c2] : [c2, c1];
             deck.unshift(ret);
-            simPerformTurn(kept, player, players, deck, discard, cfg, tokenSources, powerPlayed, 0);
+            simPerformTurn(kept, player, players, deck, discard, cfg, tokenSources, powerPlayed, pool, 0);
           } else if (c1) {
-            simPerformTurn(c1, player, players, deck, discard, cfg, tokenSources, powerPlayed, 0);
+            simPerformTurn(c1, player, players, deck, discard, cfg, tokenSources, powerPlayed, pool, 0);
           }
           usedWarmUp = true;
         }
@@ -2063,7 +2348,7 @@ function simRunGame(cfg) {
         if (!usedWarmUp) {
           simEnsureDeck(deck, discard);
           if (deck.length === 0) break;
-          simPerformTurn(deck.pop(), player, players, deck, discard, cfg, tokenSources, powerPlayed, 0);
+          simPerformTurn(deck.pop(), player, players, deck, discard, cfg, tokenSources, powerPlayed, pool, 0);
         }
       }
 
@@ -2114,7 +2399,7 @@ function simRunGame(cfg) {
       }
     }
 
-    if (player.tokens >= TOKEN_GOAL) {
+    if (player.tokens >= tokenGoal(numP)) {
       return { winner: current, turns: turn + 1, tokenSources, powerPlayed };
     }
     current = (current + 1) % numP;
@@ -2149,8 +2434,25 @@ function simRun(cfg) {
 
 // ===== INIT =====
 
+// OPEN-5 / OPEN-7 — push the two renameable terms into the DOM so a change to
+// GAME_TITLE or PERSONAL_CARD_LABEL propagates everywhere.
+function applyNamingConstants() {
+  document.querySelectorAll('[data-game-title]').forEach(el => {
+    el.textContent = GAME_TITLE;
+  });
+  const titleEl = document.querySelector('title[data-game-title-suffix]');
+  if (titleEl) titleEl.textContent = GAME_TITLE + titleEl.dataset.gameTitleSuffix;
+  document.querySelectorAll('[data-personal-card-label]').forEach(el => {
+    el.textContent = PERSONAL_CARD_LABEL;
+  });
+  document.querySelectorAll('[data-personal-card-label-plural]').forEach(el => {
+    el.textContent = PERSONAL_CARD_LABEL_PLURAL;
+  });
+}
+
 async function init() {
   loadMyPlayerIndex();
+  applyNamingConstants();
 
   wireSetup();
   wireTurn();

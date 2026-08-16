@@ -2,15 +2,15 @@
 
 The Christmas cracker comedy party game. This app is the digital table:
 it manages the 52-card Performance deck, each player's Prompt Card, their
-hand of kept Performance Cards, and their Prop Tokens.
+hand of kept Power Cards, and their Prop Tokens.
 
 ## The Goal
 
-Be the first to collect **3 Prop Tokens**.
+Be the first to collect **2 Prop Tokens**.
 
 ## The 4 Venues
 
-Every Performance Card and every Character belongs to one venue. The venue
+Every Power Card and every Character belongs to one venue. The venue
 tells you what kind of performance is required:
 
 | Venue | What you do |
@@ -29,12 +29,12 @@ script). Player 1 starts.
 ## Your Turn
 
 ### Step 1 — Draw
-Tap **Draw Performance Card**. The app flips the top card of the deck
+Tap **Draw Power Card**. The app flips the top card of the deck
 face-up for everyone to see. The card shows a **venue**, an **animal**, and
 a printed **power**.
 
 ### Step 2 — Perform
-The card's venue tells you which suit to perform. The app shows the next
+The card's venue tells you which kind of performance to give. The app shows the next
 unused prompt for that venue from your Prompt Card — perform it. Prompts are
 used in order; no going back, no cherry-picking.
 
@@ -65,13 +65,13 @@ wrong, tap **Wrong call? Change…** on the verdict screen to pick manually.
 
 ## Cashing a Pair
 
-If you hold two Performance Cards that both match your Character's venue, the
+If you hold two Power Cards that both match your Character's venue, the
 **Cash a Pair → Token** button appears on your turn. It's a free action:
 discard both cards and take a Prop Token.
 
 ## Using Powers
 
-Every Performance Card in your hand has a printed power. Tap a card to read it
+Every Power Card in your hand has a printed power. Tap a card to read it
 and tap **Use Power & Discard** to play it (the card moves to the discard
 pile; players resolve the physical effect at the table). Many cards also have
 an **Animal Affinity bonus** — extra effect if the matching animal plays it.
@@ -90,7 +90,7 @@ going.
 
 ## Winning
 
-The moment a player reaches their 3rd Prop Token, the game ends and that
+The moment a player reaches their 2nd Prop Token, the game ends and that
 player takes a bow.
 
 ## Family Mode
