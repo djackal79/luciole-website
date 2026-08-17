@@ -8,7 +8,7 @@ export const INTRO_STEPS = [
     body: [
       "Christmas. Crackers. Terrible jokes. Now make it a blood sport.",
       "You're a washed-up Aussie animal performer — a heckled kookaburra, a woozy galah, a magpie with a tragic past — clawing your way back to the big time one dreadful gig at a time.",
-      "First performer to collect 3 Prop Tokens takes the final bow and wins.",
+      "First performer to reach the table's token target takes the final bow and wins — 3 Prop Tokens at 3–5 players, 2 at 6–8.",
     ],
   },
   {
@@ -144,12 +144,12 @@ export const PHASE_TIPS = {
     body: [
       "You're watching another player's turn, but you're not powerless.",
       "🛡️ Interrupt cards fire right now: Intermission skips their whole turn, Mime Time silences their performance, Heckler forces them to do it all again, Giggle Box makes them hold eye contact with you.",
-      "Watch the leader. The moment someone gets close to 3 tokens, it's everyone's job to ruin their night.",
+      "Watch the leader. The moment someone gets close to the token target, it's everyone's job to ruin their night.",
     ],
   },
   strategy_midgame: {
     icon: '🎯',
-    title: 'Someone Has 2 Tokens',
+    title: 'Someone Is One Token Away',
     body: [
       "One more token and they win. This is the moment interrupt cards exist for.",
       "Save Heckler and Intermission for the leader's turns. Use Stage Hook to strip their venue pairs before they cash them.",

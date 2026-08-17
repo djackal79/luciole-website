@@ -1695,7 +1695,8 @@ function maybeShowBackstory(charId) {
 // Once anyone reaches 2 tokens, surface the endgame strategy tip.
 function maybeShowMidgameTip() {
   if (!state || !state.tutorialMode || !state.players) return;
-  if (state.players.some(p => p.tokens.length >= 2)) {
+  // One short of the table's target — not a fixed 2, since 6-8 players win at 2.
+  if (state.players.some(p => p.tokens.length >= tokenGoal() - 1)) {
     maybeShowTutorial('strategy_midgame');
   }
 }

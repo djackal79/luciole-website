@@ -6,7 +6,8 @@ hand of kept Power Cards, and their Prop Tokens.
 
 ## The Goal
 
-Be the first to collect **3 Prop Tokens**.
+Be the first to collect your table's token target: **3 Prop Tokens** at
+3–5 players, **2** at 6–8.
 
 ## The 4 Venues
 
@@ -72,9 +73,9 @@ discard both cards and take a Prop Token.
 ## Using Powers
 
 Every Power Card in your hand has a printed power. Tap a card to read it
-and tap **Use Power & Discard** to play it (the card moves to the discard
-pile; players resolve the physical effect at the table). Many cards also have
-an **Animal Affinity bonus** — extra effect if the matching animal plays it.
+and tap **Play Power & Discard** to play it (the card moves to the discard
+pile; players resolve the physical effect at the table). A card's printed
+power is its full text — there is no separate per-character bonus effect.
 
 ## All Players Screen
 
@@ -90,7 +91,7 @@ going.
 
 ## Winning
 
-The moment a player reaches their 3rd Prop Token, the game ends and that
+The moment a player reaches their table's token target, the game ends and that
 player takes a bow.
 
 ## Family Mode
