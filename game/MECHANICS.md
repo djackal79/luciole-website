@@ -1,7 +1,7 @@
 # Pull Another One — Game Mechanics (v0.5)
 
 The Christmas cracker comedy party game. This app is the digital table:
-it manages the 52-card Performance deck, each player's Prompt Card, their
+it manages the 52-card Power Card deck, each player's Prompt Card, their
 hand of kept Power Cards, and their Prop Tokens.
 
 ## The Goal
