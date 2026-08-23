@@ -264,9 +264,29 @@ function markPromptUsed(player, venue, position) {
   if (!player.used[venue].includes(position)) player.used[venue].push(position);
 }
 
-function venueMatchCards(player) {
-  const ch = getCharacter(player);
-  return player.hand.filter(n => cardByNumber(n).venue === ch.venue);
+// CANON v1.7 §1 — pairs match on CARD TYPE, not venue. Each type appears 4
+// times in the deck (once per venue), so a pair is a name match. The old rule
+// that a pair had to match the player's own Character venue is gone entirely;
+// venue's only remaining job is setting the performance type.
+function pairableGroups(player) {
+  const byTitle = {};
+  player.hand.forEach(n => {
+    const c = cardByNumber(n);
+    if (!c) return;
+    (byTitle[c.title] = byTitle[c.title] || []).push(n);
+  });
+  return byTitle;
+}
+
+// Every set of 2+ same-titled cards the player could cash right now.
+function cashablePairs(player) {
+  return Object.entries(pairableGroups(player))
+    .filter(([, ns]) => ns.length >= 2)
+    .map(([title, ns]) => ({ title, cards: ns.slice(0, 2) }));
+}
+
+function hasCashablePair(player) {
+  return cashablePairs(player).length > 0;
 }
 
 // Build the full Pool. There are only 8 token designs, so when the Pool is
@@ -778,7 +798,8 @@ function renderSpectate() {
   const grid = document.getElementById('spectate-hand-grid');
   grid.innerHTML = '';
   const myHand = me ? me.hand : [];
-  myHand.forEach(n => grid.appendChild(buildHandCard(n)));
+  const myPairs = new Set(cashablePairs({ hand: myHand }).map(p => p.title));
+  myHand.forEach(n => grid.appendChild(buildHandCard(n, myPairs)));
   document.getElementById('spectate-hand-empty').classList.toggle('hidden', myHand.length > 0);
 
   maybeShowTutorial('first_spectate');
@@ -823,13 +844,36 @@ function renderTurn() {
 
   const grid = document.getElementById('turn-hand-grid');
   grid.innerHTML = '';
-  player.hand.forEach(n => grid.appendChild(buildHandCard(n)));
+  const handPairs = new Set(cashablePairs(player).map(p => p.title));
+  player.hand.forEach(n => grid.appendChild(buildHandCard(n, handPairs)));
   document.getElementById('turn-hand-empty').classList.toggle('hidden', player.hand.length > 0);
 
-  document.getElementById('cash-pair-btn').classList.toggle('hidden', venueMatchCards(player).length < 2);
+  renderCashPairButton(player);
 
   maybeShowTutorial('first_turn');
   maybeShowMidgameTip();
+}
+
+// One button per cashable pair, named so the player knows what they're spending.
+function renderCashPairButton(player) {
+  const btn = document.getElementById('cash-pair-btn');
+  const wrap = btn.parentElement;
+  wrap.querySelectorAll('.btn-cash.extra-pair').forEach(b => b.remove());
+
+  const pairs = cashablePairs(player);
+  if (pairs.length === 0) { btn.classList.add('hidden'); return; }
+
+  btn.classList.remove('hidden');
+  btn.textContent = `🔁 Cash a Pair: ${pairs[0].title} → Token`;
+  btn.dataset.pairTitle = pairs[0].title;
+
+  pairs.slice(1).forEach(p => {
+    const extra = document.createElement('button');
+    extra.className = 'btn-cash extra-pair';
+    extra.textContent = `🔁 Cash a Pair: ${p.title} → Token`;
+    extra.addEventListener('click', () => doCashPair(p.title));
+    wrap.insertBefore(extra, btn.nextSibling);
+  });
 }
 
 function addTypeBadge(el, card) {
@@ -841,10 +885,11 @@ function addTypeBadge(el, card) {
   el.appendChild(badge);
 }
 
-function buildHandCard(cardNumber) {
+function buildHandCard(cardNumber, pairTitles) {
   const card = cardByNumber(cardNumber);
   const el = document.createElement('button');
   el.className = 'hand-card';
+  if (pairTitles && pairTitles.has(card.title)) el.classList.add('is-pair');
   el.style.backgroundImage = `url('assets/venues/${cardNumber}.png')`;
   addTypeBadge(el, card);
   const label = document.createElement('span');
@@ -911,21 +956,19 @@ function renderDraw() {
 
 // ===== RENDER: VERDICT =====
 
+// CANON v1.7 §1 — venue no longer affects the reward, so there are only two
+// outcomes: the animal matches (token now) or it doesn't (keep the card).
+// The old 'venue' outcome is gone; 'power' is the single keep-the-card case.
 const OUTCOME_INFO = {
   animal: {
     icon: '🐾',
     title: 'Animal Affinity!',
     msg: (card, ch) => `The ${animalName(card.animal)} on the card matches your character — take a Prop Token.`,
   },
-  venue: {
-    icon: '✅',
-    title: 'Venue Match!',
-    msg: (card, ch) => `Same venue as your character — keep the card face-up. Two matching cards can be cashed for a token.`,
-  },
   power: {
     icon: '🃏',
     title: 'Keep the Card',
-    msg: (card, ch) => `No match, but it's yours to keep for its printed power.`,
+    msg: (card, ch) => `${card.title} is yours — keep it face-up. A second ${card.title} cashes the pair for a token.`,
   },
 };
 
@@ -941,7 +984,7 @@ function renderVerdict() {
   document.getElementById('verdict-card').style.backgroundImage = `url('assets/venues/${card.number}.png')`;
   document.getElementById('verdict-override').classList.add('hidden');
 
-  if (['animal','venue','power'].includes(state.pendingOutcome)) {
+  if (['animal','power'].includes(state.pendingOutcome)) {
     maybeShowTutorial(`first_verdict_${state.pendingOutcome}`);
   }
 }
@@ -951,6 +994,13 @@ function renderVerdict() {
 function renderPossessions() {
   const body = document.getElementById('possessions-body');
   body.innerHTML = '';
+
+  // §1 — pairs are name matches and every held card is face-up, so the card
+  // you need is visible in someone else's hand. Mark those explicitly: this
+  // sheet is now the main place targeted powers get aimed from.
+  const viewerIdx = myPlayerIndex != null ? myPlayerIndex : state.currentPlayerIndex;
+  const viewer = state.players[viewerIdx];
+  const viewerTitles = new Set((viewer ? viewer.hand : []).map(n => cardByNumber(n)?.title).filter(Boolean));
 
   state.players.forEach((player, idx) => {
     const ch = getCharacter(player);
@@ -1014,6 +1064,13 @@ function renderPossessions() {
       e.textContent = 'empty hand';
       hand.appendChild(e);
     } else {
+      // Count titles within this hand so a player's own pair is obvious too.
+      const counts = {};
+      player.hand.forEach(n => {
+        const t = cardByNumber(n)?.title;
+        if (t) counts[t] = (counts[t] || 0) + 1;
+      });
+
       player.hand.forEach(n => {
         const c = cardByNumber(n);
         const card = document.createElement('button');
@@ -1022,6 +1079,16 @@ function renderPossessions() {
         card.title = c.title;
         card.addEventListener('click', () => openCardSheet(n, 'poss', idx));
         addTypeBadge(card, c);
+
+        if (counts[c.title] >= 2) {
+          card.classList.add('is-pair');
+          card.title = `${c.title} — this player holds a pair`;
+        } else if (idx !== viewerIdx && viewerTitles.has(c.title)) {
+          // Taking this card would complete a pair for the viewer.
+          card.classList.add('completes-yours');
+          card.title = `${c.title} — pairs with one you hold`;
+        }
+
         const lbl = document.createElement('span');
         lbl.className = 'hand-card-label';
         lbl.textContent = c.title;
@@ -1284,9 +1351,8 @@ function doSuccess() {
 
   if (state.drawnPromptPos != null) markPromptUsed(player, card.venue, state.drawnPromptPos);
 
-  if (card.animal === ch.id) state.pendingOutcome = 'animal';
-  else if (card.venue === ch.venue) state.pendingOutcome = 'venue';
-  else state.pendingOutcome = 'power';
+  // Venue is irrelevant to the reward now — animal match, or keep the card.
+  state.pendingOutcome = (card.animal === ch.id) ? 'animal' : 'power';
 
   goToVerdict();
 }
@@ -1326,14 +1392,17 @@ function applyOutcome(outcome) {
   goToTurn();
 }
 
-function doCashPair() {
+function doCashPair(title) {
   const player = state.players[state.currentPlayerIndex];
-  const matches = venueMatchCards(player);
-  if (matches.length < 2) return;
-  // §1.2 — no token can be taken by any route while the Pool is empty.
-  // Don't consume the pair for nothing.
+  const pairs = cashablePairs(player);
+  if (pairs.length === 0) return;
+  // With several pairs available the player picks which to spend.
+  const chosen = title ? pairs.find(p => p.title === title) : pairs[0];
+  if (!chosen) return;
+  // No token can be taken by any route while the Pool is empty —
+  // don't consume the pair for nothing.
   if (poolIsEmpty()) { showPoolEmptyNotice(); return; }
-  const toDiscard = matches.slice(0, 2);
+  const toDiscard = chosen.cards;
   toDiscard.forEach(n => {
     const i = player.hand.indexOf(n);
     if (i !== -1) player.hand.splice(i, 1);
@@ -1349,6 +1418,7 @@ function doCashPair() {
     playerName: player.name || `Player ${state.currentPlayerIndex + 1}`,
     character: player.character,
     cardsDiscarded: toDiscard,
+    pairTitle: chosen.title,
     outcome: 'token',
     powerCardsPlayed: [],
     timestamp: new Date().toISOString(),
@@ -1453,7 +1523,7 @@ function wireSetup() {
 
 function wireTurn() {
   document.getElementById('draw-btn').addEventListener('click', doDraw);
-  document.getElementById('cash-pair-btn').addEventListener('click', doCashPair);
+  document.getElementById('cash-pair-btn').addEventListener('click', e => doCashPair(e.currentTarget.dataset.pairTitle));
   document.getElementById('turn-allplayers-btn').addEventListener('click', openPossessions);
 
   document.getElementById('turn-family-mode').addEventListener('change', e => {
@@ -2131,7 +2201,7 @@ function renderSimResults(results) {
 
   const totalTokens = Object.values(totalTokenSources).reduce((s, n) => s + n, 0) || 1;
   const TOKEN_LABELS = {
-    animal: '🐾 Animal affinity', venuePair: '✅ Venue pair',
+    animal: '🐾 Animal affinity', typePair: '🃏 Type pair',
     improviser: '⚡ Improviser', propMaster: '🎭 Prop Master',
   };
   const s3 = section('Token Sources');
@@ -2186,11 +2256,16 @@ function simEnsureDeck(deck, discard) {
   }
 }
 
+// §1 — a card's worth is now "does it complete a pair for me", not "is it my
+// venue". Venue no longer carries any strategic value at all.
 function simCardValue(card, player) {
   if (!card) return 0;
   if (card.animal === player.character) return 3;
-  if (card.venue === player.venue) return 2;
-  return 1;
+  const holdsSameTitle = player.hand.some(n => {
+    const c = cardByNumber(n);
+    return c && c !== card && c.title === card.title;
+  });
+  return holdsSameTitle ? 2 : 1;
 }
 
 function simGetSituation(players, idx, drawnVenue) {
@@ -2314,39 +2389,35 @@ function simPerformTurn(cardNum, player, players, deck, discard, cfg, tokenSourc
 
   if (!success) { discard.push(cardNum); return; }
 
-  // OUTCOME
-  let outcome = card.animal === player.character ? 'animal' : (card.venue === player.venue ? 'venue' : 'power');
-
-  if (outcome === 'animal') {
+  // OUTCOME — §1: animal match pays a token now, everything else is kept.
+  // Venue no longer affects the reward at all.
+  if (card.animal === player.character) {
     simAwardToken(player, 'animal', tokenSources, pool);
     discard.push(cardNum);
-  } else if (outcome === 'venue') {
-    // IMPROVISER: convert venue match to token
-    if (simHasCard(player.hand, 'Improviser')) {
-      const sit = simGetSituation(players, player.idx, card.venue);
-      if (simShouldPlay('Improviser', cfg, sit, true)) {
-        const ic = simRemoveCard(player.hand, 'Improviser');
-        if (ic) discard.push(ic);
-        track('Improviser');
-        simAwardToken(player, 'improviser', tokenSources, pool);
-        discard.push(cardNum);
-        return;
-      }
-    }
-    player.hand.push(cardNum);
-    // Cash pair check
-    const matches = player.hand.filter(n => { const c = cardByNumber(n); return c && c.venue === player.venue; });
-    // §1.2 — an empty Pool blocks every token route. Don't burn the pair.
-    if (matches.length >= 2 && (!pool || pool.count > 0)) {
-      matches.slice(0, 2).forEach(n => {
-        const i = player.hand.indexOf(n);
-        if (i !== -1) player.hand.splice(i, 1);
-        discard.push(n);
-      });
-      simAwardToken(player, 'venuePair', tokenSources, pool);
-    }
-  } else {
-    player.hand.push(cardNum);
+    return;
+  }
+
+  player.hand.push(cardNum);
+
+  // Pairs match on card TITLE. A card cannot be cashed on the turn it is
+  // drawn (§3), so the freshly drawn card is excluded from this check.
+  const byTitle = {};
+  player.hand.forEach((n, i) => {
+    if (n === cardNum && !byTitle.__usedDrawn) { byTitle.__usedDrawn = true; return; }
+    const c = cardByNumber(n);
+    if (c) (byTitle[c.title] = byTitle[c.title] || []).push(n);
+  });
+  delete byTitle.__usedDrawn;
+
+  const pairTitle = Object.keys(byTitle).find(t => byTitle[t].length >= 2);
+  // An empty Pool blocks every token route. Don't burn the pair.
+  if (pairTitle && (!pool || pool.count > 0)) {
+    byTitle[pairTitle].slice(0, 2).forEach(n => {
+      const i = player.hand.indexOf(n);
+      if (i !== -1) player.hand.splice(i, 1);
+      discard.push(n);
+    });
+    simAwardToken(player, 'typePair', tokenSources, pool);
   }
 }
 

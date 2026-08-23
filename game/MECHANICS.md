@@ -24,7 +24,8 @@ tells you what kind of performance is required:
 ## Setup
 
 Pick the number of players. Each player chooses a **Character** (which fixes
-their animal and home venue) and a **Prompt Card** (1–16, their personal
+their animal and their home venue, the performance style they get) and a
+**Prompt Card** (1–16, their personal
 script). Player 1 starts.
 
 ## Your Turn
@@ -55,20 +56,18 @@ Your prompt tells you how you'll be judged:
 
 1. **🐾 Animal Affinity** — Does the animal on the card match your Character's
    animal? If yes: take a Prop Token. Turn ends.
-2. **✅ Venue Match** — Does the card's venue match your Character's venue?
-   If yes: keep the card face-up in your hand. Once you hold two cards
-   matching your venue you can cash them for a Prop Token. Turn ends.
-3. **🃏 No Match** — Keep the card face-up in your hand for its printed power.
-   Turn ends.
+2. **🃏 No animal match** — Keep the card face-up in front of you. It counts
+   toward a pair and its printed power becomes available. Turn ends.
 
 The app auto-detects the outcome from the card data. If the call is ever
 wrong, tap **Wrong call? Change…** on the verdict screen to pick manually.
 
 ## Cashing a Pair
 
-If you hold two Power Cards that both match your Character's venue, the
-**Cash a Pair → Token** button appears on your turn. It's a free action:
-discard both cards and take a Prop Token.
+If you hold two Power Cards with the **same name**, the **Cash a Pair →
+Token** button appears on your turn. It's a free action: discard both cards
+and take a Prop Token. Venue is irrelevant — each card type appears four
+times in the deck, once per venue, so a pair is a name match.
 
 ## Using Powers
 
