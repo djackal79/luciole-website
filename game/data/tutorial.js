@@ -88,7 +88,7 @@ export const PHASE_TIPS = {
     icon: '🎬',
     title: 'Your Turn',
     body: [
-      "This is home base. Your Prop Tokens are up top — 3 wins the game.",
+      "This is home base. Your token target is up top. Turn order is power, then cash, then draw — the draw comes last on purpose.",
       "Your Hand shows the Power Cards you've kept. Tap any card to read its power and play it.",
       "When you're ready, hit Draw Power Card to take tonight's gig.",
       "Got two Power Cards with the SAME NAME? A Cash a Pair button will appear — trade them for a token without performing a thing.",
@@ -99,9 +99,9 @@ export const PHASE_TIPS = {
     title: 'Showtime',
     body: [
       "The drawn card sets the venue — that's the style you must perform in. Your Prompt Card supplies the exact material.",
-      "Every prompt has a success condition: 🗳️ the table votes, ✅ it's objectively checkable, or 👤 the player on your left is the judge.",
+      "There is no scoring. Have a go in good faith and you succeed — however badly it goes. The only failure is refusing, and a tie goes to you.",
       "Some prompts are timed — start the timer and don't choke.",
-      "Then be honest: ✓ Nailed It or ✗ Fail. Failing means no reward, and the card goes to the discard pile along with your dignity.",
+      "Genuinely can't do it? Tap pass & draw again — new card, new prompt, no failure. That is a rule, not a favour.",
     ],
   },
   first_verdict_animal: {
@@ -143,7 +143,7 @@ export const PHASE_TIPS = {
     title: 'Not Your Turn — Still Your Game',
     body: [
       "You're watching another player's turn, but you're not powerless.",
-      "🛡️ Interrupt cards fire right now: Intermission skips their whole turn, Mime Time silences their performance, Heckler forces them to do it all again, Giggle Box makes them hold eye contact with you.",
+      "🛡️ Interrupt cards fire right now: Intermission skips their whole turn, Mime Time silences them, Giggle Box makes them hold eye contact with you. Mime Time and Giggle Box are the only clean fail states left — they judge a fact, not a performance.",
       "Watch the leader. The moment someone gets close to the token target, it's everyone's job to ruin their night.",
     ],
   },
@@ -152,7 +152,7 @@ export const PHASE_TIPS = {
     title: 'Someone Is One Token Away',
     body: [
       "One more token and they win. This is the moment interrupt cards exist for.",
-      "Save the interrupts for the leader's turns. Use Stage Hook to strip a card they are about to pair before they cash it.",
+      "Save the interrupts for the leader's turns. Use Stage Hook to strip a card they are about to pair, or Pie in the Face to take it and cash it yourself.",
       "And if the leader is you — expect the whole table to turn. Standing Ovation and Clap Back are your shields. Good luck.",
     ],
   },

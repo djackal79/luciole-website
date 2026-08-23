@@ -1,41 +1,43 @@
 // The 52 Power Cards (the main deck).
 // Cards 1-13 = Comedy Lounge, 14-26 = The Club, 27-39 = Royal Show, 40-52 = School Play.
-// Each venue group has the same 13 power "types" in the same order, but the
-// animal printed on each card varies (this drives the Animal Affinity check).
+// Each venue group carries the same 13 power types in the same order; the
+// animal printed on each card drives the Animal Affinity check.
+//
+// CANON v1.7 §4 — Ad-Lib, Improviser and Heckler are retired. They are
+// replaced by Second Crack, Wild Act and Swoop respectively. Prop Master keeps
+// its name but regained its cost clause.
 
 const TITLES = [
-  'The Ad-Lib', 'Warm-Up Act', 'Standing Ovation', 'Prop Master', 'Improviser',
-  'Heckler', 'Pie In The Face', 'Stage Hook', 'Intermission', 'Clap Back',
+  'Second Crack', 'Warm-Up Act', 'Standing Ovation', 'Prop Master', 'Wild Act',
+  'Swoop', 'Pie In The Face', 'Stage Hook', 'Intermission', 'Clap Back',
   'Mime Time', 'Stage Left Stage Right', 'Giggle Box',
 ];
 
-// MINI-CANON §5.5 — card text is final. Every power's full printed text is
-// the single sentence below. There is deliberately no secondary per-character
-// affinity bonus; the AFFINITY map that used to live here was never part of
-// the ruleset and has been deleted.
+// §4 — printed card text, verbatim. Discard-on-activation is universal to all
+// 13 powers and lives in the rulebook, not on the individual cards.
 const POWER = {
-  'The Ad-Lib':            "Ignore a failure. Draw a new Power Card and perform that venue's prompt instead.",
-  'Warm-Up Act':           "Draw 2 instead of 1. Choose which venue to perform. Other card to bottom of deck.",
-  'Standing Ovation':      "Cancel a power targeting you or your held cards. No effect.",
-  'Prop Master':           "Take 1 token from the Pool without performing. Replaces draw + performance entirely.",
-  'Improviser':            "Count a success as on-venue even when it isn't. Discard this, take a token.",
-  'Heckler':               "Opponent who just succeeded must perform a second same-venue prompt before collecting. Fail = nothing.",
-  'Pie In The Face':       "Take any 1 held card from any other player.",
-  'Stage Hook':            "Force any other player to discard 1 held card, your choice which.",
-  'Intermission':          "Skip an opponent's entire turn.",
-  'Clap Back':             "Reverse a power targeting you back onto whoever played it.",
-  'Mime Time':             "Silence an opponent for their prompt. Verbal prompt = auto-fail.",
-  'Stage Left Stage Right':"Every player passes 1 held card left, simultaneously, including you.",
-  'Giggle Box':            "Opponent must hold eye contact throughout. Smile/laugh/look away = auto-fail.",
+  'Second Crack':          "Don't fancy that one? Bin it and draw again.",
+  'Warm-Up Act':           "Draw two Power Cards. Perform one, bury the other.",
+  'Standing Ovation':      "Someone targets you? The crowd won't have it. Cancel it cold.",
+  'Prop Master':           "Skip your turn. Take a token from the pool.",
+  'Wild Act':              "Pairs with anything. Cash it with any card you're holding.",
+  'Swoop':                 "Nick the top card off the discard pile. Yours now.",
+  'Pie In The Face':       "Pinch any Power Card from any player. Fair dinkum.",
+  'Stage Hook':            "Drag one of their Power Cards offstage. Gone.",
+  'Intermission':          "Their turn? Not anymore. Skip 'em.",
+  'Clap Back':             "Targeted? Send it straight back at them.",
+  'Mime Time':             "Zip it. No words — a verbal prompt is an instant fail.",
+  'Stage Left Stage Right':"Everyone passes one Power Card left. Ready, set, go.",
+  'Giggle Box':            "Stare 'em down. Smile or laugh and they bomb it.",
 };
 
 const TIMING = {
-  'The Ad-Lib':            'your_turn_on_fail',
+  'Second Crack':          'your_turn_instead_of_performing',
   'Warm-Up Act':           'your_turn_start',
   'Standing Ovation':      'interrupt_when_targeted',
   'Prop Master':           'your_turn_instead_of_draw',
-  'Improviser':            'your_turn_on_success',
-  'Heckler':               'interrupt_on_opponent_success',
+  'Wild Act':              'your_turn_on_cash',
+  'Swoop':                 'your_turn_any_time',
   'Pie In The Face':       'your_turn_any_time',
   'Stage Hook':            'your_turn_any_time',
   'Intermission':          'interrupt_before_opponent_draws',
@@ -46,12 +48,12 @@ const TIMING = {
 };
 
 const TIMING_LABEL = {
-  'The Ad-Lib':            'Play on your turn when you fail',
+  'Second Crack':          'Play instead of performing — bin the card and draw again',
   'Warm-Up Act':           'Play at the start of your turn',
   'Standing Ovation':      'Play when you are targeted by a power',
-  'Prop Master':           'Play on your turn instead of drawing',
-  'Improviser':            'Play immediately after a successful performance',
-  'Heckler':               'Play when an opponent succeeds — before they collect',
+  'Prop Master':           'Play instead of your turn — skip it, take a token',
+  'Wild Act':              'Play when cashing — pairs with any card you hold',
+  'Swoop':                 'Play on your turn — take the top of the discard pile',
   'Pie In The Face':       'Play on your turn',
   'Stage Hook':            'Play on your turn',
   'Intermission':          'Play before an opponent draws — skips their turn',
@@ -61,31 +63,18 @@ const TIMING_LABEL = {
   'Giggle Box':            'Play before an opponent performs — eye contact rule',
 };
 
-const FAMILY_SAFE = {
-  'The Ad-Lib':            true,
-  'Warm-Up Act':           true,
-  'Standing Ovation':      true,
-  'Prop Master':           true,
-  'Improviser':            true,
-  'Heckler':               false,
-  'Pie In The Face':       true,
-  'Stage Hook':            true,
-  'Intermission':          true,
-  'Clap Back':             true,
-  'Mime Time':             true,
-  'Stage Left Stage Right':true,
-  'Giggle Box':            true,
-};
+// §1 — Wild Act counts as any card type when cashing a pair.
+export const WILDCARD_TITLE = 'Wild Act';
 
 // Each card type always has the same animal regardless of venue.
 // 13 types × 4 venues = 52 cards; each animal appears exactly 4 times.
 const TITLE_ANIMALS = {
-  'The Ad-Lib':             'kookaburra',
+  'Second Crack':           'kookaburra',
   'Warm-Up Act':            'bilby',
   'Standing Ovation':       'platypus',
   'Prop Master':            'numbat',
-  'Improviser':             'galah',
-  'Heckler':                'magpie',
+  'Wild Act':               'galah',
+  'Swoop':                  'magpie',
   'Pie In The Face':        'emu',
   'Stage Hook':             'dingo',
   'Intermission':           'koala',
@@ -113,12 +102,8 @@ for (let n = 1; n <= 52; n++) {
     power_text: POWER[title],
     timing: TIMING[title],
     timing_label: TIMING_LABEL[title],
-    family_safe: FAMILY_SAFE[title],
   });
 }
-
-// Cards removed in Family Mode.
-export const FAMILY_REMOVED_TITLES = ['Heckler'];
 
 export function cardByNumber(n) {
   return cards.find(c => c.number === n) || null;

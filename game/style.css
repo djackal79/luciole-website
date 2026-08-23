@@ -116,7 +116,7 @@ input[type="text"]:focus, select:focus { border-color: var(--text-muted); }
 select option { background: #2a2a2a; }
 
 /* Toggle */
-.family-mode-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .toggle-label { display: flex; flex-direction: column; gap: 0.2rem; }
 .toggle-label.small { font-size: 0.85rem; }
 .toggle-hint { font-size: 0.72rem; color: var(--text-muted); }
@@ -1118,3 +1118,30 @@ body[data-phase="sim"] #game-menu-wrap { display: none; }
 }
 .hand-card.is-pair { outline: 2px solid var(--gold); outline-offset: 1px; }
 .btn-cash.extra-pair { margin-top: 0.4rem; }
+
+/* ===== DISCARD PILE (CANON v1.7 §4) =====
+   Swoop takes the top card, so the pile is a visible ordered resource. */
+.discard-bar {
+  display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+  padding: 0.4rem 1rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  border-bottom: 1px solid #2f2f2f;
+}
+.discard-bar .discard-top { color: var(--text); font-weight: 700; }
+.discard-bar .discard-hint {
+  font-size: 0.62rem; letter-spacing: 0.4px; text-transform: uppercase;
+  color: #1A1A1A; background: var(--text-muted); border-radius: 3px;
+  padding: 0.05rem 0.3rem;
+}
+
+/* ===== GRACEFUL PASS (CANON v1.7 §2) ===== */
+.prompt-footer-row { display: flex; gap: 0.6rem; }
+.prompt-footer-row > * { flex: 1; }
+.btn-graceful {
+  width: 100%;
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+  border: 1px dashed #4a4a4a;
+}
+.btn-graceful:hover { border-color: var(--gold); color: var(--gold); }

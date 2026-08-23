@@ -30,29 +30,36 @@ script). Player 1 starts.
 
 ## Your Turn
 
-### Step 1 — Draw
-Tap **Draw Power Card**. The app flips the top card of the deck
-face-up for everyone to see. The card shows a **venue**, an **animal**, and
-a printed **power**.
+Power first, then cash, then draw. The draw is **last** — deliberately.
 
-### Step 2 — Perform
-The card's venue tells you which kind of performance to give. The app shows the next
-unused prompt for that venue from your Prompt Card — perform it. Prompts are
-used in order; no going back, no cherry-picking.
+### Step 1 — Play a power (optional)
+One card. Some powers carry their own printed timing that overrides this step.
 
-Your prompt tells you how you'll be judged:
+### Step 2 — Cash any pairs
+Two Power Cards of the same name. Discard both, take a Prop Token.
 
-| Icon | Meaning |
-|------|---------|
-| 🗳️ Vote | Majority of the table decides. Tie goes against you. |
-| ✅ Objective | The table can see it happen or not. No vote needed. |
-| 👤 Judge | The player to your left decides alone. |
+### Step 3 — Draw
+Tap **Draw Power Card**. The app flips the top card face-up for everyone. It
+shows a **venue**, an **animal** and a printed **power**.
 
-### Step 3 — The Verdict
+**A card can never be cashed on the turn it is drawn.** Every card sits
+face-up through a full round of everyone else's turns first. Two exceptions:
+Animal Affinity pays immediately, and a card *acquired* rather than drawn
+(Pie in the Face, Swoop) can be cashed the same turn.
 
-**Fail** → the card goes to the discard pile. Turn ends.
+### Step 4 — Perform
+The card's venue sets the performance type. The app shows your next unused
+prompt for that venue. Prompts are used in order.
 
-**Succeed** → the app resolves your reward in this order:
+**If you have a go, you succeed.** Quality is irrelevant. The only failure is
+refusing or making no real attempt; ties go to the performer. If you genuinely
+can't do a prompt, tap **pass & draw again** — no failure taken.
+
+### Step 5 — Resolve
+
+**Refused** → the card goes to the discard pile. Turn ends.
+
+**Attempt made** → the app resolves your reward:
 
 1. **🐾 Animal Affinity** — Does the animal on the card match your Character's
    animal? If yes: take a Prop Token. Turn ends.
@@ -93,7 +100,3 @@ going.
 The moment a player reaches their table's token target, the game ends and that
 player takes a bow.
 
-## Family Mode
-
-Removes the **Heckler** and **Mime Time** cards from the deck and hides
-adult-themed prompts — for a gentler, mixed-age table.

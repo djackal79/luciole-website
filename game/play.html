@@ -44,21 +44,9 @@
       <div id="player-rows"></div>
     </div>
 
-    <div class="form-section">
-      <div class="family-mode-row">
-        <label class="toggle-label" for="setup-family-mode">
-          Family Mode
-          <span class="toggle-hint">Removes Heckler &amp; Mime Time, hides adult prompts</span>
-        </label>
-        <label class="toggle">
-          <input type="checkbox" id="setup-family-mode">
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-    </div>
 
     <div class="form-section">
-      <div class="family-mode-row">
+      <div class="toggle-row">
         <label class="toggle-label" for="setup-tutorial-mode">
           Tutorial Mode 🎓
           <span class="toggle-hint">Guides new players through rules, characters &amp; strategy</span>
@@ -71,7 +59,7 @@
     </div>
 
     <div class="form-section">
-      <div class="family-mode-row">
+      <div class="toggle-row">
         <label class="toggle-label" for="setup-fast-game">
           Fast game <span class="unverified-tag">UNVERIFIED</span>
           <span class="toggle-hint">Win at 2 Prop Tokens at every player count. Only changes 3–5 player games, which normally play to 3. Not play-tested.</span>
@@ -119,13 +107,6 @@
   </div>
 
   <div class="settings-row">
-    <div class="family-mode-row">
-      <label class="toggle-label small" for="turn-family-mode">Family Mode</label>
-      <label class="toggle">
-        <input type="checkbox" id="turn-family-mode">
-        <span class="toggle-slider"></span>
-      </label>
-    </div>
     <div class="settings-btns">
       <button class="btn-ghost" id="save-game-btn">💾 Save</button>
       <button class="btn-ghost" id="log-btn">📋 Log</button>
@@ -146,7 +127,7 @@
   <div class="draw-body">
     <div class="drawn-card" id="drawn-card"></div>
     <div class="drawn-card-meta">
-      <div class="drawn-card-title" id="drawn-card-title">The Ad-Lib</div>
+      <div class="drawn-card-title" id="drawn-card-title">Second Crack</div>
       <div class="drawn-card-animal" id="drawn-card-animal">🐾 Kookaburra · 🎤 Comedy Lounge</div>
       <div class="drawn-card-power" id="drawn-card-power"></div>
     </div>
@@ -161,18 +142,21 @@
       </div>
 
       <div class="success-block" id="draw-success-block">
-        <span class="success-icon" id="success-icon">🗳️</span>
+        <span class="success-icon">🎭</span>
         <div class="success-text-wrap">
-          <div class="success-label" id="success-label">Majority vote</div>
-          <div class="success-text" id="success-text"></div>
+          <div class="success-label">Have a go</div>
+          <div class="success-text" id="success-note"></div>
         </div>
       </div>
     </div>
   </div>
 
   <div class="prompt-footer">
-    <button class="btn-fail" id="fail-btn">✗ Fail</button>
-    <button class="btn-pass" id="success-btn">✓ Nailed It</button>
+    <button class="btn-ghost btn-graceful" id="pass-draw-btn">🔄 Can't do this one — pass &amp; draw again</button>
+    <div class="prompt-footer-row">
+      <button class="btn-fail" id="fail-btn">✗ Refused to try</button>
+      <button class="btn-pass" id="success-btn">✓ Done</button>
+    </div>
   </div>
 </div>
 
@@ -313,13 +297,8 @@
       </div>
     </div>
     <div class="sim-section">
-      <div class="family-mode-row">
-        <label class="toggle-label" for="sim-family-mode">Family Mode</label>
-        <label class="toggle"><input type="checkbox" id="sim-family-mode"><span class="toggle-slider"></span></label>
-      </div>
-    </div>
-    <div class="sim-section">
-      <div class="form-label">Success Rate per Venue</div>
+      <div class="form-label">Attempt Rate per Venue</div>
+      <div class="sim-hint">Success is participation now — this is how often a player actually has a go rather than refusing.</div>
       <div class="sim-slider-group" id="sim-success-sliders"></div>
     </div>
     <div class="sim-section">

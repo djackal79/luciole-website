@@ -1,5 +1,5 @@
 import { prompts } from './data/prompts.js';
-import { cards, cardByNumber, FAMILY_REMOVED_TITLES } from './data/cards.js';
+import { cards, cardByNumber, WILDCARD_TITLE } from './data/cards.js';
 import { INTRO_STEPS, CHARACTER_BACKSTORIES, PHASE_TIPS } from './data/tutorial.js';
 import { supabase, SESSION_ID } from './supabase.js';
 
@@ -38,7 +38,6 @@ const RULES_CONFIG = {
   },
   minPlayers: 3,              // §7 — 2 players is explicitly not supported
   maxPlayers: 8,
-  familyMode: false,
   // Labelled experimental override, surfaced in the UI as "Fast game:
   // 2 tokens, untested". Off by default so the confirmed ruleset is what
   // runs unless the tester deliberately opts out of it.
@@ -107,12 +106,6 @@ const VENUES = {
   school_play: {name:'School Play',    icon:'🎭', cssClass:'school_play', act:'Act'},
 };
 
-const SUCCESS_DISPLAY = {
-  vote:        {icon:'🗳️', label:'Majority vote'},
-  objective:   {icon:'✅', label:'Objective — the table can see it'},
-  named_judge: {icon:'👤', label:'Judge — player to your left decides'},
-};
-
 // ===== STATE =====
 
 let state = null;
@@ -141,7 +134,9 @@ function defaultState() {
     interruptStack: [],
     // §1.4 Step 0 — set on the flip, cleared only when the turn passes.
     drawnThisTurn: false,
-    familyMode: false,
+    // §3 — a card can never be cashed on the turn it is DRAWN. Stolen or
+    // Swooped cards are exempt: acquire-then-spend in one turn is deliberate.
+    drawnThisTurnCards: [],
     tutorialMode: false,
     fastGameUnverified: false,  // §3 — labelled experimental opt-in
     turnNumber: 0,
@@ -232,12 +227,8 @@ function shuffle(arr) {
   return a;
 }
 
-function buildDeck(familyMode) {
-  let pool = cards.map(c => c.number);
-  if (familyMode) {
-    pool = pool.filter(n => !FAMILY_REMOVED_TITLES.includes(cardByNumber(n).title));
-  }
-  return shuffle(pool);
+function buildDeck() {
+  return shuffle(cards.map(c => c.number));
 }
 
 function ensureDeck() {
@@ -247,14 +238,14 @@ function ensureDeck() {
   }
 }
 
-function getCardPrompts(cardNumber, venue, familyMode) {
+function getCardPrompts(cardNumber, venue) {
   return prompts
-    .filter(p => p.card_number === cardNumber && p.venue === venue && (!familyMode || p.family_safe))
+    .filter(p => p.card_number === cardNumber && p.venue === venue)
     .sort((a, b) => a.position - b.position);
 }
 
-function getNextPrompt(player, venue, familyMode) {
-  const list = getCardPrompts(player.card_number, venue, familyMode);
+function getNextPrompt(player, venue) {
+  const list = getCardPrompts(player.card_number, venue);
   const used = (player.used && player.used[venue]) || [];
   return list.find(p => !used.includes(p.position)) || null;
 }
@@ -278,11 +269,54 @@ function pairableGroups(player) {
   return byTitle;
 }
 
-// Every set of 2+ same-titled cards the player could cash right now.
+// §3 — a card drawn this turn cannot be cashed this turn. It sits face-up
+// through a full round of everyone else's turns first, which is what makes the
+// card-stealing powers matter. Cards acquired by Pie in the Face, Swoop or
+// Stage Left Stage Right are NOT restricted — that combo is deliberate.
+// §4 — Swoop opens the discard pile as a resource, so it needs to be an
+// ordered pile with a visible, accessible top card rather than a bucket.
+function topOfDiscard() {
+  if (!Array.isArray(state.discard) || state.discard.length === 0) return null;
+  return state.discard[state.discard.length - 1];
+}
+
+function lockDrawnCard(cardNumber) {
+  if (!Array.isArray(state.drawnThisTurnCards)) state.drawnThisTurnCards = [];
+  state.drawnThisTurnCards.push(cardNumber);
+}
+
+function cashableHand(player) {
+  const locked = new Set(state && state.drawnThisTurnCards ? state.drawnThisTurnCards : []);
+  return player.hand.filter(n => !locked.has(n));
+}
+
+// Every pair the player could cash right now. §4 — Wild Act counts as any
+// card type, so it pairs with any other single card in hand.
 function cashablePairs(player) {
-  return Object.entries(pairableGroups(player))
+  const hand = cashableHand(player);
+  const byTitle = {};
+  hand.forEach(n => {
+    const c = cardByNumber(n);
+    if (c) (byTitle[c.title] = byTitle[c.title] || []).push(n);
+  });
+
+  const out = Object.entries(byTitle)
     .filter(([, ns]) => ns.length >= 2)
     .map(([title, ns]) => ({ title, cards: ns.slice(0, 2) }));
+
+  const wilds = byTitle[WILDCARD_TITLE] || [];
+  if (wilds.length >= 1) {
+    // A Wild Act plus any other held card is a pair.
+    const partner = hand.find(n => n !== wilds[0] && cardByNumber(n)?.title !== WILDCARD_TITLE);
+    if (partner != null && !out.some(p => p.title === WILDCARD_TITLE)) {
+      out.push({
+        title: `${WILDCARD_TITLE} + ${cardByNumber(partner).title}`,
+        cards: [wilds[0], partner],
+        wild: true,
+      });
+    }
+  }
+  return out;
 }
 
 function hasCashablePair(player) {
@@ -401,6 +435,27 @@ function renderUnverifiedBanner() {
   });
 }
 
+// §4 — the discard pile is now a resource Swoop can take from, so its top
+// card has to be visible to everyone at the table.
+function renderDiscardBar(screen) {
+  let el = screen.querySelector('.discard-bar');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'discard-bar';
+    const anchor = screen.querySelector('.pool-bar');
+    if (anchor && anchor.nextSibling) screen.insertBefore(el, anchor.nextSibling);
+    else screen.appendChild(el);
+  }
+  const top = topOfDiscard();
+  const count = Array.isArray(state.discard) ? state.discard.length : 0;
+  if (top == null) {
+    el.innerHTML = '🗑️ Discard pile: <span class="discard-top">empty</span>';
+    return;
+  }
+  const c = cardByNumber(top);
+  el.innerHTML = `🗑️ Discard (${count}) — top: <span class="discard-top">${escapeHtml(c.title)}</span> <span class="discard-hint">Swoop takes this</span>`;
+}
+
 function renderPoolBar() {
   if (!state || !state.players || state.players.length === 0) return;
   ensurePool();
@@ -417,6 +472,7 @@ function renderPoolBar() {
       if (anchor && anchor.nextSibling) screen.insertBefore(bar, anchor.nextSibling);
       else screen.appendChild(bar);
     }
+    renderDiscardBar(screen);
     const n = state.pool.length;
     bar.classList.toggle('empty', n === 0);
     bar.innerHTML = n === 0
@@ -582,6 +638,7 @@ function advancePlayer() {
   // Any unresolved interrupts belong to the turn that just ended.
   state.interruptStack = [];
   state.drawnThisTurn = false;
+  state.drawnThisTurnCards = [];
   state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
 }
 
@@ -591,7 +648,6 @@ function renderSetup() {
   document.querySelectorAll('.count-btn').forEach(btn => {
     btn.classList.toggle('active', parseInt(btn.dataset.count) === state.numPlayers);
   });
-  document.getElementById('setup-family-mode').checked = state.familyMode;
   document.getElementById('setup-tutorial-mode').checked = !!state.tutorialMode;
   document.getElementById('setup-fast-game').checked = !!state.fastGameUnverified;
 
@@ -817,7 +873,6 @@ function renderTurn() {
   document.getElementById('turn-player-name').textContent = player.name || `Player ${state.currentPlayerIndex + 1}`;
   document.getElementById('turn-player-character').textContent = characterLabel(ch);
   document.getElementById('turn-player-venue').textContent = `${venue.icon} ${venue.name}`;
-  document.getElementById('turn-family-mode').checked = state.familyMode;
 
   const charCard = document.getElementById('turn-char-card');
   charCard.style.backgroundImage = `url('assets/characters/${ch.img}.png')`;
@@ -918,7 +973,7 @@ function renderDraw() {
     `🐾 ${animalName(card.animal)} · ${venue.icon} ${venue.name}`;
   document.getElementById('drawn-card-power').textContent = card.power_text;
 
-  const prompt = getNextPrompt(player, card.venue, state.familyMode);
+  const prompt = getNextPrompt(player, card.venue);
   state.drawnPromptPos = prompt ? prompt.position : null;
 
   document.getElementById('perform-cardno').textContent = `Prompt Card #${player.card_number}`;
@@ -939,11 +994,12 @@ function renderDraw() {
       timerBlock.classList.add('hidden');
     }
 
-    const sc = SUCCESS_DISPLAY[prompt.success_condition] || SUCCESS_DISPLAY.vote;
+    // §2 — success is participation. There is no vote, no objective test and
+    // no named judge; the performer decides when they are done and the table
+    // only rules on whether an attempt was made at all.
     successBlock.classList.remove('hidden');
-    document.getElementById('success-icon').textContent = sc.icon;
-    document.getElementById('success-label').textContent = sc.label;
-    document.getElementById('success-text').textContent = prompt.success_text || '';
+    document.getElementById('success-note').textContent =
+      'Give it a go. Any real attempt counts — the table only rules if you refuse, and a tie goes to you.';
   } else {
     promptText.textContent = `You've used every ${venue.name} prompt on your card — improvise one!`;
     promptText.classList.add('muted');
@@ -1207,10 +1263,29 @@ function playPower(playerIndex, cardNumber) {
   }
 
   const player = state.players[playerIndex];
+
+  // §4 — Swoop takes the top of the discard pile. Resolve it before the Swoop
+  // itself is discarded, or it would just take itself back.
+  let swooped = null;
+  if (card.title === 'Swoop') {
+    swooped = topOfDiscard();
+    if (swooped == null) {
+      showToast('🪶 Discard pile is empty — nothing to Swoop.');
+      return;
+    }
+    state.discard.pop();
+  }
+
   const i = player.hand.indexOf(cardNumber);
   if (i !== -1) {
     player.hand.splice(i, 1);
     state.discard.push(cardNumber);
+  }
+
+  if (swooped != null) {
+    // Acquired, not drawn — cashable immediately (§3 exception).
+    player.hand.push(swooped);
+    showToast(`🪶 Swooped ${cardByNumber(swooped).title} off the discard pile.`);
   }
 
   if (state.currentTurn) {
@@ -1329,6 +1404,40 @@ function doDraw() {
   goToDraw();
 }
 
+// §2 — graceful pass. A player who genuinely cannot do a prompt (can't sing,
+// doesn't know the song) passes and draws again rather than taking a failure.
+// This is a rule, not a courtesy: the prompt is consumed, the card goes back
+// to the discard, and a fresh card is drawn for the same turn.
+function doPassAndRedraw() {
+  const player = state.players[state.currentPlayerIndex];
+  const card = cardByNumber(state.drawnCard);
+  if (!card) return;
+
+  // The passed prompt is used up — no cherry-picking by passing repeatedly.
+  if (state.drawnPromptPos != null) markPromptUsed(player, card.venue, state.drawnPromptPos);
+  state.discard.push(state.drawnCard);
+
+  if (state.currentTurn) state.currentTurn.passes = (state.currentTurn.passes || 0) + 1;
+
+  state.drawnCard = null;
+  state.drawnPromptPos = null;
+  stopTimer();
+
+  ensureDeck();
+  if (state.deck.length === 0) { showToast('Deck is empty — nothing to draw.'); goToTurn(); return; }
+  state.drawnCard = state.deck.pop();
+  const fresh = cardByNumber(state.drawnCard);
+  if (state.currentTurn) {
+    state.currentTurn.cardNumber = fresh.number;
+    state.currentTurn.cardTitle = fresh.title;
+    state.currentTurn.cardAnimal = fresh.animal;
+    state.currentTurn.venue = fresh.venue;
+  }
+  showToast('Passed — new card, new prompt. No failure taken.');
+  save();
+  renderCurrentPhase();
+}
+
 function doFail() {
   if (state.drawnCard != null) state.discard.push(state.drawnCard);
 
@@ -1369,10 +1478,12 @@ function applyOutcome(outcome) {
     } else {
       showPoolEmptyNotice();
       player.hand.push(card.number);
+      lockDrawnCard(card.number);
       outcome = 'power';
     }
   } else {
     player.hand.push(card.number);
+    lockDrawnCard(card.number);
   }
 
   if (state.currentTurn) {
@@ -1474,9 +1585,6 @@ function wireSetup() {
     renderSetup();
   });
 
-  document.getElementById('setup-family-mode').addEventListener('change', e => {
-    state.familyMode = e.target.checked;
-  });
 
   document.getElementById('setup-tutorial-mode').addEventListener('change', e => {
     state.tutorialMode = e.target.checked;
@@ -1513,7 +1621,7 @@ function wireSetup() {
     }
     state.players = players;
     state.currentPlayerIndex = 0;
-    state.deck = buildDeck(state.familyMode);
+    state.deck = buildDeck();
     state.discard = [];
     if (state.tutorialMode) resetTutorialSeen();
     claimPlayerSlot(0); // host becomes player 1
@@ -1526,11 +1634,6 @@ function wireTurn() {
   document.getElementById('cash-pair-btn').addEventListener('click', e => doCashPair(e.currentTarget.dataset.pairTitle));
   document.getElementById('turn-allplayers-btn').addEventListener('click', openPossessions);
 
-  document.getElementById('turn-family-mode').addEventListener('change', e => {
-    state.familyMode = e.target.checked;
-    renderCurrentPhase();
-    save();
-  });
 
   document.getElementById('save-game-btn').addEventListener('click', openSaveModal);
   document.getElementById('log-btn').addEventListener('click', openLogModal);
@@ -1553,6 +1656,7 @@ function wireDraw() {
   });
   document.getElementById('draw-allplayers-btn').addEventListener('click', openPossessions);
   document.getElementById('fail-btn').addEventListener('click', doFail);
+  document.getElementById('pass-draw-btn').addEventListener('click', doPassAndRedraw);
   document.getElementById('success-btn').addEventListener('click', doSuccess);
 
   document.getElementById('timer-btn').addEventListener('click', () => {
@@ -1562,7 +1666,7 @@ function wireDraw() {
     } else {
       const player = state.players[state.currentPlayerIndex];
       const card = cardByNumber(state.drawnCard);
-      const prompt = card ? getNextPrompt(player, card.venue, state.familyMode) : null;
+      const prompt = card ? getNextPrompt(player, card.venue) : null;
       const dur = prompt && prompt.duration_seconds ? prompt.duration_seconds : 30;
       startTimer(timerRemaining > 0 ? timerRemaining : dur);
     }
@@ -2032,11 +2136,12 @@ function wireLogModal() {
 const DEFAULT_SIM_CONFIG = {
   numPlayers: 4,
   simCount: 500,
-  familyMode: false,
-  successRates: { comedy_lounge: 0.65, the_club: 0.65, royal_show: 0.65, school_play: 0.65 },
+  // §2 — quality no longer decides anything. The only failure is refusing to
+  // perform, so this is the chance a player HAS A GO at a given venue.
+  successRates: { comedy_lounge: 0.95, the_club: 0.9, royal_show: 0.9, school_play: 0.9 },
   powerPlay: {
-    'The Ad-Lib': 0.75, 'Warm-Up Act': 0.5, 'Standing Ovation': 0.6,
-    'Prop Master': 0.4, 'Improviser': 0.6, 'Heckler': 0.5,
+    'Second Crack': 0.75, 'Warm-Up Act': 0.5, 'Standing Ovation': 0.6,
+    'Prop Master': 0.4, 'Wild Act': 0.6, 'Swoop': 0.5,
     'Pie In The Face': 0.35, 'Stage Hook': 0.4, 'Intermission': 0.45,
     'Clap Back': 0.5, 'Mime Time': 0.5, 'Stage Left Stage Right': 0.2, 'Giggle Box': 0.45,
   },
@@ -2055,7 +2160,6 @@ function renderSimScreen() {
     b.classList.toggle('active', parseInt(b.dataset.count) === simConfig.numPlayers));
   document.querySelectorAll('#sim-count-sel .count-btn').forEach(b =>
     b.classList.toggle('active', parseInt(b.dataset.count) === simConfig.simCount));
-  document.getElementById('sim-family-mode').checked = simConfig.familyMode;
 
   const successGrp = document.getElementById('sim-success-sliders');
   if (!successGrp.children.length) {
@@ -2074,8 +2178,8 @@ function renderSimScreen() {
   const powerGrp = document.getElementById('sim-power-sliders');
   if (!powerGrp.children.length) {
     [
-      'The Ad-Lib','Warm-Up Act','Standing Ovation','Prop Master','Improviser',
-      'Heckler','Pie In The Face','Stage Hook','Intermission','Clap Back',
+      'Second Crack','Warm-Up Act','Standing Ovation','Prop Master','Wild Act',
+      'Swoop','Pie In The Face','Stage Hook','Intermission','Clap Back',
       'Mime Time','Stage Left Stage Right','Giggle Box',
     ].forEach(title => powerGrp.appendChild(buildSliderRow(
       `power-${title}`, title, 0, 100, 5,
@@ -2202,7 +2306,7 @@ function renderSimResults(results) {
   const totalTokens = Object.values(totalTokenSources).reduce((s, n) => s + n, 0) || 1;
   const TOKEN_LABELS = {
     animal: '🐾 Animal affinity', typePair: '🃏 Type pair',
-    improviser: '⚡ Improviser', propMaster: '🎭 Prop Master',
+    wildAct: '⚡ Wild Act', propMaster: '🎭 Prop Master',
   };
   const s3 = section('Token Sources');
   Object.entries(totalTokenSources).sort((a, b) => b[1] - a[1]).forEach(([key, count]) => {
@@ -2235,18 +2339,13 @@ function wireSimScreen() {
     document.querySelectorAll('#sim-count-sel .count-btn').forEach(b =>
       b.classList.toggle('active', parseInt(b.dataset.count) === simConfig.simCount));
   });
-  document.getElementById('sim-family-mode').addEventListener('change', e => {
-    simConfig.familyMode = e.target.checked;
-  });
   document.getElementById('sim-run-btn').addEventListener('click', runSimAndShow);
 }
 
 // ===== SIMULATION ENGINE =====
 
-function simBuildDeck(familyMode) {
-  let pool = cards.map(c => c.number);
-  if (familyMode) pool = pool.filter(n => !FAMILY_REMOVED_TITLES.includes(cardByNumber(n).title));
-  return shuffle(pool);
+function simBuildDeck() {
+  return shuffle(cards.map(c => c.number));
 }
 
 function simEnsureDeck(deck, discard) {
@@ -2342,17 +2441,20 @@ function simPerformTurn(cardNum, player, players, deck, discard, cfg, tokenSourc
     }
   }
 
-  let success = !silenced && Math.random() < (cfg.successRates[card.venue] || 0.65);
+  // §2 — success is participation. The only failures left are refusing to
+  // perform (modelled by the venue refusal rate) and the two objective card
+  // powers, Mime Time and Giggle Box, which judge a fact rather than quality.
+  let success = !silenced && Math.random() < (cfg.successRates[card.venue] ?? 0.92);
 
   if (!success) {
-    // THE AD-LIB: retry once on fail
-    if (!silenced && simHasCard(player.hand, 'The Ad-Lib')) {
+    // SECOND CRACK: bin the drawn card and draw again instead of performing.
+    if (simHasCard(player.hand, 'Second Crack')) {
       const sit = simGetSituation(players, player.idx, card.venue);
-      if (simShouldPlay('The Ad-Lib', cfg, sit, true)) {
-        const ac = simRemoveCard(player.hand, 'The Ad-Lib');
+      if (simShouldPlay('Second Crack', cfg, sit, true)) {
+        const ac = simRemoveCard(player.hand, 'Second Crack');
         if (ac) discard.push(ac);
         discard.push(cardNum);
-        track('The Ad-Lib');
+        track('Second Crack');
         simEnsureDeck(deck, discard);
         if (deck.length > 0) simPerformTurn(deck.pop(), player, players, deck, discard, cfg, tokenSources, powerPlayed, pool, (depth || 0) + 1);
         return;
@@ -2361,33 +2463,6 @@ function simPerformTurn(cardNum, player, players, deck, discard, cfg, tokenSourc
     discard.push(cardNum);
     return;
   }
-
-  // HECKLER: force re-perform
-  for (const opp of players) {
-    if (opp.idx === player.idx) continue;
-    if (simHasCard(opp.hand, 'Heckler') &&
-        simShouldPlay('Heckler', cfg, simGetSituation(players, opp.idx, null), false)) {
-      let countered = false;
-      for (const ct of ['Standing Ovation', 'Clap Back']) {
-        if (simHasCard(player.hand, ct) && Math.random() < (cfg.powerPlay[ct] || 0)) {
-          const cc = simRemoveCard(player.hand, ct);
-          if (cc) discard.push(cc);
-          track(ct);
-          countered = true;
-          break;
-        }
-      }
-      if (!countered) {
-        const hc = simRemoveCard(opp.hand, 'Heckler');
-        if (hc) discard.push(hc);
-        track('Heckler');
-        success = Math.random() < (cfg.successRates[card.venue] || 0.65);
-      }
-      break;
-    }
-  }
-
-  if (!success) { discard.push(cardNum); return; }
 
   // OUTCOME — §1: animal match pays a token now, everything else is kept.
   // Venue no longer affects the reward at all.
@@ -2409,15 +2484,27 @@ function simPerformTurn(cardNum, player, players, deck, discard, cfg, tokenSourc
   });
   delete byTitle.__usedDrawn;
 
+  let pairCards = null, pairSource = 'typePair';
   const pairTitle = Object.keys(byTitle).find(t => byTitle[t].length >= 2);
+  if (pairTitle) {
+    pairCards = byTitle[pairTitle].slice(0, 2);
+  } else {
+    // §4 — Wild Act counts as any card type, so it pairs with anything else.
+    const wilds = byTitle[WILDCARD_TITLE] || [];
+    if (wilds.length >= 1) {
+      const partnerTitle = Object.keys(byTitle).find(t => t !== WILDCARD_TITLE && byTitle[t].length >= 1);
+      if (partnerTitle) { pairCards = [wilds[0], byTitle[partnerTitle][0]]; pairSource = 'wildAct'; }
+    }
+  }
+
   // An empty Pool blocks every token route. Don't burn the pair.
-  if (pairTitle && (!pool || pool.count > 0)) {
-    byTitle[pairTitle].slice(0, 2).forEach(n => {
+  if (pairCards && (!pool || pool.count > 0)) {
+    pairCards.forEach(n => {
       const i = player.hand.indexOf(n);
       if (i !== -1) player.hand.splice(i, 1);
       discard.push(n);
     });
-    simAwardToken(player, 'typePair', tokenSources, pool);
+    simAwardToken(player, pairSource, tokenSources, pool);
   }
 }
 
@@ -2426,7 +2513,7 @@ function simRunGame(cfg) {
   const players = CHARACTERS.slice(0, numP).map((ch, i) => ({
     idx: i, character: ch.id, venue: ch.venue, tokens: 0, hand: [],
   }));
-  const deck = simBuildDeck(cfg.familyMode);
+  const deck = simBuildDeck();
   const discard = [];
   const tokenSources = {};
   const powerPlayed = {};
@@ -2507,6 +2594,18 @@ function simRunGame(cfg) {
           let bestV = -1, bestI = -1;
           target.hand.forEach((n, i) => { const v = simCardValue(cardByNumber(n), target); if (v > bestV) { bestV = v; bestI = i; } });
           if (bestI !== -1) discard.push(target.hand.splice(bestI, 1)[0]);
+        }
+      }
+
+      // POST-TURN: Swoop — take the top card off the discard pile (§4)
+      if (simHasCard(player.hand, 'Swoop') && discard.length > 0 &&
+          simShouldPlay('Swoop', cfg, simGetSituation(players, current, null), true)) {
+        const sc = simRemoveCard(player.hand, 'Swoop');
+        if (sc) {
+          const taken = discard.pop();
+          discard.push(sc);
+          track('Swoop');
+          if (taken != null) player.hand.push(taken);
         }
       }
 
