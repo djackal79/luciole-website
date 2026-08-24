@@ -1,4 +1,8 @@
-import { prompts } from './data/prompts.js';
+import { loadPrompts, packetCardFor, PACKET_COUNT } from './data/prompts_v2.js';
+
+// Populated by loadPrompts() during init. Placeholder content until Carl's
+// refined CSV lands — see data/prompts_v2.js.
+let prompts = [];
 import { cards, cardByNumber, WILDCARD_TITLE } from './data/cards.js';
 import { INTRO_STEPS, CHARACTER_BACKSTORIES, PHASE_TIPS } from './data/tutorial.js';
 import { supabase, SESSION_ID } from './supabase.js';
@@ -41,17 +45,10 @@ const RULES_CONFIG = {
   },
   minPlayers: 3,              // 2 players is explicitly not supported
   maxPlayers: 8,
-  // PENDING REMOVAL (v2.1 §2.4). This 2-token toggle was a workaround for the
-  // deadlock that CN-3.1b now solves properly. Kept working until Carl
-  // confirms the deletion, rather than silently dropping a live feature.
-  fastGameUnverified: false,
-  fastGameTokens: 2,
 };
 
 // Win condition for the current table size. Never compare against a literal.
 function tokenGoal(numPlayers) {
-  // The experimental fast game is an explicit, labelled opt-in (§3).
-  if (state && state.fastGameUnverified) return RULES_CONFIG.fastGameTokens;
   const n = numPlayers != null ? numPlayers : (state && state.numPlayers);
   return RULES_CONFIG.winCondition.byPlayerCount[n] ?? RULES_CONFIG.winCondition.default;
 }
@@ -147,7 +144,6 @@ function defaultState() {
     // Swooped cards are exempt: acquire-then-spend in one turn is deliberate.
     drawnThisTurnCards: [],
     tutorialMode: false,
-    fastGameUnverified: false,  // §3 — labelled experimental opt-in
     turnNumber: 0,
     turnLog: [],
     currentTurn: null,
@@ -247,14 +243,22 @@ function ensureDeck() {
   }
 }
 
-function getCardPrompts(cardNumber, venue) {
+// CN-5.27 — a player's packet is fixed by their Character. Packet N holds one
+// single-venue Prompt Card per venue, so the venue alone picks the card.
+function packetNumberFor(player) {
+  const idx = CHARACTERS.findIndex(c => c.id === player.character);
+  return (idx === -1 ? 0 : idx) % PACKET_COUNT + 1;
+}
+
+function getCardPrompts(packetNumber, venue) {
+  const card = packetCardFor(packetNumber, venue);
   return prompts
-    .filter(p => p.card_number === cardNumber && p.venue === venue)
+    .filter(p => p.packet_card_number === card && p.venue === venue)
     .sort((a, b) => a.position - b.position);
 }
 
 function getNextPrompt(player, venue) {
-  const list = getCardPrompts(player.card_number, venue);
+  const list = getCardPrompts(packetNumberFor(player), venue);
   const used = (player.used && player.used[venue]) || [];
   return list.find(p => !used.includes(p.position)) || null;
 }
@@ -488,28 +492,8 @@ function showPoolEmptyNotice() {
 }
 
 // Shows the shared supply on every in-game screen (§1.3 — the Pool is public).
-// §3 — while the experimental win condition is active the player must be able
-// to see, at any point in the game, that they are not on the confirmed rules.
-function renderUnverifiedBanner() {
-  if (!state || !state.players || state.players.length === 0) return;
-  ['turn-screen', 'draw-screen', 'spectate-screen'].forEach(id => {
-    const screen = document.getElementById(id);
-    if (!screen) return;
-    let bar = screen.querySelector('.unverified-banner');
-    if (!bar) {
-      bar = document.createElement('div');
-      bar.className = 'unverified-banner';
-      const anchor = screen.querySelector('.pool-bar') || screen.firstElementChild;
-      if (anchor && anchor.nextSibling) screen.insertBefore(bar, anchor.nextSibling);
-      else screen.appendChild(bar);
-    }
-    bar.textContent = `⚠️ Fast game — win at ${RULES_CONFIG.fastGameTokens} tokens. Unverified ruleset.`;
-    bar.classList.toggle('hidden', !state.fastGameUnverified);
-  });
-}
-
-// §4 — the discard pile is now a resource Swoop can take from, so its top
-// card has to be visible to everyone at the table.
+// §4 — the discard pile is a resource Swoop can take from, so its top card
+// has to be visible to everyone at the table.
 function renderDiscardBar(screen) {
   let el = screen.querySelector('.discard-bar');
   if (!el) {
@@ -532,7 +516,6 @@ function renderDiscardBar(screen) {
 function renderPoolBar() {
   if (!state || !state.players || state.players.length === 0) return;
   ensurePool();
-  renderUnverifiedBanner();
   const screens = ['turn-screen', 'draw-screen', 'spectate-screen'];
   screens.forEach(id => {
     const screen = document.getElementById(id);
@@ -782,7 +765,6 @@ function renderSetup() {
     btn.classList.toggle('active', parseInt(btn.dataset.count) === state.numPlayers);
   });
   document.getElementById('setup-tutorial-mode').checked = !!state.tutorialMode;
-  document.getElementById('setup-fast-game').checked = !!state.fastGameUnverified;
 
   const container = document.getElementById('player-rows');
   container.innerHTML = '';
@@ -816,17 +798,6 @@ function renderSetup() {
     }
     assignedChars.push(charSelect.value);
 
-    const cardSelect = document.createElement('select');
-    cardSelect.dataset.playerIndex = i;
-    cardSelect.className = 'card-select';
-    for (let c = 1; c <= 16; c++) {
-      const opt = document.createElement('option');
-      opt.value = c;
-      opt.textContent = `Prompt Card ${c}`;
-      if ((existing.card_number || (i + 1)) === c) opt.selected = true;
-      cardSelect.appendChild(opt);
-    }
-
     const charPreview = document.createElement('div');
     charPreview.className = 'char-preview-img';
     const getCharImg = (charId) => {
@@ -841,7 +812,6 @@ function renderSetup() {
     row.appendChild(charPreview);
     row.appendChild(nameInput);
     row.appendChild(charSelect);
-    row.appendChild(cardSelect);
     container.appendChild(row);
   }
 }
@@ -1109,7 +1079,8 @@ function renderDraw() {
   const prompt = getNextPrompt(player, card.venue);
   state.drawnPromptPos = prompt ? prompt.position : null;
 
-  document.getElementById('perform-cardno').textContent = `Prompt Card #${player.card_number}`;
+  document.getElementById('perform-cardno').textContent =
+    `${VENUES[card.venue].name} card · packet ${packetNumberFor(player)}`;
   const promptText = document.getElementById('draw-prompt-text');
   const successBlock = document.getElementById('draw-success-block');
   const timerBlock = document.getElementById('timer-block');
@@ -1729,13 +1700,6 @@ function wireSetup() {
     }
   });
 
-  document.getElementById('setup-fast-game').addEventListener('change', e => {
-    state.fastGameUnverified = e.target.checked;
-    if (e.target.checked) {
-      showToast(`⚠️ Fast game: win at ${RULES_CONFIG.fastGameTokens} tokens. This is NOT the confirmed ruleset and has never been play-tested.`);
-    }
-    renderCurrentPhase();
-  });
 
   document.getElementById('simulate-btn').addEventListener('click', showSimScreen);
 
@@ -1744,11 +1708,9 @@ function wireSetup() {
     for (let i = 0; i < state.numPlayers; i++) {
       const nameEl = document.querySelector(`.player-name-input[data-player-index="${i}"]`);
       const charEl = document.querySelector(`.char-select[data-player-index="${i}"]`);
-      const cardEl = document.querySelector(`.card-select[data-player-index="${i}"]`);
       players.push({
         name: nameEl ? nameEl.value.trim() : '',
         character: charEl ? charEl.value : 'kookaburra',
-        card_number: cardEl ? parseInt(cardEl.value) : (i + 1),
         tokens: [],
         hand: [],
         used: {comedy_lounge:[], the_club:[], royal_show:[], school_play:[]},
@@ -1833,7 +1795,7 @@ function wireVerdict() {
 function wireWin() {
   document.getElementById('win-newgame-btn').addEventListener('click', () => {
     const keep = state.players.map(p => ({
-      name: p.name, character: p.character, card_number: p.card_number,
+      name: p.name, character: p.character,
     }));
     state = defaultState();
     state.numPlayers = keep.length;
@@ -2914,6 +2876,12 @@ function applyNamingConstants() {
 }
 
 async function init() {
+  try {
+    prompts = await loadPrompts();
+  } catch (e) {
+    console.error('prompt load failed', e);
+    prompts = [];
+  }
   loadMyPlayerIndex();
   applyNamingConstants();
 
