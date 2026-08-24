@@ -1,11 +1,15 @@
 // Prompt loading for the CANON v2.1 packet model (CN-5.27 / CN-6.1b / CN-4.20a).
 //
-// PLACEHOLDER CONTENT IN USE.
-// `prompts_v2.csv` currently holds 256 obviously-fake stub rows so the app
-// runs end-to-end and is demoable. Every one is marked
-// "[PLACEHOLDER — awaiting refined content]". No comedy copy has been written
-// here — Carl's refined content is authored separately (CN-6.15) and drops
-// straight into the same CSV with no code changes.
+// REAL CONTENT IN USE — 256 authored prompts, regrouped from the previous
+// 16-card corpus. Two mechanical repairs were applied on import, both
+// recovered from the archive in `prompts.js`, nothing authored:
+//   * 168 em dashes had been double-encoded (U+00E2 U+0080 U+0094) and were
+//     round-tripped back to U+2014.
+//   * 8 rows had copied the old `success_text` column instead of `text`; the
+//     original prompt was restored for each from the archived corpus.
+// The CSV also carries three provenance columns beyond the canonical schema —
+// packet_number, source_old_card, source_old_position. The loader ignores
+// them; they are kept so any row can be traced back to its origin.
 //
 // STRUCTURE
 //   32 single-venue Prompt Cards, 8 per venue, 8 prompts each = 256.
