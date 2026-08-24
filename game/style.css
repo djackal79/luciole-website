@@ -1145,3 +1145,31 @@ body[data-phase="sim"] #game-menu-wrap { display: none; }
   border: 1px dashed #4a4a4a;
 }
 .btn-graceful:hover { border-color: var(--gold); color: var(--gold); }
+
+/* ===== VARIABLE POOL + SUDDEN DEATH (CANON v2.1 CN-3.1 / CN-3.1b) ===== */
+.pool-bar.sudden-death {
+  background: rgba(168,52,31,0.18);
+  border-bottom-color: var(--club);
+  color: #f0a08c;
+}
+.pool-bar.sudden-death .pool-count { color: #ff8a6a; }
+.spare-cracker-btn {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid #4a4a4a;
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.68rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.spare-cracker-btn:hover { border-color: var(--gold); color: var(--gold); }
+.spare-cracker-btn.hidden { display: none; }
+.pool-choice-lead { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.25rem; }
+.pool-choice-note {
+  color: var(--text-muted); font-size: 0.78rem; line-height: 1.45;
+  margin: 0.5rem 0 1.25rem;
+}
+#pool-choice .modal-content { max-height: 90vh; overflow-y: auto; }
+#pool-choice .btn-cash { width: 100%; }

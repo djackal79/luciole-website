@@ -1,36 +1,36 @@
-order,filename,animal,suit,archetype
-1,gold-kookaburra,Kookaburra,The Comedy Club,Heckled Stand-up
-2,gold-cockatoo,Cockatoo,The Comedy Club,Bitter Satirist
-3,gold-quokka,Quokka,The Comedy Club,Sweaty Warm-up Act
-4,gold-magpie,Magpie,The Comedy Club,Tragic Songbird
-5,gold-emu,Emu,The Comedy Club,Chaotic Prop Comic
-6,gold-galah,Galah,The Comedy Club,Drunken Clown
-7,gold-echidna,Echidna,The Comedy Club,Pretentious Improviser
-8,gold-platypus,Platypus,The Comedy Club,Deadpan Magician
-9,gold-bilby,Bilby,The Comedy Club,Warm-Up Act
-10,gold-numbat,Numbat,The Comedy Club,Prop Master
-11,gold-dingo,Dingo,The Comedy Club,Stage Hook
-12,gold-koala,Koala,The Comedy Club,Intermission
-13,gold-lyrebird,Lyrebird,The Comedy Club,Clap Back
-14,red-kookaburra,Kookaburra,The RSL,Heckled Stand-up
-15,red-cockatoo,Cockatoo,The RSL,Bitter Satirist
-16,red-quokka,Quokka,The RSL,Sweaty Warm-up Act
-17,red-magpie,Magpie,The RSL,Tragic Songbird
-18,red-emu,Emu,The RSL,Chaotic Prop Comic
-19,red-galah,Galah,The RSL,Drunken Clown
-20,red-echidna,Echidna,The RSL,Pretentious Improviser
-21,red-platypus,Platypus,The RSL,Deadpan Magician
-22,red-bilby,Bilby,The RSL,Warm-Up Act
-23,red-numbat,Numbat,The RSL,Prop Master
-24,red-dingo,Dingo,The RSL,Stage Hook
-25,red-koala,Koala,The RSL,Intermission
-26,red-lyrebird,Lyrebird,The RSL,Clap Back
+order,filename,animal,venue,archetype
+1,gold-kookaburra,Kookaburra,Comedy Lounge,Heckled Stand-up
+2,gold-cockatoo,Cockatoo,Comedy Lounge,Bitter Satirist
+3,gold-quokka,Quokka,Comedy Lounge,Sweaty Warm-up Act
+4,gold-magpie,Magpie,Comedy Lounge,Tragic Songbird
+5,gold-emu,Emu,Comedy Lounge,Chaotic Prop Comic
+6,gold-galah,Galah,Comedy Lounge,Woozy Clown
+7,gold-echidna,Echidna,Comedy Lounge,Pretentious Improviser
+8,gold-platypus,Platypus,Comedy Lounge,Deadpan Magician
+9,gold-bilby,Bilby,Comedy Lounge,Warm-Up Act
+10,gold-numbat,Numbat,Comedy Lounge,Prop Master
+11,gold-dingo,Dingo,Comedy Lounge,Stage Hook
+12,gold-koala,Koala,Comedy Lounge,Intermission
+13,gold-lyrebird,Lyrebird,Comedy Lounge,Clap Back
+14,red-kookaburra,Kookaburra,The Club,Heckled Stand-up
+15,red-cockatoo,Cockatoo,The Club,Bitter Satirist
+16,red-quokka,Quokka,The Club,Sweaty Warm-up Act
+17,red-magpie,Magpie,The Club,Tragic Songbird
+18,red-emu,Emu,The Club,Chaotic Prop Comic
+19,red-galah,Galah,The Club,Woozy Clown
+20,red-echidna,Echidna,The Club,Pretentious Improviser
+21,red-platypus,Platypus,The Club,Deadpan Magician
+22,red-bilby,Bilby,The Club,Warm-Up Act
+23,red-numbat,Numbat,The Club,Prop Master
+24,red-dingo,Dingo,The Club,Stage Hook
+25,red-koala,Koala,The Club,Intermission
+26,red-lyrebird,Lyrebird,The Club,Clap Back
 27,blue-kookaburra,Kookaburra,The Royal Show,Heckled Stand-up
 28,blue-cockatoo,Cockatoo,The Royal Show,Bitter Satirist
 29,blue-quokka,Quokka,The Royal Show,Sweaty Warm-up Act
 30,blue-magpie,Magpie,The Royal Show,Tragic Songbird
 31,blue-emu,Emu,The Royal Show,Chaotic Prop Comic
-32,blue-galah,Galah,The Royal Show,Drunken Clown
+32,blue-galah,Galah,The Royal Show,Woozy Clown
 33,blue-echidna,Echidna,The Royal Show,Pretentious Improviser
 34,blue-platypus,Platypus,The Royal Show,Deadpan Magician
 35,blue-bilby,Bilby,The Royal Show,Warm-Up Act
@@ -43,7 +43,7 @@ order,filename,animal,suit,archetype
 42,green-quokka,Quokka,The School Play,Sweaty Warm-up Act
 43,green-magpie,Magpie,The School Play,Tragic Songbird
 44,green-emu,Emu,The School Play,Chaotic Prop Comic
-45,green-galah,Galah,The School Play,Drunken Clown
+45,green-galah,Galah,The School Play,Woozy Clown
 46,green-echidna,Echidna,The School Play,Pretentious Improviser
 47,green-platypus,Platypus,The School Play,Deadpan Magician
 48,green-bilby,Bilby,The School Play,Warm-Up Act

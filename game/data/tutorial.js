@@ -72,7 +72,7 @@ export const CHARACTER_BACKSTORIES = {
     strategy: "Home venue: 🎪 The Royal Show — that is the performance style you get, nothing more. Pairs are NAME matches now, so collect duplicates of any card. Watch for the 4 galah cards: perform one and it is an instant token.",
   },
   echidna: {
-    title: 'The Pretentious Improvisor',
+    title: 'The Pretentious Improviser',
     story: "Echidna doesn't do comedy, darling — she does *theatre*. Every 'yes, and' comes with a lecture on Meisner technique. She once did a four-hour one-woman show about a spike. Critics called it 'long'. Prickly about feedback, prickly in general, she's certain the mainstream will catch up to her genius eventually. It has not.",
     strategy: "Home venue: 🎭 School Play — that is the performance style you get, nothing more. Pairs are NAME matches now, so collect duplicates of any card. Watch for the 4 echidna cards: perform one and it is an instant token.",
   },

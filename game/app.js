@@ -20,27 +20,30 @@ const PERSONAL_CARD_LABEL_PLURAL = 'Prompt Cards';
 // a previous session changed the default to 2 without flagging it, which is
 // the exact failure this config comments against. Any value below 3 is
 // unverified and must reach the player as a labelled experimental choice.
+// CANON v2.1 CN-3.1 / CN-3.1b / CN-3.17.
+//
+// The Pool is no longer a fixed 8 tokens. It holds one token per cracker
+// opened: each player opens one at setup, so it starts at numPlayers, and an
+// "open a spare cracker" action can add more at any time.
+//
+// Deadlock is no longer avoided by capping the win threshold. Instead, when
+// the Pool would be drawn from empty the table either opens another cracker
+// or declares a substitute token — and whoever next earns a token by any
+// route claims the substitute and wins outright, whatever the tally.
 const RULES_CONFIG = {
-  tokensInPool: 8,
+  // Cracker designs available to open. The Pool starts at one per player and
+  // grows from here; this is the ceiling on total tokens in play.
+  maxCrackers: 8,
   winCondition: {
     default: 3,
-    // Deadlock is possible exactly when players × (win − 1) ≥ tokensInPool,
-    // because nothing ever returns a token to the Pool. At 8 tokens that means
-    // win=3 deadlocks from 4 players up, and win=2 deadlocks only at 8.
-    byPlayerCount: {
-      3: 3,
-      4: 3,   // STILL STALLS — 4 × 2 ≥ 8. Re-simulated 48.4% empty-Pool. Reported, not patched.
-      5: 3,   // STILL STALLS — 5 × 2 ≥ 8. Re-simulated 75.1% empty-Pool. Reported, not patched.
-      6: 2,   // was 3 — changed to break the deadlock. Verified clean, 0% empty-Pool.
-      7: 2,   // was 3 — changed to break the deadlock. Verified clean, 0% empty-Pool.
-      8: 2,   // was 3 — reduces but does not eliminate: 8 × 1 ≥ 8. 11–16% empty-Pool.
-    },
+    // Thresholds unchanged under v2.1 — only the deadlock mechanism changed.
+    byPlayerCount: { 3: 3, 4: 3, 5: 3, 6: 2, 7: 2, 8: 2 },
   },
-  minPlayers: 3,              // §7 — 2 players is explicitly not supported
+  minPlayers: 3,              // 2 players is explicitly not supported
   maxPlayers: 8,
-  // Labelled experimental override, surfaced in the UI as "Fast game:
-  // 2 tokens, untested". Off by default so the confirmed ruleset is what
-  // runs unless the tester deliberately opts out of it.
+  // PENDING REMOVAL (v2.1 §2.4). This 2-token toggle was a workaround for the
+  // deadlock that CN-3.1b now solves properly. Kept working until Carl
+  // confirms the deletion, rather than silently dropping a live feature.
   fastGameUnverified: false,
   fastGameTokens: 2,
 };
@@ -95,7 +98,7 @@ const CHARACTERS = [
   {id:'magpie',     name:'Magpie',     personalName:'Timbo', archetype:'The Tragic Songbird',        venue:'the_club',         img:'4'},
   {id:'emu',        name:'Emu',        personalName:'Bev',   archetype:'The Chaotic Prop Comic',     venue:'royal_show',  img:'5'},
   {id:'galah',      name:'Galah',      personalName:'Kel',   archetype:'The Woozy Clown',            venue:'royal_show',  img:'6'},
-  {id:'echidna',    name:'Echidna',    personalName:'Simmo', archetype:'The Pretentious Improvisor', venue:'school_play', img:'7'},
+  {id:'echidna',    name:'Echidna',    personalName:'Simmo', archetype:'The Pretentious Improviser', venue:'school_play', img:'7'},
   {id:'platypus',   name:'Platypus',   personalName:'Val',   archetype:'The Deadpan Magician',       venue:'school_play', img:'8'},
 ];
 
@@ -127,9 +130,15 @@ function defaultState() {
     drawnCard: null,
     drawnPromptPos: null,
     pendingOutcome: null,
-    // The Pool — §1.2. The shared face-up supply. Tokens only ever come from
-    // here, and only ever return here. Never moves player-to-player.
-    pool: buildPool(),
+    // The Pool — the shared face-up supply. Tokens only ever come from here,
+    // and only ever return here. Never moves player-to-player.
+    // CN-3.5: one token per cracker opened; filled at Start Game.
+    pool: [],
+    crackersOpened: 0,
+    // CN-3.1b sudden death.
+    poolChoicePending: false,
+    substitutePending: false,
+    substituteClaimedBy: null,
     // Interrupt stack — §1.7. LIFO; resolved last-played-first.
     interruptStack: [],
     // §1.4 Step 0 — set on the flip, cleared only when the turn passes.
@@ -326,18 +335,52 @@ function hasCashablePair(player) {
 // Build the full Pool. There are only 8 token designs, so when the Pool is
 // larger than that the designs repeat — each physical token still gets a
 // unique id so it can be tracked, renamed and returned individually.
-function buildPool() {
+// CN-3.5 — one token per cracker opened. Each player opens one at setup.
+function buildPool(crackersOpened) {
+  const n = Math.max(0, crackersOpened || 0);
   const out = [];
-  for (let i = 0; i < RULES_CONFIG.tokensInPool; i++) {
-    const design = PROP_TOKENS[i % PROP_TOKENS.length];
-    const copy = Math.floor(i / PROP_TOKENS.length);
-    out.push({
-      ...design,
-      id: `${design.number}-${copy}`,
-      name: copy === 0 ? design.name : `${design.name} (${copy + 1})`,
-    });
-  }
+  for (let i = 0; i < n; i++) out.push(makeToken(i));
   return out;
+}
+
+function makeToken(index) {
+  const design = PROP_TOKENS[index % PROP_TOKENS.length];
+  const copy = Math.floor(index / PROP_TOKENS.length);
+  return {
+    ...design,
+    id: `${design.number}-${copy}`,
+    name: copy === 0 ? design.name : `${design.name} (${copy + 1})`,
+  };
+}
+
+// CN-3.1 — "open a spare cracker" adds one more token to the Pool. Available
+// at any time, and the way out of a Pool-empty moment without sudden death.
+function openSpareCracker(silent) {
+  ensurePool();
+  const opened = state.crackersOpened || 0;
+  if (opened >= RULES_CONFIG.maxCrackers) {
+    showToast(`🎉 All ${RULES_CONFIG.maxCrackers} crackers are open — no more tokens available.`);
+    return false;
+  }
+  state.crackersOpened = opened + 1;
+  state.pool.push(makeToken(opened));
+  // Opening a cracker resolves the Pool-empty moment.
+  state.poolChoicePending = false;
+  if (!silent) showToast('🎉 Cracker opened — one more Prop Token in the Pool.');
+  save();
+  renderCurrentPhase();
+  return true;
+}
+
+// CN-3.1b — the table declares a substitute token instead of opening another
+// cracker. The next player to earn a token by ANY route claims it and wins
+// immediately, whatever anyone's tally says.
+function declareSubstitute() {
+  state.substitutePending = true;
+  state.poolChoicePending = false;
+  showToast('⚡ Substitute declared — the next Prop Token earned by anyone wins the game outright.');
+  save();
+  renderCurrentPhase();
 }
 
 // Venue keys were renamed for the RSL compliance fix (§1.1). Saved games and
@@ -358,10 +401,14 @@ function migrateVenueKeys() {
 
 // Migrate a state object saved before the Pool existed.
 function ensurePool() {
+  if (state.crackersOpened == null) {
+    // Migrate pre-v2.1 saves: one cracker per player at setup (CN-3.5).
+    state.crackersOpened = state.players ? state.players.length : 0;
+  }
   if (Array.isArray(state.pool)) return;
   const held = new Set();
   state.players.forEach(p => (p.tokens || []).forEach(t => held.add(t.id ?? `${t.number}-0`)));
-  state.pool = buildPool().filter(t => !held.has(t.id));
+  state.pool = buildPool(state.crackersOpened).filter(t => !held.has(t.id));
 }
 
 function poolIsEmpty() {
@@ -369,10 +416,23 @@ function poolIsEmpty() {
   return state.pool.length === 0;
 }
 
-// §1.2 — the ONLY way a player gains a token. Draws from the Pool, never from
-// another player. Returns null when the Pool is exhausted (§1.9, 8 players).
+// The ONLY way a player gains a token. Draws from the Pool, never from another
+// player. Returns null when the Pool is empty — the caller then raises the
+// CN-3.1b moment rather than silently failing.
+//
+// If a substitute has been declared, the token that would have come from the
+// Pool is the substitute: whoever takes it wins outright (CN-3.1b).
 function awardToken(player) {
   ensurePool();
+
+  if (state.substitutePending) {
+    const sub = { ...PROP_TOKENS[0], id: 'substitute', name: 'The Substitute', substitute: true };
+    player.tokens.push(sub);
+    state.substituteClaimedBy = state.players.indexOf(player);
+    state.substitutePending = false;
+    return sub;
+  }
+
   if (state.pool.length === 0) return null;
   const token = state.pool.shift();
   player.tokens.push(token);
@@ -389,8 +449,20 @@ function returnTokenToPool(player, tokenIndex) {
   state.pool.sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
 }
 
+// CN-3.1b short-circuits the normal comparison: claiming the substitute ends
+// the game immediately, whatever the tally.
 function hasWon(player) {
+  if (player.tokens.some(t => t && t.substitute)) return true;
   return player.tokens.length >= tokenGoal();
+}
+
+// The Pool-empty moment. The table chooses: open another cracker, or declare a
+// substitute and play sudden death.
+function raisePoolChoice() {
+  if (state.substitutePending) return;   // already in sudden death
+  state.poolChoicePending = true;
+  save();
+  renderCurrentPhase();
 }
 
 // ===== TOAST =====
@@ -410,8 +482,9 @@ function showToast(message) {
   toastTimer = setTimeout(() => el.classList.remove('visible'), 3200);
 }
 
+// CN-3.1b — an empty Pool is no longer a dead end. It raises a choice.
 function showPoolEmptyNotice() {
-  showToast('🪙 The Pool is empty — no tokens can be taken. Cash a pair or win with what you hold.');
+  raisePoolChoice();
 }
 
 // Shows the shared supply on every in-game screen (§1.3 — the Pool is public).
@@ -474,11 +547,66 @@ function renderPoolBar() {
     }
     renderDiscardBar(screen);
     const n = state.pool.length;
+    const opened = state.crackersOpened || 0;
     bar.classList.toggle('empty', n === 0);
-    bar.innerHTML = n === 0
-      ? '🪙 <span class="pool-count">Pool empty</span> — no tokens can be taken'
-      : `🪙 Pool: <span class="pool-count">${n}</span> / ${RULES_CONFIG.tokensInPool} Prop Tokens left`;
+    bar.classList.toggle('sudden-death', !!state.substitutePending);
+
+    if (state.substitutePending) {
+      bar.innerHTML = '⚡ <span class="pool-count">SUDDEN DEATH</span> — next Prop Token earned wins outright';
+    } else if (n === 0) {
+      bar.innerHTML = '🪙 <span class="pool-count">Pool empty</span> — open a cracker or play sudden death';
+    } else {
+      bar.innerHTML = `🪙 Pool: <span class="pool-count">${n}</span> Prop Token${n === 1 ? '' : 's'} · ${opened} cracker${opened === 1 ? '' : 's'} opened`;
+    }
+    renderSpareCrackerButton(screen);
   });
+  renderPoolChoice();
+}
+
+// CN-3.1 — "open a spare cracker" is available at any time, not only when the
+// Pool runs dry.
+function renderSpareCrackerButton(screen) {
+  let btn = screen.querySelector('.spare-cracker-btn');
+  const canOpen = (state.crackersOpened || 0) < RULES_CONFIG.maxCrackers;
+  if (!btn) {
+    if (!canOpen) return;
+    btn = document.createElement('button');
+    btn.className = 'spare-cracker-btn';
+    btn.textContent = '🎉 Open a spare cracker';
+    btn.addEventListener('click', () => openSpareCracker());
+    const bar = screen.querySelector('.pool-bar');
+    if (bar) bar.appendChild(btn);
+  }
+  btn.classList.toggle('hidden', !canOpen);
+}
+
+// CN-3.1b — the Pool-empty moment. The table picks: another cracker, or a
+// substitute token and sudden death.
+function renderPoolChoice() {
+  let el = document.getElementById('pool-choice');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'pool-choice';
+    el.className = 'modal hidden';
+    el.innerHTML = `
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header"><h2>🪙 The Pool is empty</h2></div>
+        <div class="modal-body">
+          <p class="pool-choice-lead">Someone has earned a Prop Token but there are none left. The table decides how to carry on.</p>
+          <button class="btn-primary" id="pool-choice-cracker">🎉 Open another cracker</button>
+          <p class="pool-choice-note">Adds one Prop Token to the Pool. Play continues as normal.</p>
+          <button class="btn-cash" id="pool-choice-substitute">⚡ Declare a substitute</button>
+          <p class="pool-choice-note">Grab any object — a coin, a cork, anything. The next player to earn a Prop Token by any route takes it and <strong>wins immediately</strong>, whatever the tally.</p>
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+    el.querySelector('#pool-choice-cracker').addEventListener('click', () => openSpareCracker());
+    el.querySelector('#pool-choice-substitute').addEventListener('click', declareSubstitute);
+  }
+  const noCrackersLeft = (state.crackersOpened || 0) >= RULES_CONFIG.maxCrackers;
+  el.querySelector('#pool-choice-cracker').classList.toggle('hidden', noCrackersLeft);
+  el.classList.toggle('hidden', !state.poolChoicePending);
 }
 
 // "Nev — The Heckled Stand-up" style label from the character card art.
@@ -558,10 +686,15 @@ function renderCurrentPhase() {
   renderPoolBar();
 
   if (state.phase === 'win') {
-    const winner = state.players.find(p => p.tokens.length >= tokenGoal());
+    // Use hasWon() so a substitute-token win is found too — that winner may
+    // hold fewer than the normal target (CN-3.1b).
+    const winner = state.players.find(hasWon);
     if (winner) {
-      document.getElementById('win-message').textContent =
-        `${winner.name || `Player ${state.players.indexOf(winner) + 1}`} collected ${tokenGoal()} Prop Tokens and wins.`;
+      const who = winner.name || `Player ${state.players.indexOf(winner) + 1}`;
+      const bySubstitute = winner.tokens.some(t => t && t.substitute);
+      document.getElementById('win-message').textContent = bySubstitute
+        ? `${who} claimed the substitute token and wins outright — sudden death.`
+        : `${who} collected ${tokenGoal()} Prop Tokens and wins.`;
     }
     showPhase('win');
     return;
@@ -1476,7 +1609,9 @@ function applyOutcome(outcome) {
     if (awardToken(player)) {
       state.discard.push(card.number);
     } else {
-      showPoolEmptyNotice();
+      // Pool empty — the table must open a cracker or declare a substitute
+      // before this Animal Affinity can pay out. Keep the card meanwhile.
+      raisePoolChoice();
       player.hand.push(card.number);
       lockDrawnCard(card.number);
       outcome = 'power';
@@ -1512,7 +1647,7 @@ function doCashPair(title) {
   if (!chosen) return;
   // No token can be taken by any route while the Pool is empty —
   // don't consume the pair for nothing.
-  if (poolIsEmpty()) { showPoolEmptyNotice(); return; }
+  if (poolIsEmpty() && !state.substitutePending) { raisePoolChoice(); return; }
   const toDiscard = chosen.cards;
   toDiscard.forEach(n => {
     const i = player.hand.indexOf(n);
@@ -1543,7 +1678,7 @@ function doCashPair(title) {
 function adjustToken(playerIndex, delta) {
   const player = state.players[playerIndex];
   if (delta > 0) {
-    if (!awardToken(player)) { showPoolEmptyNotice(); return; }
+    if (!awardToken(player)) { raisePoolChoice(); return; }
     if (hasWon(player)) {
       save();
       document.getElementById('possessions-overlay').classList.add('hidden');
@@ -1623,6 +1758,13 @@ function wireSetup() {
     state.currentPlayerIndex = 0;
     state.deck = buildDeck();
     state.discard = [];
+    // CN-3.5 — each player opens one cracker at setup, so the Pool starts at
+    // one token per player rather than a fixed 8.
+    state.crackersOpened = Math.min(players.length, RULES_CONFIG.maxCrackers);
+    state.pool = buildPool(state.crackersOpened);
+    state.poolChoicePending = false;
+    state.substitutePending = false;
+    state.substituteClaimedBy = null;
     if (state.tutorialMode) resetTutorialSeen();
     claimPlayerSlot(0); // host becomes player 1
     goToTurn();
@@ -2135,6 +2277,7 @@ function wireLogModal() {
 
 const DEFAULT_SIM_CONFIG = {
   numPlayers: 4,
+  substituteFirst: false,
   simCount: 500,
   // §2 — quality no longer decides anything. The only failure is refusing to
   // perform, so this is the chance a player HAS A GO at a given venue.
@@ -2296,6 +2439,17 @@ function renderSimResults(results) {
   statRow('Median turns', String(median), s1);
   statRow('Range', `${sorted[0]} – ${sorted[sorted.length - 1]}`, s1);
 
+  // CN-3.1b metrics
+  const subPct = ((results.substituteGames / simCount) * 100).toFixed(1);
+  const subWinPct = ((results.substituteWins / simCount) * 100).toFixed(1);
+  statRow('Sudden death triggered', `${subPct}% of games`, s1);
+  statRow('Won by substitute token', `${subWinPct}% of games`, s1);
+  statRow('Pool ran empty', (results.poolEmptyMoments / simCount).toFixed(2) + ' times per game', s1);
+  statRow('Spare crackers opened', (results.crackersOpenedInPlay / simCount).toFixed(2) + ' per game', s1);
+  if (results.stalledGames) {
+    statRow('Unresolved at 600 turns', `${((results.stalledGames / simCount) * 100).toFixed(1)}%`, s1);
+  }
+
   const s2 = section('Win Rates by Position');
   wins.forEach((count, i) => {
     const pct = ((count / simCount) * 100).toFixed(1);
@@ -2307,6 +2461,7 @@ function renderSimResults(results) {
   const TOKEN_LABELS = {
     animal: '🐾 Animal affinity', typePair: '🃏 Type pair',
     wildAct: '⚡ Wild Act', propMaster: '🎭 Prop Master',
+    substitute: '🏁 Substitute (sudden death)',
   };
   const s3 = section('Token Sources');
   Object.entries(totalTokenSources).sort((a, b) => b[1] - a[1]).forEach(([key, count]) => {
@@ -2338,6 +2493,9 @@ function wireSimScreen() {
     simConfig.simCount = parseInt(btn.dataset.count);
     document.querySelectorAll('#sim-count-sel .count-btn').forEach(b =>
       b.classList.toggle('active', parseInt(b.dataset.count) === simConfig.simCount));
+  });
+  document.getElementById('sim-substitute-first').addEventListener('change', e => {
+    simConfig.substituteFirst = e.target.checked;
   });
   document.getElementById('sim-run-btn').addEventListener('click', runSimAndShow);
 }
@@ -2406,10 +2564,33 @@ function simHasCard(hand, title) {
 
 // Mirrors awardToken() — the simulated Pool is finite, so an 8-player table
 // can exhaust it exactly as the physical game would (§1.9).
+// Mirrors awardToken() under CN-3.1 / CN-3.1b. An empty Pool is no longer a
+// failure: the table opens another cracker if any remain, otherwise a
+// substitute is declared and this token wins the game outright.
 function simAwardToken(player, source, tokenSources, pool) {
   if (pool && pool.count <= 0) {
-    tokenSources.poolEmpty = (tokenSources.poolEmpty || 0) + 1;
-    return false;
+    pool.poolEmptyMoments = (pool.poolEmptyMoments || 0) + 1;
+    if (pool.substitutePending) {
+      player.tokens++;
+      player.wonBySubstitute = true;
+      tokenSources.substitute = (tokenSources.substitute || 0) + 1;
+      pool.substituteClaimed = true;
+      return true;
+    }
+    if (!pool.substituteFirst && pool.crackersOpened < pool.maxCrackers) {
+      // Prefer opening a cracker while any remain — the non-terminal option.
+      pool.crackersOpened++;
+      pool.count++;
+      pool.crackersOpenedInPlay = (pool.crackersOpenedInPlay || 0) + 1;
+    } else {
+      pool.substitutePending = true;
+      pool.substituteTriggered = true;
+      player.tokens++;
+      player.wonBySubstitute = true;
+      tokenSources.substitute = (tokenSources.substitute || 0) + 1;
+      pool.substituteClaimed = true;
+      return true;
+    }
   }
   if (pool) pool.count--;
   player.tokens++;
@@ -2517,8 +2698,21 @@ function simRunGame(cfg) {
   const discard = [];
   const tokenSources = {};
   const powerPlayed = {};
-  // §1.9 — finite Pool. At 8 players an 8-token Pool can plausibly empty.
-  const pool = { count: RULES_CONFIG.tokensInPool };
+  // CN-3.5 — one token per cracker opened; each player opens one at setup.
+  const pool = {
+    count: Math.min(numP, RULES_CONFIG.maxCrackers),
+    crackersOpened: Math.min(numP, RULES_CONFIG.maxCrackers),
+    maxCrackers: RULES_CONFIG.maxCrackers,
+    substitutePending: false,
+    substituteTriggered: false,
+    substituteClaimed: false,
+    crackersOpenedInPlay: 0,
+    poolEmptyMoments: 0,
+    // CN-3.1b leaves the choice to the table, so the simulator has to pick a
+    // policy. Both are modelled: cracker-first (the patient table) and
+    // substitute-first (the table that wants it over with).
+    substituteFirst: !!cfg.substituteFirst,
+  };
   let current = 0;
 
   function track(t) { powerPlayed[t] = (powerPlayed[t] || 0) + 1; }
@@ -2641,15 +2835,30 @@ function simRunGame(cfg) {
       }
     }
 
-    if (player.tokens >= tokenGoal(numP)) {
-      return { winner: current, turns: turn + 1, tokenSources, powerPlayed };
+    // CN-3.1b — a claimed substitute ends the game immediately, whatever
+    // the tally.
+    if (player.wonBySubstitute || player.tokens >= tokenGoal(numP)) {
+      return {
+        winner: current, turns: turn + 1, tokenSources, powerPlayed,
+        substituteTriggered: !!pool.substituteTriggered,
+        wonBySubstitute: !!player.wonBySubstitute,
+        crackersOpenedInPlay: pool.crackersOpenedInPlay || 0,
+        poolEmptyMoments: pool.poolEmptyMoments || 0,
+      };
     }
     current = (current + 1) % numP;
   }
 
   // Safety fallback
   const best = players.reduce((a, b) => b.tokens > a.tokens ? b : a, players[0]);
-  return { winner: best.idx, turns: 600, tokenSources, powerPlayed };
+  return {
+    winner: best.idx, turns: 600, tokenSources, powerPlayed,
+    substituteTriggered: !!pool.substituteTriggered,
+    wonBySubstitute: !!best.wonBySubstitute,
+    crackersOpenedInPlay: pool.crackersOpenedInPlay || 0,
+    poolEmptyMoments: pool.poolEmptyMoments || 0,
+    stalled: true,
+  };
 }
 
 function simRun(cfg) {
@@ -2659,11 +2868,23 @@ function simRun(cfg) {
     turnCounts: [],
     totalTokenSources: {},
     totalPowerPlayed: {},
+    // CN-3.1b — an empty Pool is a designed trigger, not a failure, so the
+    // metric is how often sudden death fires rather than "% empty-Pool".
+    substituteGames: 0,
+    substituteWins: 0,
+    stalledGames: 0,
+    crackersOpenedInPlay: 0,
+    poolEmptyMoments: 0,
   };
   for (let i = 0; i < cfg.simCount; i++) {
     const game = simRunGame(cfg);
     if (game.winner >= 0 && game.winner < cfg.numPlayers) results.wins[game.winner]++;
     results.turnCounts.push(game.turns);
+    if (game.substituteTriggered) results.substituteGames++;
+    if (game.wonBySubstitute) results.substituteWins++;
+    if (game.stalled) results.stalledGames++;
+    results.crackersOpenedInPlay += game.crackersOpenedInPlay || 0;
+    results.poolEmptyMoments += game.poolEmptyMoments || 0;
     Object.entries(game.tokenSources).forEach(([k, v]) => {
       results.totalTokenSources[k] = (results.totalTokenSources[k] || 0) + v;
     });
