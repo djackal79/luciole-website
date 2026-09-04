@@ -1,0 +1,434 @@
+/* Nocturnal Series — see DESIGN-NOTES.md for how this palette was derived. */
+
+:root {
+  --ground: #e6e9df;
+  --ground-deep: #dadfcd;
+  --ink: #16190f;
+  --ink-soft: #4c523f;
+  /* Darkened from the original #8a9078, which measured 2.69:1 and failed WCAG AA
+     at the small sizes it is used for. 5.08:1 on --ground, 4.58:1 on --ground-deep. */
+  --ink-faint: #5d6350;
+  --luna: #93b45c;
+  --luna-deep: #6d8c3c;
+  --draft: #8b3fa8;
+  --draft-bg: #f3e9f7;
+
+  --rule: 1px solid rgba(22, 25, 15, 0.16);
+
+  --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --serif: ui-serif, Georgia, "Iowan Old Style", "Times New Roman", serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --gutter: clamp(1.25rem, 5vw, 5rem);
+  --measure: 34rem;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, p, figure, blockquote { margin: 0; }
+ul, ol { margin: 0; padding: 0; list-style: none; }
+img { max-width: 100%; display: block; }
+a { color: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--luna-deep);
+  outline-offset: 3px;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--ink);
+  color: var(--ground);
+  padding: 0.75rem 1rem;
+  z-index: 100;
+}
+.skip-link:focus { left: 0; }
+
+/* ---------------------------------------------------------------- layout */
+
+.shell { max-width: 82rem; margin: 0 auto; padding: 0 var(--gutter); }
+
+.section { padding-block: clamp(3.5rem, 9vw, 7rem); border-top: var(--rule); }
+.section:first-of-type { border-top: 0; }
+
+/* At desktop the section marker becomes a sticky left rail and the content takes
+   the remaining width. This is what makes the trailing tail structural rather than
+   applied — it is the column rule for the whole section. */
+@media (min-width: 60rem) {
+  .section {
+    display: grid;
+    grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+    column-gap: clamp(2rem, 5vw, 4.5rem);
+    align-items: start;
+  }
+  .section > .marker {
+    grid-column: 1;
+    grid-row: 1 / 200;
+    position: sticky;
+    top: 5.5rem;
+    margin-bottom: 0;
+    grid-template-columns: 1fr;
+    gap: 0.9rem;
+  }
+  .section > .marker .marker__label { order: -1; padding-top: 0; }
+  .section > .marker .marker__tail { height: clamp(7rem, 16vw, 13rem); margin-top: 0; }
+  .section > *:not(.marker) { grid-column: 2; }
+}
+
+/* Section marker + trailing tail. The hairline descending from each marker is
+   the site's one recurring device — the moth's hindwing streamer, doing the job
+   of a column rule. See DESIGN-NOTES.md property 2. */
+.marker {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.9rem;
+  align-items: start;
+  margin-bottom: clamp(2rem, 5vw, 3.5rem);
+}
+
+.marker__tail {
+  position: relative;
+  width: 1px;
+  margin-top: 0.55rem;
+  height: clamp(3.5rem, 9vw, 7rem);
+  background: linear-gradient(to bottom, var(--luna-deep) 0%, rgba(109, 140, 60, 0.55) 45%, rgba(109, 140, 60, 0) 100%);
+}
+.marker__tail::before {
+  content: "";
+  position: absolute;
+  top: -0.35rem;
+  left: -2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--luna-deep);
+}
+
+.marker__label {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding-top: 0.35rem;
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.h-display {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(2.6rem, 8.5vw, 6rem);
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+}
+
+.h-section {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(1.75rem, 4vw, 2.75rem);
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+}
+
+.prose { max-width: var(--measure); color: var(--ink-soft); }
+.prose + .prose { margin-top: 1rem; }
+
+.fact-list { display: grid; gap: 0.85rem; max-width: 46rem; }
+.fact {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, 11rem) 1fr;
+  gap: 0.5rem 1.25rem;
+  padding-bottom: 0.85rem;
+  border-bottom: var(--rule);
+  font-size: 0.95rem;
+}
+.fact__key {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding-top: 0.28rem;
+}
+
+/* ------------------------------------------------------------- draft copy */
+
+/* Unapproved copy. Must never be mistakable for brand voice — hence a colour
+   that is deliberately outside the palette, plus mono, plus the dashed edge. */
+.draft {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.78em;
+  line-height: 1.45;
+  letter-spacing: 0.02em;
+  color: var(--draft);
+  background: var(--draft-bg);
+  border: 1px dashed rgba(139, 63, 168, 0.5);
+  border-radius: 2px;
+  padding: 0.2em 0.5em;
+  text-transform: none;
+}
+.draft::before {
+  content: "unwritten";
+  display: block;
+  font-size: 0.65em;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.75;
+  margin-bottom: 0.15em;
+}
+.draft--block { display: block; max-width: var(--measure); }
+
+/* Tight spots (masthead, footer, inline metadata). Drops the "unwritten" prefix
+   but keeps every other signal — off-palette colour, mono, dashed edge — so it
+   still cannot be read as approved copy. */
+.draft--compact { font-size: 0.72em; padding: 0.15em 0.45em; }
+.draft--compact::before { content: none; }
+
+/* A placeholder inside display type must not inherit display type's size, or the
+   draft chip becomes the loudest thing on the page and the design underneath
+   cannot be judged at all. Capped to body scale — still unmistakably draft. */
+.h-display .draft,
+.h-section .draft {
+  font-size: clamp(0.85rem, 1.4vw, 1.05rem);
+  letter-spacing: 0.01em;
+}
+
+/* Table-like contexts: keep rows on one line so a column of placeholders still
+   reads as a table rather than as a wall of chips. */
+.fact .draft { font-size: 0.78rem; }
+.fact .draft::before { content: none; }
+
+/* --------------------------------------------------------------- masthead */
+
+.masthead {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--ground) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: var(--rule);
+}
+.masthead__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-block: 0.9rem;
+}
+.masthead__mark {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+.nav { display: flex; gap: clamp(0.7rem, 2.4vw, 1.9rem); flex-wrap: wrap; }
+.nav a {
+  font-family: var(--mono);
+  font-size: clamp(0.6rem, 1.8vw, 0.68rem);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  text-decoration: none;
+  padding-block: 0.2rem;
+  border-bottom: 1px solid transparent;
+}
+.nav a:hover, .nav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--luna-deep); }
+
+/* ------------------------------------------------------------------- hero */
+
+.hero { padding-block: clamp(3.5rem, 12vw, 9rem) clamp(3rem, 8vw, 6rem); position: relative; overflow: hidden; }
+.hero__grid { display: grid; gap: clamp(2.5rem, 6vw, 4rem); grid-template-columns: 1fr; }
+.hero__title { margin-top: 1.1rem; }
+.hero__lede { margin-top: clamp(1.5rem, 3vw, 2.25rem); display: grid; gap: 0.6rem; justify-items: start; }
+.hero__facts { margin-top: clamp(2rem, 4vw, 3rem); }
+
+/* Two abstract hairline arcs. Not a depiction of the moth or the garment —
+   a graphic device only. Decorative, so hidden from assistive tech. */
+.hero__tails {
+  position: absolute;
+  top: -2rem;
+  bottom: -2rem;
+  right: 0;
+  width: min(46vw, 30rem);
+  pointer-events: none;
+}
+.hero__tails svg { width: 100%; height: 100%; }
+/* Below the two-column breakpoint the tails would sit under the text. Hidden
+   rather than shrunk — a device this quiet does not survive being small. */
+@media (max-width: 59.99rem) { .hero__tails { display: none; } }
+
+@media (min-width: 60rem) {
+  .hero__grid { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: end; }
+}
+
+/* --------------------------------------------------------------- the line */
+
+.line-grid {
+  display: grid;
+  gap: clamp(1.5rem, 4vw, 2.5rem);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+}
+
+.card { display: flex; flex-direction: column; gap: 1rem; text-decoration: none; }
+
+/* Explicit "no approved imagery" plate. Deliberately not a grey box — a grey box
+   reads as a failed image load, which invites someone to "fix" it with a stock shot. */
+.card__plate {
+  aspect-ratio: 4 / 5;
+  border: 1px dashed rgba(22, 25, 15, 0.28);
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      transparent 0 11px,
+      rgba(22, 25, 15, 0.045) 11px 12px
+    );
+  display: grid;
+  place-content: center;
+  gap: 0.4rem;
+  text-align: center;
+  padding: 1.5rem;
+}
+.card__plate span {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.card__title { font-family: var(--serif); font-size: 1.3rem; line-height: 1.2; }
+.card__meta { display: flex; flex-wrap: wrap; gap: 0.4rem 0.75rem; align-items: baseline; }
+.card__price { font-family: var(--mono); font-size: 0.85rem; }
+
+.status-pill {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  border: 1px solid rgba(22, 25, 15, 0.3);
+  border-radius: 999px;
+  padding: 0.22em 0.7em;
+  color: var(--ink-soft);
+}
+
+.tag-row { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.tag {
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+  border: var(--rule);
+  border-radius: 2px;
+  padding: 0.18em 0.5em;
+}
+
+/* ------------------------------------------------------------- provenance */
+
+/* Structure only. Every value here is a placeholder by design — this section is
+   a legal-exposure point, so it carries no written claims at all. */
+.provenance-note {
+  border-left: 2px solid var(--luna-deep);
+  padding-left: 1rem;
+  max-width: var(--measure);
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+  margin-bottom: clamp(1.75rem, 4vw, 2.5rem);
+}
+
+/* --------------------------------------------------------------- enquiry */
+
+.form { display: grid; gap: 1.15rem; max-width: 32rem; }
+.field { display: grid; gap: 0.4rem; }
+.field > label {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.field input, .field textarea, .field select {
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid rgba(22, 25, 15, 0.3);
+  padding: 0.55rem 0.1rem;
+  border-radius: 0;
+}
+.field textarea { resize: vertical; min-height: 6.5rem; border: 1px solid rgba(22, 25, 15, 0.3); padding: 0.7rem; }
+.field input:focus, .field textarea:focus, .field select:focus { outline: none; border-color: var(--luna-deep); }
+.field--hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+
+.btn {
+  justify-self: start;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  background: var(--ink);
+  color: var(--ground);
+  border: 1px solid var(--ink);
+  padding: 0.85em 1.9em;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.btn:hover:not(:disabled) { background: transparent; color: var(--ink); }
+.btn:disabled { opacity: 0.5; cursor: progress; }
+
+.notice { border: var(--rule); padding: 1rem 1.15rem; max-width: 32rem; font-size: 0.92rem; }
+.notice--ok { border-color: var(--luna-deep); border-left-width: 3px; }
+.notice--fail { border-color: #a4462e; border-left-width: 3px; }
+.notice p + p { margin-top: 0.6rem; }
+.notice a { color: var(--ink); }
+
+/* ---------------------------------------------------------------- footer */
+
+.footer { border-top: var(--rule); padding-block: 2.5rem 3.5rem; }
+.footer__inner { display: flex; flex-wrap: wrap; gap: 1rem 2rem; justify-content: space-between; align-items: baseline; }
+.footer a { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft); text-decoration: none; }
+.footer a:hover { color: var(--ink); }
+.footer__legal { font-family: var(--mono); font-size: 0.66rem; color: var(--ink-faint); letter-spacing: 0.08em; }
+
+/* ------------------------------------------------------------ legal pages */
+
+.doc { padding-block: clamp(3rem, 8vw, 5.5rem); max-width: 46rem; }
+.doc h2 { margin-top: 2.5rem; }
+.doc > * + * { margin-top: 1rem; }
+
+.back-link {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}

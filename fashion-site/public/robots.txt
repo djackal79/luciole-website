@@ -1,0 +1,10 @@
+# The site is a draft awaiting review. Indexing is disallowed until launch.
+# Opening this up is a deliberate launch step: replace the block below with
+#   User-agent: *
+#   Allow: /
+# and remove the noindex meta tag in index.html at the same time.
+
+User-agent: *
+Disallow: /
+
+# Sitemap: set once the production origin is confirmed — see PLACEHOLDERS.md.
