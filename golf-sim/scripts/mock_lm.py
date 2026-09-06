@@ -1,66 +1,101 @@
 #!/usr/bin/env python3
-"""Pretend to be the Square Golf launch monitor bridge.
+"""Pretend to be the launch monitor: a GSPro Open Connect v1 client.
 
-    python scripts/mock_lm.py --club 7i --count 3
+The monitor is the *client* in this protocol -- it connects to port 921 and
+pushes shot JSON, and the backend (impersonating GSPro) acknowledges. This
+script exercises that real socket path, not a convenience HTTP shim.
+
+    python scripts/mock_lm.py --club 7I --count 3
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import random
+import socket
 import sys
 import time
 from pathlib import Path
 
-import httpx
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _fixtures import CLUB_PROFILES, synthetic_shot  # noqa: E402
+from _fixtures import CLUB_PROFILES, gspro_heartbeat, gspro_shot  # noqa: E402
 
 
-def post_shot(
-    base_url: str,
-    club: str,
-    rng: random.Random,
-    *,
-    timestamp: float | None = None,
-    session_id: str = "mock-session",
-    token: str | None = None,
-) -> dict:
-    payload = synthetic_shot(club, rng)
-    payload["timestamp"] = timestamp if timestamp is not None else time.time()
-    payload["session_id"] = session_id
-    headers = {"X-Golfsim-Token": token} if token else {}
-    response = httpx.post(
-        f"{base_url}/api/v1/telemetry", json=payload, headers=headers, timeout=10.0
-    )
-    response.raise_for_status()
-    return response.json()
+class MockMonitor:
+    """Minimal GSPro Connect client."""
+
+    def __init__(self, host: str, port: int, timeout: float = 5.0) -> None:
+        self.sock = socket.create_connection((host, port), timeout=timeout)
+        self._buffer = ""
+
+    def send(self, payload: dict) -> dict | None:
+        self.sock.sendall((json.dumps(payload) + "\r\n").encode("utf-8"))
+        return self.recv()
+
+    def recv(self) -> dict | None:
+        decoder = json.JSONDecoder()
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            try:
+                self._buffer += self.sock.recv(65536).decode("utf-8", errors="replace")
+            except socket.timeout:
+                return None
+            stripped = self._buffer.lstrip()
+            if not stripped:
+                continue
+            try:
+                message, end = decoder.raw_decode(stripped)
+            except json.JSONDecodeError:
+                continue
+            self._buffer = stripped[end:]
+            return message
+        return None
+
+    def close(self) -> None:
+        self.sock.close()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-url", default="http://127.0.0.1:8000")
-    parser.add_argument("--club", default="7i", choices=sorted(CLUB_PROFILES))
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=921)
+    parser.add_argument("--club", default="7I", choices=sorted(CLUB_PROFILES))
     parser.add_argument("--count", type=int, default=1)
     parser.add_argument("--interval", type=float, default=8.0)
+    parser.add_argument("--no-club-data", action="store_true",
+                        help="send ContainsClubData false (smash_factor becomes null)")
+    parser.add_argument("--heartbeat", action="store_true",
+                        help="send a heartbeat first; it must not create a shot")
     parser.add_argument("--seed", type=int, default=None)
-    parser.add_argument("--token", default=None)
     args = parser.parse_args()
 
     rng = random.Random(args.seed)
-    for index in range(args.count):
-        result = post_shot(args.base_url, args.club, rng, token=args.token)
-        metrics = result["normalized_metrics"]
-        print(
-            f"shot {index + 1}/{args.count}  ball={metrics['ball_speed_mph']:.1f}mph "
-            f"launch={metrics['launch_angle_deg']:.1f}deg "
-            f"spin={metrics['back_spin_rpm']:.0f}rpm "
-            f"smash={metrics.get('smash_factor', 0):.2f} -> {result['correlation']}"
-        )
-        if index + 1 < args.count:
-            time.sleep(args.interval)
+    monitor = MockMonitor(args.host, args.port)
+    print(f"connected to {args.host}:{args.port}")
+
+    try:
+        if args.heartbeat:
+            print(f"  heartbeat -> {monitor.send(gspro_heartbeat())}")
+
+        for index in range(args.count):
+            payload = gspro_shot(
+                args.club,
+                rng,
+                shot_number=index + 1,
+                contains_club_data=not args.no_club_data,
+            )
+            reply = monitor.send(payload)
+            ball = payload["BallData"]
+            print(
+                f"shot {index + 1}/{args.count}  ball={ball['Speed']:.1f}mph "
+                f"vla={ball['VLA']:.1f} spin={ball['BackSpin']:.0f}  <- {reply}"
+            )
+            if index + 1 < args.count:
+                time.sleep(args.interval)
+    finally:
+        monitor.close()
 
 
 if __name__ == "__main__":

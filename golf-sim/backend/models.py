@@ -1,230 +1,306 @@
-"""Wire and on-disk schemas.
+"""The shot package schema -- the Build 1 / Build 2 contract.
 
-``metadata.json`` is the contract between Build 1 (ingest) and Build 2
-(player + HUD), so it is versioned explicitly.
+``metadata.json`` is written exactly as specified in the contract document.
+Telemetry lives *inside* it; there is no separate metrics file.
+
+Units are canonical and never converted on write: speeds mph, angles degrees,
+spin rpm, distances metres, durations milliseconds, timestamps ISO 8601 with
+offset. The frontend owns display conversion and the m/yds toggle.
 """
 
 from __future__ import annotations
 
-import math
-import time
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-METADATA_SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.0"
+
+YARDS_TO_METRES = 0.9144
 
 
-class SourceKind(str, Enum):
-    SWING_VIDEO = "swing_video"
-    IMPACT_VIDEO = "impact_video"
+class SourceName(str, Enum):
+    BODY_SWING = "body_swing"
+    IMPACT_STRIKE = "impact_strike"
     TELEMETRY = "telemetry"
 
 
 class ShotStatus(str, Enum):
-    #: Still accepting artefacts.
-    OPEN = "open"
-    #: Every expected artefact arrived.
+    #: Awaiting more sources.
+    PENDING = "pending"
+    #: All three sources present.
     COMPLETE = "complete"
-    #: Settle window elapsed with artefacts missing.
+    #: Pairing window expired with sources missing.
     PARTIAL = "partial"
 
 
-def utc_iso(epoch: float) -> str:
-    return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat(timespec="milliseconds")
+# ---------------------------------------------------------------------------
+# Timestamps
+# ---------------------------------------------------------------------------
 
 
-def parse_timestamp(value: Any, *, default: float | None = None) -> float:
-    """Accept epoch seconds, epoch milliseconds or an ISO-8601 string."""
+def local_now() -> datetime:
+    """Local time carrying its UTC offset, as every timestamp in the schema."""
+    return datetime.now().astimezone()
+
+
+def iso(moment: datetime | float) -> str:
+    if isinstance(moment, (int, float)):
+        moment = datetime.fromtimestamp(moment).astimezone()
+    return moment.isoformat(timespec="milliseconds")
+
+
+def shot_id_for(moment: datetime | float) -> str:
+    """``20260906T143052-478`` -- compact local time, millisecond precision.
+
+    Lexically sortable. The folder is this with a ``shot_`` prefix.
+    """
+    if isinstance(moment, (int, float)):
+        moment = datetime.fromtimestamp(moment).astimezone()
+    return f"{moment.strftime('%Y%m%dT%H%M%S')}-{moment.microsecond // 1000:03d}"
+
+
+def parse_ts(value: Any) -> datetime | None:
+    """Parse an ISO-8601 (or epoch) timestamp; ``None`` when unusable.
+
+    Only ever applied to hints, never to anything the pairing depends on --
+    the PC is the clock authority.
+    """
     if value is None or value == "":
-        if default is not None:
-            return default
-        raise ValueError("timestamp is required")
+        return None
     if isinstance(value, (int, float)):
         seconds = float(value)
-        # Anything past year 2286 in seconds is almost certainly milliseconds.
-        if seconds > 1e11:
+        if seconds > 1e11:  # milliseconds
             seconds /= 1000.0
-        return seconds
+        return datetime.fromtimestamp(seconds).astimezone()
     text = str(value).strip()
     try:
-        return parse_timestamp(float(text))
+        return parse_ts(float(text))
     except ValueError:
         pass
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
-    parsed = datetime.fromisoformat(text)
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.timestamp()
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed.astimezone() if parsed.tzinfo else parsed.astimezone()
 
 
 # ---------------------------------------------------------------------------
-# Launch monitor telemetry
+# metadata.json
 # ---------------------------------------------------------------------------
 
-#: Canonical metric name -> accepted inbound spellings. The Square Golf app,
-#: its CSV export and the various community bridges all disagree on casing and
-#: units, so we normalise aggressively rather than pinning one dialect.
-METRIC_ALIASES: dict[str, tuple[str, ...]] = {
-    "ball_speed_mph": ("ball_speed", "ballspeed", "ball_speed_mph", "ballspeedmph", "bs"),
-    "club_speed_mph": (
-        "club_speed", "clubspeed", "club_speed_mph", "clubheadspeed",
-        "club_head_speed", "chs",
-    ),
-    "smash_factor": ("smash_factor", "smashfactor", "smash", "efficiency"),
-    "launch_angle_deg": (
-        "launch_angle", "launchangle", "vertical_launch", "verticallaunchangle",
-        "launch_angle_deg", "vla",
-    ),
-    "azimuth_deg": (
-        "azimuth", "launch_direction", "launchdirection", "horizontal_launch",
-        "horizontallaunchangle", "hla", "side_angle",
-    ),
-    "back_spin_rpm": ("back_spin", "backspin", "spin", "total_spin", "backspinrpm"),
-    "side_spin_rpm": ("side_spin", "sidespin", "sidespinrpm"),
-    "spin_axis_deg": ("spin_axis", "spinaxis", "spin_axis_deg"),
-    "club_path_deg": ("club_path", "clubpath", "path"),
-    "face_angle_deg": ("face_angle", "faceangle", "face", "club_face", "clubface"),
-    "face_to_path_deg": ("face_to_path", "facetopath", "face_to_path_deg"),
-    "attack_angle_deg": ("attack_angle", "attackangle", "angle_of_attack", "aoa"),
-    "dynamic_loft_deg": ("dynamic_loft", "dynamicloft"),
-    "carry_yds": ("carry", "carry_distance", "carrydistance", "carry_yds"),
-    "total_yds": ("total", "total_distance", "totaldistance", "total_yds", "distance"),
-    "offline_yds": ("offline", "side", "side_distance", "lateral"),
-    "apex_ft": ("apex", "peak_height", "height", "apex_ft"),
-    "descent_angle_deg": ("descent_angle", "descentangle", "landing_angle"),
-}
 
-_ALIAS_LOOKUP: dict[str, str] = {
-    alias: canonical
-    for canonical, aliases in METRIC_ALIASES.items()
-    for alias in aliases
-}
+class MediaEntry(BaseModel):
+    """One video. Absent sources omit their ``media`` key entirely."""
+
+    path: str
+    camera: str
+    #: Real-world capture rate. Drives duration and speed readouts.
+    capture_fps: float | None = None
+    #: Container playback rate. Drives frame stepping. Not redundant with
+    #: capture_fps: 240 fps footage is written into a 30 fps container, so
+    #: confusing the two makes every time measurement wrong by 8x.
+    container_fps: float | None = None
+    duration_ms: int | None = None
+    width: int | None = None
+    height: int | None = None
 
 
-def _alias_key(raw_key: str) -> str:
-    return "".join(ch for ch in raw_key.lower() if ch.isalnum() or ch == "_")
+class SyncBlock(BaseModel):
+    trigger_ts: str
+    #: Frontend calibration slider writes here via PATCH so it survives
+    #: reload. Positive = impact video lags body swing.
+    impact_offset_ms: int = 0
 
 
-def normalize_metrics(raw: dict[str, Any]) -> dict[str, float]:
-    """Map a vendor payload onto canonical metric names.
-
-    Unknown keys are dropped here but preserved verbatim under ``raw`` in
-    ``metadata.json``, so nothing is ever lost.
-    """
-    metrics: dict[str, float] = {}
-    for key, value in raw.items():
-        if not isinstance(value, (int, float, str)):
-            continue
-        canonical = _ALIAS_LOOKUP.get(_alias_key(str(key)))
-        if canonical is None or canonical in metrics:
-            continue
-        try:
-            number = float(value)
-        except (TypeError, ValueError):
-            continue
-        if math.isnan(number) or math.isinf(number):
-            continue
-        metrics[canonical] = number
-    return _derive_metrics(metrics)
+class BallData(BaseModel):
+    speed_mph: float | None = None
+    total_spin_rpm: float | None = None
+    back_spin_rpm: float | None = None
+    side_spin_rpm: float | None = None
+    spin_axis_deg: float | None = None
+    launch_angle_deg: float | None = None
+    launch_direction_deg: float | None = None
 
 
-def _derive_metrics(metrics: dict[str, float]) -> dict[str, float]:
-    """Fill in the metrics that are pure functions of the others."""
-    ball = metrics.get("ball_speed_mph")
-    club = metrics.get("club_speed_mph")
-    if "smash_factor" not in metrics and ball is not None and club:
-        metrics["smash_factor"] = round(ball / club, 3)
-
-    face = metrics.get("face_angle_deg")
-    path = metrics.get("club_path_deg")
-    if "face_to_path_deg" not in metrics and face is not None and path is not None:
-        metrics["face_to_path_deg"] = round(face - path, 2)
-    return metrics
+class ClubData(BaseModel):
+    speed_mph: float | None = None
+    angle_of_attack_deg: float | None = None
+    path_deg: float | None = None
+    face_to_target_deg: float | None = None
+    loft_deg: float | None = None
+    closure_rate_dps: float | None = None
 
 
-class TelemetryIn(BaseModel):
-    """Shot telemetry pushed by the Square Golf bridge.
+class DerivedData(BaseModel):
+    """Computed by the backend so the frontend never does arithmetic on
+    nullable fields."""
 
-    Vendor-specific keys may be sent at the top level or nested under
-    ``metrics``; both are normalised the same way.
+    smash_factor: float | None = None
+    face_to_path_deg: float | None = None
+
+
+class DistanceData(BaseModel):
+    """Normally null: GSPro Open Connect carries launch conditions only.
+
+    Carry and total are computed by GSPro's physics engine, not measured by
+    the launch monitor. Populated only if a monitor volunteers them.
     """
 
-    model_config = ConfigDict(extra="allow")
-
-    timestamp: Any | None = Field(
-        default=None,
-        description="Impact time: epoch seconds, epoch millis or ISO-8601. "
-        "Defaults to server receive time.",
-    )
-    device_id: str = "square_golf"
-    club: str | None = None
-    session_id: str | None = None
-    metrics: dict[str, Any] | None = None
-
-    def resolved_timestamp(self) -> float:
-        return parse_timestamp(self.timestamp, default=time.time())
-
-    def raw_payload(self) -> dict[str, Any]:
-        payload = self.model_dump(exclude_none=True)
-        payload.pop("timestamp", None)
-        nested = payload.pop("metrics", None)
-        if isinstance(nested, dict):
-            payload.update(nested)
-        return payload
-
-    def normalized_metrics(self) -> dict[str, float]:
-        return normalize_metrics(self.raw_payload())
+    carry_m: float | None = None
+    total_m: float | None = None
 
 
-# ---------------------------------------------------------------------------
-# Media upload
-# ---------------------------------------------------------------------------
+class TelemetryBlock(BaseModel):
+    source: str = "gspro_connect_v1"
+    received_at: str
+    ball: BallData = Field(default_factory=BallData)
+    club: ClubData = Field(default_factory=ClubData)
+    derived: DerivedData = Field(default_factory=DerivedData)
+    distance: DistanceData = Field(default_factory=DistanceData)
+    #: The unmodified provider payload. Always stored -- you will want a field
+    #: you didn't map.
+    raw: dict[str, Any] = Field(default_factory=dict)
 
 
-class MediaAccepted(BaseModel):
-    accepted: bool = True
-    kind: SourceKind
-    #: Host-clock impact timestamp the correlator will pair on.
-    timestamp: float
-    timestamp_iso: str
-    #: Correction applied from the device clock, in milliseconds.
-    clock_offset_ms: float | None = None
-    bytes_received: int | None = None
+class ShotPackage(BaseModel):
+    """The complete ``metadata.json`` object, in contract field order."""
 
+    model_config = ConfigDict(use_enum_values=True)
 
-class TriggerRequest(BaseModel):
-    """Ask every connected capture device to snapshot its ring buffer."""
-
-    timestamp: Any | None = None
-    source: str = "manual"
-    note: str | None = None
-
-
-class TriggerResponse(BaseModel):
-    trigger_id: str
-    host_timestamp: float
-    devices_notified: int
-
-
-# ---------------------------------------------------------------------------
-# Shot package (metadata.json)
-# ---------------------------------------------------------------------------
-
-
-class ShotSummary(BaseModel):
+    schema_version: str = SCHEMA_VERSION
     shot_id: str
-    status: ShotStatus
-    anchor_timestamp: float
-    anchor_iso: str
+    session_id: str
+    created_at: str
+    status: ShotStatus = ShotStatus.PENDING
+    sources: dict[str, bool] = Field(
+        default_factory=lambda: {
+            SourceName.BODY_SWING.value: False,
+            SourceName.IMPACT_STRIKE.value: False,
+            SourceName.TELEMETRY.value: False,
+        }
+    )
+    media: dict[str, MediaEntry] = Field(default_factory=dict)
+    sync: SyncBlock
+    telemetry: TelemetryBlock | None = None
+    club_used: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    notes: str = ""
+
+    @property
+    def folder_name(self) -> str:
+        return f"shot_{self.shot_id}"
+
+    def to_json(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class ShotPatch(BaseModel):
+    """PATCH accepts these four fields only."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tags: list[str] | None = None
+    notes: str | None = None
+    club_used: str | None = None
+    impact_offset_ms: int | None = None
+
+
+class SessionRequest(BaseModel):
+    session_id: str | None = None
+    #: Pushed to a connected launch monitor as a GSPro 201 Player message.
     club: str | None = None
-    present_sources: list[str]
-    missing_sources: list[str]
 
 
-class ShotListResponse(BaseModel):
-    count: int
-    shots: list[ShotSummary]
+# ---------------------------------------------------------------------------
+# GSPro Open Connect v1 -> schema
+# ---------------------------------------------------------------------------
+
+
+def _number(source: dict[str, Any], key: str) -> float | None:
+    value = source.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def telemetry_from_gspro(payload: dict[str, Any], received_at: datetime) -> TelemetryBlock:
+    """Map a GSPro Open Connect v1 shot onto the schema.
+
+    ``ShotDataOptions.ContainsClubData`` decides whether club fields are real;
+    honour it rather than checking for zeros, because a genuine 0.0 path is a
+    perfectly ordinary swing.
+    """
+    ball_raw = payload.get("BallData") or {}
+    club_raw = payload.get("ClubData") or {}
+    options = payload.get("ShotDataOptions") or {}
+
+    ball = BallData(
+        speed_mph=_number(ball_raw, "Speed"),
+        total_spin_rpm=_number(ball_raw, "TotalSpin"),
+        back_spin_rpm=_number(ball_raw, "BackSpin"),
+        side_spin_rpm=_number(ball_raw, "SideSpin"),
+        spin_axis_deg=_number(ball_raw, "SpinAxis"),
+        launch_angle_deg=_number(ball_raw, "VLA"),
+        launch_direction_deg=_number(ball_raw, "HLA"),
+    )
+
+    club = ClubData()
+    if options.get("ContainsClubData"):
+        club = ClubData(
+            speed_mph=_number(club_raw, "Speed"),
+            angle_of_attack_deg=_number(club_raw, "AngleOfAttack"),
+            path_deg=_number(club_raw, "Path"),
+            face_to_target_deg=_number(club_raw, "FaceToTarget"),
+            loft_deg=_number(club_raw, "Loft"),
+            closure_rate_dps=_number(club_raw, "ClosureRate"),
+        )
+
+    return TelemetryBlock(
+        source="gspro_connect_v1",
+        received_at=iso(received_at),
+        ball=ball,
+        club=club,
+        derived=derive(ball, club),
+        distance=_distance_from_gspro(ball_raw, payload.get("Units")),
+        raw=payload,
+    )
+
+
+def derive(ball: BallData, club: ClubData) -> DerivedData:
+    smash = None
+    if ball.speed_mph is not None and club.speed_mph:
+        smash = round(ball.speed_mph / club.speed_mph, 2)
+
+    face_to_path = None
+    if club.face_to_target_deg is not None and club.path_deg is not None:
+        face_to_path = round(club.face_to_target_deg - club.path_deg, 2)
+
+    return DerivedData(smash_factor=smash, face_to_path_deg=face_to_path)
+
+
+def _distance_from_gspro(ball_raw: dict[str, Any], units: Any) -> DistanceData:
+    """Usually empty. Canonical distance is metres, so a monitor that does
+    report yards is converted here -- that is the one unit conversion the
+    schema requires on write."""
+    carry = _number(ball_raw, "CarryDistance")
+    total = _number(ball_raw, "TotalDistance")
+    if str(units or "").strip().lower().startswith("yard"):
+        carry = None if carry is None else round(carry * YARDS_TO_METRES, 2)
+        total = None if total is None else round(total * YARDS_TO_METRES, 2)
+    return DistanceData(carry_m=carry, total_m=total)
+
+
+def is_heartbeat(payload: dict[str, Any]) -> bool:
+    return bool((payload.get("ShotDataOptions") or {}).get("IsHeartBeat"))
+
+
+def is_shot(payload: dict[str, Any]) -> bool:
+    options = payload.get("ShotDataOptions") or {}
+    if options.get("IsHeartBeat"):
+        return False
+    return bool(options.get("ContainsBallData")) and bool(payload.get("BallData"))

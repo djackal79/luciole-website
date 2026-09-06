@@ -1,15 +1,15 @@
-"""Filesystem watcher for Kinovea's export directory.
+"""Fallback filesystem watcher for Kinovea exports.
 
-Two problems make this less trivial than "watchdog fires, ingest file":
+The preferred path is Kinovea's Automation hook (Options -> Preferences ->
+Capture -> Automation), which runs a command after each recording and hands
+over the filename. That posts straight to ``/api/ingest/body_swing``: fewer
+moving parts, lower latency, and no polling race where a file is read
+mid-write.
 
-1. **Partial files.** watchdog reports ``on_created`` the moment the file is
-   opened, while Kinovea is still muxing into it. We poll for size/mtime
-   stability before handing the file to the correlator.
-2. **Timestamps.** ``mtime`` is when Kinovea *finished* writing, which is
-   seconds after the ball was struck. See ``kinovea_timestamp_mode``.
-
-watchdog runs its own threads, so submissions are marshalled back onto the
-FastAPI event loop with ``run_coroutine_threadsafe``.
+This watcher exists only for clips that appear without a notification. It is
+off by default (``GOLFSIM_KINOVEA_WATCH_ENABLED``) and has to solve a problem
+the hook does not: watchdog reports ``on_created`` while the encoder is still
+writing, so the file is polled for size stability first.
 """
 
 from __future__ import annotations
@@ -17,24 +17,18 @@ from __future__ import annotations
 import asyncio
 import logging
 import queue
-import re
 import threading
 import time
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from .config import Settings
-from .correlator import Fragment, ShotCorrelator
-from .models import SourceKind
-from . import storage
+from .correlator import MediaArrival, ShotCorrelator
+from .models import SourceName
 
 log = logging.getLogger(__name__)
-
-_TIMESTAMP_HINT = re.compile(r"\d{4}[-_]?\d{2}[-_]?\d{2}[ T_-]?\d{2}[-_:]?\d{2}[-_:]?\d{2}")
 
 
 class _ExportEventHandler(FileSystemEventHandler):
@@ -52,7 +46,7 @@ class _ExportEventHandler(FileSystemEventHandler):
             self._offer(event.src_path)
 
     def on_moved(self, event: FileSystemEvent) -> None:
-        # Kinovea (and many encoders) write to a temp name and rename on close.
+        # Many encoders write a temp name and rename on close.
         if not event.is_directory:
             self._offer(event.dest_path)
 
@@ -78,27 +72,27 @@ class KinoveaWatcher:
         self._seen: set[str] = set()
         self._seen_lock = threading.Lock()
 
-    # -- lifecycle ---------------------------------------------------------
+    @property
+    def live(self) -> bool:
+        return self._observer is not None
+
+    @property
+    def _extensions(self) -> set[str]:
+        return {ext.lower() for ext in self.settings.kinovea_extensions}
 
     def start(self) -> None:
         watch_dir = self.settings.kinovea_export_dir
         watch_dir.mkdir(parents=True, exist_ok=True)
 
-        if self.settings.ingest_existing_on_start:
-            for existing in sorted(watch_dir.iterdir()):
-                if existing.is_file() and existing.suffix.lower() in self._extensions:
-                    self._queue.put(existing)
-
-        self._worker = threading.Thread(
-            target=self._drain, name="kinovea-ingest", daemon=True
-        )
+        self._worker = threading.Thread(target=self._drain, name="kinovea-ingest", daemon=True)
         self._worker.start()
 
-        handler = _ExportEventHandler(self._queue, self._extensions)
         self._observer = Observer()
-        self._observer.schedule(handler, str(watch_dir), recursive=False)
+        self._observer.schedule(
+            _ExportEventHandler(self._queue, self._extensions), str(watch_dir), recursive=False
+        )
         self._observer.start()
-        log.info("watching Kinovea export dir: %s", watch_dir)
+        log.info("Kinovea fallback watcher active on %s", watch_dir)
 
     def stop(self) -> None:
         self._stop.set()
@@ -109,10 +103,6 @@ class KinoveaWatcher:
         if self._worker is not None:
             self._worker.join(timeout=5)
             self._worker = None
-
-    @property
-    def _extensions(self) -> set[str]:
-        return {ext.lower() for ext in self.settings.kinovea_extensions}
 
     # -- worker ------------------------------------------------------------
 
@@ -140,39 +130,26 @@ class KinoveaWatcher:
                 self._seen.discard(key)
             return
 
-        impact_ts, timestamp_source, probe = self._impact_timestamp(path)
-        staged = storage.stage_path(self.settings, path.suffix.lower())
-        storage.move_into(path, staged)
-
-        payload: dict[str, Any] = {
-            "origin": {
-                "kind": "kinovea",
-                "original_filename": path.name,
-                "timestamp_source": timestamp_source,
-                "write_lag_s": self.settings.kinovea_write_lag_seconds,
-            },
-            #: Where the strike sits inside this clip -- Build 2 aligns the two
-            #: players on this, not on file start.
-            "impact_offset_s": self.settings.kinovea_impact_offset_seconds,
-        }
-        if probe:
-            payload["origin"]["probed_duration_s"] = probe.get("duration_s")
-
-        fragment = Fragment(
-            kind=SourceKind.SWING_VIDEO,
-            timestamp=impact_ts,
-            payload=payload,
-            staged_path=staged,
+        arrival = MediaArrival(
+            source=SourceName.BODY_SWING,
+            file=path,
+            camera=self.settings.body_swing_camera,
+            capture_fps=self.settings.body_swing_capture_fps,
+            container_fps=self.settings.body_swing_container_fps,
+            copy=True,
         )
+        # The file only became visible after encoding, so its receipt stamp is
+        # later than the strike. Back-date it or the pairing window misses.
+        received_at = time.time() - self.settings.kinovea_lag_ms / 1000.0
         future = asyncio.run_coroutine_threadsafe(
-            self.correlator.submit(fragment), self.loop
+            self.correlator.submit_media(arrival, received_at=received_at), self.loop
         )
-        outcome = future.result(timeout=30)
-        log.info("ingested swing video %s -> %s", path.name, outcome)
+        package = future.result(timeout=30)
+        log.info("watcher ingested %s -> %s", path.name, package.shot_id)
 
     def _wait_until_stable(self, path: Path) -> bool:
-        """Block until the file stops growing, or the timeout expires."""
-        deadline = time.time() + self.settings.file_stable_timeout_seconds
+        deadline = time.time() + self.settings.file_stable_timeout_ms / 1000.0
+        interval = self.settings.file_stable_interval_ms / 1000.0
         stable_for = 0
         last: tuple[int, float] | None = None
         while time.time() < deadline and not self._stop.is_set():
@@ -188,54 +165,5 @@ class KinoveaWatcher:
             else:
                 stable_for = 0
             last = current
-            time.sleep(self.settings.file_stable_interval_seconds)
+            time.sleep(interval)
         return False
-
-    def _impact_timestamp(self, path: Path) -> tuple[float, str, dict[str, Any] | None]:
-        """Best estimate of when the ball was actually struck.
-
-        See ``kinovea_timestamp_mode`` in ``config.py``; calibration guidance
-        lives in the README.
-        """
-        mode = self.settings.kinovea_timestamp_mode
-        lag = self.settings.kinovea_write_lag_seconds
-        offset = self.settings.kinovea_impact_offset_seconds
-        mtime = path.stat().st_mtime
-        probe: dict[str, Any] | None = None
-
-        if mode == "filename":
-            parsed = self._timestamp_from_filename(path.name)
-            if parsed is not None:
-                return parsed + offset, "filename", None
-            log.warning("no timestamp in %s, falling back to mtime", path.name)
-            return mtime - lag, "mtime-fallback", None
-
-        if mode == "mtime_minus_duration":
-            probe = storage.probe_video_sync(self.settings, path)
-            duration = (probe or {}).get("duration_s")
-            if duration is not None:
-                return mtime - lag - float(duration) + offset, "mtime_minus_duration", probe
-            log.warning("could not probe duration of %s, falling back to mtime", path.name)
-            return mtime - lag, "mtime-fallback", probe
-
-        return mtime - lag, "mtime", None
-
-    def _timestamp_from_filename(self, name: str) -> float | None:
-        match = _TIMESTAMP_HINT.search(name)
-        if match is None:
-            return None
-        candidate = match.group(0)
-        for fmt in self.settings.kinovea_filename_time_formats:
-            try:
-                # Kinovea names files in local time.
-                return datetime.strptime(candidate, fmt).astimezone().timestamp()
-            except ValueError:
-                continue
-        # Last resort: strip separators and try a canonical layout.
-        digits = re.sub(r"\D", "", candidate)
-        if len(digits) == 14:
-            try:
-                return datetime.strptime(digits, "%Y%m%d%H%M%S").astimezone().timestamp()
-            except ValueError:
-                return None
-        return None

@@ -1,15 +1,17 @@
-"""Timestamp correlation: three async streams in, one shot package out.
+"""Shot pairing.
 
-The three capture sources are completely independent and arrive out of order
-with wildly different latencies:
+The PC is the clock authority. Every artefact is stamped on receipt; a
+device-supplied ``trigger_ts`` is kept only as an ordering hint and never
+decides a pairing, because a phone's wall clock drifts.
 
-* **telemetry** — a few ms after impact (the authoritative impact time),
-* **impact video** — 1-4 s after impact (ring-buffer snapshot, mux, upload),
-* **swing video** — 2-6 s after impact (Kinovea post-roll + encode + flush).
+Pairing is on the *trigger event*, not on absolute wall-clock time: both
+cameras fire from the same physical strike, so an artefact joins the nearest
+open shot that is still missing that source. The window is a guard against
+pairing across two different strikes, not the primary matching mechanism.
 
-Fragments are therefore matched on *impact timestamp*, never on arrival order
-or arrival time. A shot stays open until either every expected artefact has
-landed or ``settle_seconds`` elapse, whichever comes first.
+A shot is emitted as soon as anything lands (``pending``) and updated as the
+rest arrives, so the frontend shows the shot immediately rather than waiting
+for the window to close.
 """
 
 from __future__ import annotations
@@ -19,58 +21,68 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
+from . import events, storage
 from .config import Settings
 from .events import EventBus
-from .models import METADATA_SCHEMA_VERSION, ShotStatus, SourceKind, utc_iso
-from . import storage
+from .models import (
+    MediaEntry,
+    ShotPackage,
+    ShotPatch,
+    ShotStatus,
+    SourceName,
+    SyncBlock,
+    TelemetryBlock,
+    iso,
+    local_now,
+    shot_id_for,
+)
 
 log = logging.getLogger(__name__)
 
 
 @dataclass
-class Fragment:
-    """One artefact of a shot, already converted to host-clock time."""
+class MediaArrival:
+    """A clip that has landed on the PC and is ready to join a shot."""
 
-    kind: SourceKind
-    #: Host-clock epoch seconds at which impact occurred.
-    timestamp: float
-    payload: dict[str, Any] = field(default_factory=dict)
-    #: Populated for media fragments; the file lives in the staging dir.
-    staged_path: Path | None = None
-    received_at: float = field(default_factory=time.time)
-
-
-@dataclass
-class OpenShot:
-    anchor_ts: float
-    anchor_kind: SourceKind
-    created_at: float
-    fragments: dict[SourceKind, Fragment] = field(default_factory=dict)
-
-    def deadline(self, settle_seconds: float) -> float:
-        # Grace runs from the anchor, but never less than `settle_seconds`
-        # after the shot first appeared -- a Kinovea file whose timestamp was
-        # back-dated must not finalise the instant it lands.
-        return max(self.anchor_ts, self.created_at) + settle_seconds
+    source: SourceName
+    file: Path
+    camera: str
+    capture_fps: float | None = None
+    container_fps: float | None = None
+    duration_ms: int | None = None
+    width: int | None = None
+    height: int | None = None
+    #: True for a file the backend does not own (a Kinovea recording the user
+    #: may still want where Kinovea left it).
+    copy: bool = False
+    #: Device-supplied hint. Ordering only -- never used for matching.
+    trigger_hint: str | None = None
 
 
 @dataclass
-class FinalizedShot:
-    shot_id: str
+class TrackedShot:
+    package: ShotPackage
     directory: Path
-    anchor_ts: float
-    finalized_at: float
-    metadata: dict[str, Any]
+    #: PC receipt time of this shot's first artefact.
+    trigger_ts: float
+    closed_at: float | None = None
+
+    @property
+    def is_open(self) -> bool:
+        return self.closed_at is None
 
 
 class ShotCorrelator:
-    def __init__(self, settings: Settings, bus: EventBus) -> None:
+    def __init__(self, settings: Settings, bus: EventBus, session_id: str) -> None:
         self.settings = settings
         self.bus = bus
-        self._open: list[OpenShot] = []
-        self._finalized: list[FinalizedShot] = []
+        self.session_id = session_id
+        #: Current club selection. Stamped onto every new shot, whichever
+        #: source opens it, so a video-only shot is still labelled.
+        self.current_club: str | None = None
+        self._tracked: list[TrackedShot] = []
         self._lock = asyncio.Lock()
         self._reaper: asyncio.Task[None] | None = None
 
@@ -89,111 +101,152 @@ class ShotCorrelator:
                 pass
             self._reaper = None
         if flush:
-            await self.flush_all()
+            await self.close_all()
+
+    async def reset_session(self, session_id: str) -> None:
+        """Start a new session; the frontend clears its history drawer."""
+        await self.close_all()
+        async with self._lock:
+            self.session_id = session_id
+            self._tracked.clear()
+        self.bus.publish(events.SESSION_RESET, {"session_id": session_id})
+        log.info("session reset -> %s", session_id)
 
     # -- ingest ------------------------------------------------------------
 
-    async def submit(self, fragment: Fragment) -> str:
-        """Attach a fragment to a shot, opening one if nothing matches.
-
-        Returns a human-readable description of what happened, for logging.
-        """
+    async def submit_media(
+        self, arrival: MediaArrival, *, received_at: float | None = None
+    ) -> ShotPackage:
+        # received_at lets the fallback watcher back-date its stamp, since it
+        # only sees a file once encoding finished. Live ingest never sets it.
+        received = time.time() if received_at is None else received_at
         async with self._lock:
-            shot = self._match_open(fragment)
-            if shot is not None:
-                self._attach(shot, fragment)
-                outcome = "attached-open"
-                if self._is_complete(shot):
-                    await self._finalize(shot, ShotStatus.COMPLETE)
-                    outcome = "attached-open-completed"
-                return outcome
+            shot, how = self._route(arrival.source, received)
+            entry = await self._place_media(shot, arrival)
+            shot.package.media[arrival.source.value] = entry
+            shot.package.sources[arrival.source.value] = True
+            return await self._commit(shot, how, arrival.source)
 
-            finalized = self._match_finalized(fragment)
-            if finalized is not None:
-                await self._attach_late(finalized, fragment)
-                return "attached-late"
+    async def submit_telemetry(self, telemetry: TelemetryBlock) -> ShotPackage:
+        received = time.time()
+        async with self._lock:
+            shot, how = self._route(SourceName.TELEMETRY, received)
+            shot.package.telemetry = telemetry
+            shot.package.sources[SourceName.TELEMETRY.value] = True
+            return await self._commit(shot, how, SourceName.TELEMETRY)
 
-            shot = OpenShot(
-                anchor_ts=fragment.timestamp,
-                anchor_kind=fragment.kind,
-                created_at=time.time(),
-            )
-            self._open.append(shot)
-            self.bus.publish(
-                "shot_opened",
-                {
-                    "anchor_timestamp": shot.anchor_ts,
-                    "anchor_iso": utc_iso(shot.anchor_ts),
-                    "anchor_kind": shot.anchor_kind.value,
-                },
-            )
-            self._attach(shot, fragment)
-            if self._is_complete(shot):
-                await self._finalize(shot, ShotStatus.COMPLETE)
-                return "opened-completed"
-            return "opened"
+    # -- routing -----------------------------------------------------------
 
-    # -- matching ----------------------------------------------------------
+    def _route(self, source: SourceName, received: float) -> tuple[TrackedShot, str]:
+        """Nearest unmatched trigger, else a new shot."""
+        window = self.settings.pair_window_s
 
-    def _match_open(self, fragment: Fragment) -> OpenShot | None:
-        """Nearest open shot inside the window that still needs this artefact.
-
-        Shots that already hold this artefact are skipped rather than
-        overwritten, so two swings inside the pairing window become two shots
-        instead of one shot with a clobbered clip.
-        """
-        window = self.settings.pair_window_seconds
-        candidates = [
+        open_candidates = [
             shot
-            for shot in self._open
-            if fragment.kind not in shot.fragments
-            and abs(shot.anchor_ts - fragment.timestamp) <= window
+            for shot in self._tracked
+            if shot.is_open
+            and not shot.package.sources.get(source.value)
+            and abs(shot.trigger_ts - received) <= window
         ]
-        if not candidates:
-            return None
-        return min(candidates, key=lambda shot: abs(shot.anchor_ts - fragment.timestamp))
+        if open_candidates:
+            return min(open_candidates, key=lambda s: abs(s.trigger_ts - received)), "attached"
 
-    def _match_finalized(self, fragment: Fragment) -> FinalizedShot | None:
-        now = time.time()
-        window = self.settings.pair_window_seconds
-        candidates = [
-            shot
-            for shot in self._finalized
-            if abs(shot.anchor_ts - fragment.timestamp) <= window
-            and now - shot.finalized_at <= self.settings.late_attach_seconds
-            and not shot.metadata["sources"].get(fragment.kind.value, {}).get("present")
-        ]
-        if not candidates:
-            return None
-        return min(candidates, key=lambda shot: abs(shot.anchor_ts - fragment.timestamp))
+        # A straggler joins the shot it belongs to instead of opening a
+        # phantom one. Set GOLFSIM_LATE_ATTACH_MS=0 for strict window
+        # behaviour.
+        if self.settings.late_attach_s > 0:
+            late_candidates = [
+                shot
+                for shot in self._tracked
+                if not shot.is_open
+                and not shot.package.sources.get(source.value)
+                and received - (shot.closed_at or 0) <= self.settings.late_attach_s
+            ]
+            if late_candidates:
+                return min(late_candidates, key=lambda s: abs(s.trigger_ts - received)), "late"
 
-    def _attach(self, shot: OpenShot, fragment: Fragment) -> None:
-        shot.fragments[fragment.kind] = fragment
-        # The launch monitor sees the actual strike, so it wins the anchor.
-        if fragment.kind is SourceKind.TELEMETRY and shot.anchor_kind is not SourceKind.TELEMETRY:
-            shot.anchor_ts = fragment.timestamp
-            shot.anchor_kind = SourceKind.TELEMETRY
-        self.bus.publish(
-            "fragment_attached",
-            {
-                "kind": fragment.kind.value,
-                "anchor_timestamp": shot.anchor_ts,
-                "offset_s": round(fragment.timestamp - shot.anchor_ts, 4),
-                "have": sorted(k.value for k in shot.fragments),
-            },
+        return self._create(received), "created"
+
+    def _create(self, received: float) -> TrackedShot:
+        moment = local_now()
+        directory, shot_id = storage.unique_shot_dir(
+            self.settings.shots_dir, shot_id_for(moment)
+        )
+        package = ShotPackage(
+            shot_id=shot_id,
+            session_id=self.session_id,
+            created_at=iso(moment),
+            status=ShotStatus.PENDING,
+            sync=SyncBlock(trigger_ts=iso(moment), impact_offset_ms=0),
+            club_used=self.current_club,
+        )
+        shot = TrackedShot(package=package, directory=directory, trigger_ts=received)
+        self._tracked.append(shot)
+        return shot
+
+    async def _place_media(self, shot: TrackedShot, arrival: MediaArrival) -> MediaEntry:
+        destination = shot.directory / f"{arrival.source.value}{arrival.file.suffix.lower()}"
+        await asyncio.to_thread(
+            storage.place_media, arrival.file, destination, copy=arrival.copy
+        )
+        probe = await storage.probe_video(self.settings, destination)
+        return MediaEntry(
+            path=destination.name,
+            camera=arrival.camera,
+            # capture_fps cannot be probed -- 240 fps footage in a 30 fps
+            # container probes as 30 -- so the ingesting client must supply it.
+            capture_fps=arrival.capture_fps,
+            container_fps=arrival.container_fps or probe.get("container_fps"),
+            duration_ms=arrival.duration_ms or probe.get("duration_ms"),
+            width=arrival.width or probe.get("width"),
+            height=arrival.height or probe.get("height"),
         )
 
-    def _is_complete(self, shot: OpenShot) -> bool:
-        return all(
-            SourceKind(name) in shot.fragments for name in self.settings.expected_sources
+    async def _commit(
+        self, shot: TrackedShot, how: str, source: SourceName
+    ) -> ShotPackage:
+        """Persist and announce a change. Caller holds the lock."""
+        complete = all(
+            shot.package.sources.get(name) for name in self.settings.expected_sources
+        )
+        if complete:
+            shot.package.status = ShotStatus.COMPLETE
+            shot.closed_at = shot.closed_at or time.time()
+        await self._persist(shot)
+
+        if complete:
+            event = events.SHOT_COMPLETED
+        elif how == "created":
+            event = events.SHOT_CREATED
+        else:
+            event = events.SHOT_UPDATED
+        self._publish(event, shot)
+
+        log.info(
+            "%s %s via %s (%s) sources=%s",
+            event,
+            shot.package.shot_id,
+            source.value,
+            how,
+            ",".join(k for k, v in shot.package.sources.items() if v),
+        )
+        return shot.package
+
+    async def _persist(self, shot: TrackedShot) -> None:
+        await asyncio.to_thread(
+            storage.write_metadata, shot.directory, shot.package.to_json()
         )
 
-    # -- finalisation ------------------------------------------------------
+    def _publish(self, event_type: str, shot: TrackedShot) -> None:
+        self.bus.publish(event_type, shot.package.to_json(), shot_id=shot.package.shot_id)
+
+    # -- closing -----------------------------------------------------------
 
     async def _reap_loop(self) -> None:
+        interval = self.settings.reaper_interval_ms / 1000.0
         while True:
             try:
-                await asyncio.sleep(self.settings.reaper_interval_seconds)
+                await asyncio.sleep(interval)
                 await self._reap_once()
             except asyncio.CancelledError:
                 raise
@@ -203,170 +256,116 @@ class ShotCorrelator:
     async def _reap_once(self) -> None:
         now = time.time()
         async with self._lock:
-            expired = [
-                shot for shot in self._open if now >= shot.deadline(self.settings.settle_seconds)
-            ]
-            for shot in expired:
-                await self._finalize(shot, ShotStatus.PARTIAL)
-            self._prune_finalized(now)
+            for shot in list(self._tracked):
+                if shot.is_open and now >= shot.trigger_ts + self.settings.pair_window_s:
+                    await self._close_partial(shot, now)
+            self._prune(now)
 
-    async def flush_all(self) -> None:
-        """Write out every open shot; used on shutdown."""
-        async with self._lock:
-            for shot in list(self._open):
-                status = ShotStatus.COMPLETE if self._is_complete(shot) else ShotStatus.PARTIAL
-                await self._finalize(shot, status)
+    async def _close_partial(self, shot: TrackedShot, now: float) -> None:
+        """Window expired with sources missing.
 
-    def _prune_finalized(self, now: float) -> None:
-        cutoff = self.settings.late_attach_seconds
-        self._finalized = [s for s in self._finalized if now - s.finalized_at <= cutoff]
-
-    async def _finalize(self, shot: OpenShot, status: ShotStatus) -> FinalizedShot:
-        """Caller must hold ``self._lock``."""
-        if shot in self._open:
-            self._open.remove(shot)
-
-        shot_dir = await asyncio.to_thread(
-            storage.unique_shot_dir, self.settings.shots_dir, shot.anchor_ts
-        )
-        metadata = self._base_metadata(shot, shot_dir.name, status)
-
-        for kind_name in self.settings.expected_sources:
-            kind = SourceKind(kind_name)
-            fragment = shot.fragments.get(kind)
-            if fragment is None:
-                metadata["sources"][kind_name] = {"present": False}
-                continue
-            metadata["sources"][kind_name] = await self._materialize(
-                fragment, shot_dir, shot.anchor_ts
-            )
-
-        # Artefacts outside `expected_sources` are still worth keeping.
-        for kind, fragment in shot.fragments.items():
-            if kind.value not in metadata["sources"]:
-                metadata["sources"][kind.value] = await self._materialize(
-                    fragment, shot_dir, shot.anchor_ts
-                )
-
-        self._refresh_derived(metadata)
-        await asyncio.to_thread(storage.write_metadata, shot_dir, metadata)
-
-        finalized = FinalizedShot(
-            shot_id=metadata["shot_id"],
-            directory=shot_dir,
-            anchor_ts=shot.anchor_ts,
-            finalized_at=time.time(),
-            metadata=metadata,
-        )
-        self._finalized.append(finalized)
+        Emit shot.completed with status partial rather than holding the shot
+        open -- a shot that never completes is worse than one that is honest
+        about what is missing.
+        """
+        shot.package.status = ShotStatus.PARTIAL
+        shot.closed_at = now
+        await self._persist(shot)
+        self._publish(events.SHOT_COMPLETED, shot)
         log.info(
-            "finalized %s (%s) sources=%s",
-            finalized.shot_id,
-            metadata["status"],
-            ",".join(metadata["present_sources"]) or "none",
+            "shot.completed %s (partial) missing=%s",
+            shot.package.shot_id,
+            ",".join(k for k, v in shot.package.sources.items() if not v),
         )
-        self.bus.publish("shot_finalized", {"shot_id": finalized.shot_id, "shot": metadata})
-        return finalized
 
-    def _base_metadata(self, shot: OpenShot, shot_id: str, status: ShotStatus) -> dict[str, Any]:
-        telemetry = shot.fragments.get(SourceKind.TELEMETRY)
-        payload = telemetry.payload if telemetry else {}
-        return {
-            "schema_version": METADATA_SCHEMA_VERSION,
-            "shot_id": shot_id,
-            "status": status.value,
-            "created_at": utc_iso(shot.created_at),
-            "finalized_at": utc_iso(time.time()),
-            "club": payload.get("club"),
-            "session_id": payload.get("session_id"),
-            "anchor": {
-                "timestamp": round(shot.anchor_ts, 6),
-                "iso": utc_iso(shot.anchor_ts),
-                "source": shot.anchor_kind.value,
-            },
-            "pairing": {
-                "window_seconds": self.settings.pair_window_seconds,
-                "settle_seconds": self.settings.settle_seconds,
-                "offsets_s": {},
-            },
-            "present_sources": [],
-            "missing_sources": [],
-            "sources": {},
-        }
+    async def close_all(self) -> None:
+        now = time.time()
+        async with self._lock:
+            for shot in list(self._tracked):
+                if shot.is_open:
+                    await self._close_partial(shot, now)
 
-    async def _materialize(
-        self, fragment: Fragment, shot_dir: Path, anchor_ts: float
-    ) -> dict[str, Any]:
-        """Move a fragment's file into the package and describe it."""
-        entry: dict[str, Any] = {
-            "present": True,
-            "timestamp": round(fragment.timestamp, 6),
-            "timestamp_iso": utc_iso(fragment.timestamp),
-            "offset_s": round(fragment.timestamp - anchor_ts, 4),
-            "received_at": utc_iso(fragment.received_at),
-        }
-        entry.update({k: v for k, v in fragment.payload.items() if k != "club"})
+    def _prune(self, now: float) -> None:
+        """Drop closed shots from memory once no straggler could still join.
 
-        if fragment.staged_path is not None:
-            name = storage.CANONICAL_FILENAMES.get(fragment.kind.value, fragment.kind.value)
-            destination = shot_dir / f"{name}{fragment.staged_path.suffix.lower()}"
-            await asyncio.to_thread(storage.move_into, fragment.staged_path, destination)
-            entry["file"] = destination.name
-            entry["bytes"] = destination.stat().st_size
-            entry["sha256"] = await asyncio.to_thread(storage.sha256_file, destination)
-            probe = await storage.probe_video(self.settings, destination)
-            if probe:
-                entry["video"] = probe
-        return entry
+        They remain on disk; only the in-memory pairing candidates shrink.
+        """
+        horizon = max(self.settings.late_attach_s, 1.0)
+        self._tracked = [
+            shot
+            for shot in self._tracked
+            if shot.is_open or now - (shot.closed_at or 0) <= horizon
+        ]
 
-    @staticmethod
-    def _refresh_derived(metadata: dict[str, Any]) -> None:
-        present, missing, offsets = [], [], {}
-        for name, entry in metadata["sources"].items():
-            if entry.get("present"):
-                present.append(name)
-                offsets[name] = entry.get("offset_s", 0.0)
-            else:
-                missing.append(name)
-        metadata["present_sources"] = sorted(present)
-        metadata["missing_sources"] = sorted(missing)
-        metadata["pairing"]["offsets_s"] = offsets
+    # -- mutation ----------------------------------------------------------
 
-    async def _attach_late(self, finalized: FinalizedShot, fragment: Fragment) -> None:
-        """Absorb a straggler into an already-written package."""
-        entry = await self._materialize(fragment, finalized.directory, finalized.anchor_ts)
-        metadata = finalized.metadata
-        metadata["sources"][fragment.kind.value] = entry
-        if fragment.kind is SourceKind.TELEMETRY:
-            metadata["club"] = fragment.payload.get("club") or metadata.get("club")
-            metadata["session_id"] = (
-                fragment.payload.get("session_id") or metadata.get("session_id")
+    async def patch(self, shot_id: str, patch: ShotPatch) -> dict[str, Any] | None:
+        """Apply a PATCH to a shot, whether or not it is still in memory."""
+        async with self._lock:
+            tracked = next(
+                (s for s in self._tracked if s.package.shot_id == shot_id), None
             )
-        self._refresh_derived(metadata)
-        if all(
-            metadata["sources"].get(name, {}).get("present")
-            for name in self.settings.expected_sources
-        ):
-            metadata["status"] = ShotStatus.COMPLETE.value
-        metadata["finalized_at"] = utc_iso(time.time())
-        await asyncio.to_thread(storage.write_metadata, finalized.directory, metadata)
-        log.info("late-attached %s to %s", fragment.kind.value, finalized.shot_id)
-        self.bus.publish(
-            "shot_updated", {"shot_id": finalized.shot_id, "shot": metadata, "late": True}
-        )
+            directory = tracked.directory if tracked else self._shot_dir(shot_id)
+            if directory is None:
+                return None
+
+            if tracked is not None:
+                package = tracked.package
+                _apply_patch(package, patch)
+                metadata = package.to_json()
+            else:
+                metadata = storage.load_metadata(directory)
+                if metadata is None:
+                    return None
+                _apply_patch_dict(metadata, patch)
+
+            await asyncio.to_thread(storage.write_metadata, directory, metadata)
+            self.bus.publish(events.SHOT_PATCHED, metadata, shot_id=shot_id)
+            return metadata
+
+    def _shot_dir(self, shot_id: str) -> Path | None:
+        directory = self.settings.shots_dir / f"shot_{shot_id}"
+        return directory if directory.is_dir() else None
 
     # -- introspection -----------------------------------------------------
 
-    def open_snapshot(self) -> list[dict[str, Any]]:
+    def open_count(self) -> int:
+        return sum(1 for shot in self._tracked if shot.is_open)
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        now = time.time()
         return [
             {
-                "anchor_timestamp": shot.anchor_ts,
-                "anchor_iso": utc_iso(shot.anchor_ts),
-                "anchor_kind": shot.anchor_kind.value,
-                "have": sorted(kind.value for kind in shot.fragments),
-                "deadline_in_s": round(
-                    shot.deadline(self.settings.settle_seconds) - time.time(), 2
+                "shot_id": shot.package.shot_id,
+                "status": shot.package.status,
+                "sources": shot.package.sources,
+                "closes_in_ms": (
+                    None
+                    if not shot.is_open
+                    else int((shot.trigger_ts + self.settings.pair_window_s - now) * 1000)
                 ),
             }
-            for shot in self._open
+            for shot in self._tracked
         ]
+
+
+def _apply_patch(package: ShotPackage, patch: ShotPatch) -> None:
+    if patch.tags is not None:
+        package.tags = patch.tags
+    if patch.notes is not None:
+        package.notes = patch.notes
+    if patch.club_used is not None:
+        package.club_used = patch.club_used
+    if patch.impact_offset_ms is not None:
+        package.sync.impact_offset_ms = patch.impact_offset_ms
+
+
+def _apply_patch_dict(metadata: dict[str, Any], patch: ShotPatch) -> None:
+    if patch.tags is not None:
+        metadata["tags"] = patch.tags
+    if patch.notes is not None:
+        metadata["notes"] = patch.notes
+    if patch.club_used is not None:
+        metadata["club_used"] = patch.club_used
+    if patch.impact_offset_ms is not None:
+        metadata.setdefault("sync", {})["impact_offset_ms"] = patch.impact_offset_ms

@@ -1,11 +1,12 @@
-"""Golf simulator ingestion service (Build 1).
+"""Golf simulator ingest service (Build 1).
 
-Consolidates three independent capture streams into timestamped shot packages
-on disk:
+Consolidates three independent capture streams into one shot package per
+swing, written to ``data/shots/shot_<shot_id>/`` with a ``metadata.json`` that
+is the contract Build 2 reads:
 
-* Kinovea swing clips, picked up by a filesystem watcher,
-* impact-camera clips, uploaded over HTTP by the phone,
-* Square Golf launch monitor telemetry, posted as JSON.
+* Kinovea body-swing clips, via its Automation hook (watcher as fallback),
+* impact-camera clips, uploaded by the phone,
+* launch monitor telemetry, over a GSPro Open Connect v1 socket.
 
 Run with::
 
@@ -21,12 +22,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .clock import ClockRegistry
 from .config import get_settings
 from .correlator import ShotCorrelator
 from .events import EventBus
-from .routers import media, shots, telemetry, ws
-from .routers.ws import ControlHub
+from .gspro import GSProListener
+from .routers import ingest, shots, system, ws
+from .routers.system import default_session_id
 from .watcher import KinoveaWatcher
 
 logging.basicConfig(
@@ -42,32 +43,49 @@ async def lifespan(app: FastAPI):
     settings.ensure_dirs()
 
     bus = EventBus()
-    correlator = ShotCorrelator(settings, bus)
-    watcher = KinoveaWatcher(settings, correlator, asyncio.get_running_loop())
+    session_id = settings.session_id or default_session_id()
+    correlator = ShotCorrelator(settings, bus, session_id)
+    gspro = GSProListener(settings, correlator)
+    watcher = (
+        KinoveaWatcher(settings, correlator, asyncio.get_running_loop())
+        if settings.kinovea_watch_enabled
+        else None
+    )
 
     app.state.settings = settings
     app.state.bus = bus
     app.state.correlator = correlator
-    app.state.clocks = ClockRegistry()
-    app.state.control_hub = ControlHub()
+    app.state.gspro = gspro
     app.state.watcher = watcher
 
     await correlator.start()
-    watcher.start()
-    log.info("ingest ready on %s:%s (pairing window +/-%ss)",
-             settings.host, settings.port, settings.pair_window_seconds)
+    if settings.gspro_enabled:
+        # A failure to bind is expected when GSPro itself is running; the
+        # service stays up and the listener can be started later.
+        await gspro.start()
+    if watcher is not None:
+        watcher.start()
+
+    log.info(
+        "session %s ready | pairing +/-%dms | shots -> %s",
+        session_id,
+        settings.pair_window_ms,
+        settings.shots_dir,
+    )
     try:
         yield
     finally:
-        watcher.stop()
-        # Flush whatever is still open so no capture is silently lost.
+        if watcher is not None:
+            watcher.stop()
+        await gspro.stop()
+        # Close whatever is still open so nothing is silently lost.
         await correlator.stop(flush=True)
         log.info("ingest stopped")
 
 
 app = FastAPI(
     title="Golf Simulator Ingest",
-    version="1.0.0",
+    version="1.0",
     description=__doc__,
     lifespan=lifespan,
 )
@@ -80,32 +98,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(telemetry.router)
-app.include_router(media.router)
+app.include_router(ingest.router)
 app.include_router(shots.router)
+app.include_router(system.router)
 app.include_router(ws.router)
 
 
-@app.get("/health", tags=["ops"])
-async def health() -> dict[str, object]:
-    return {
-        "ok": True,
-        "capture_devices": app.state.control_hub.device_ids,
-        "event_subscribers": app.state.bus.subscriber_count,
-    }
-
-
 def run() -> None:
-    """Console entry point: ``python -m backend.main``."""
     import uvicorn
 
     settings = get_settings()
-    uvicorn.run(
-        "backend.main:app",
-        host=settings.host,
-        port=settings.port,
-        reload=False,
-    )
+    uvicorn.run("backend.main:app", host=settings.host, port=settings.port, reload=False)
 
 
 if __name__ == "__main__":

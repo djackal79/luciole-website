@@ -1,19 +1,26 @@
-"""Tiny in-process pub/sub used to fan shot lifecycle events out to clients.
+"""In-process pub/sub backing ``/ws/shots``.
 
-Build 2's dashboard subscribes over ``/ws/events`` and gets a live feed of
-shots opening, artefacts attaching and packages finalising.
+Every envelope carries the *complete* metadata object, never a diff. It costs
+a few KB and removes a whole class of state-merge bugs in the frontend.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
-import time
 from typing import Any, AsyncIterator
 
-#: Per-subscriber backlog. A slow dashboard drops events rather than stalling
+from .models import iso, local_now
+
+#: Per-subscriber backlog. A slow client drops events rather than stalling
 #: the ingest path.
 QUEUE_SIZE = 256
+
+SHOT_CREATED = "shot.created"
+SHOT_UPDATED = "shot.updated"
+SHOT_COMPLETED = "shot.completed"
+SHOT_PATCHED = "shot.patched"
+SESSION_RESET = "session.reset"
 
 
 class EventBus:
@@ -21,8 +28,19 @@ class EventBus:
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._recent: list[dict[str, Any]] = []
 
-    def publish(self, event_type: str, payload: dict[str, Any] | None = None) -> None:
-        event = {"type": event_type, "at": time.time(), **(payload or {})}
+    def publish(
+        self,
+        event_type: str,
+        payload: dict[str, Any] | None = None,
+        *,
+        shot_id: str | None = None,
+    ) -> dict[str, Any]:
+        event = {
+            "type": event_type,
+            "ts": iso(local_now()),
+            "shot_id": shot_id,
+            "payload": payload,
+        }
         self._recent.append(event)
         del self._recent[:-50]
         for queue in list(self._subscribers):
@@ -30,10 +48,15 @@ class EventBus:
                 queue.put_nowait(event)
             except asyncio.QueueFull:
                 pass
+        return event
 
     @property
     def recent(self) -> list[dict[str, Any]]:
         return list(self._recent)
+
+    @property
+    def subscriber_count(self) -> int:
+        return len(self._subscribers)
 
     @contextlib.asynccontextmanager
     async def subscribe(self) -> AsyncIterator[asyncio.Queue[dict[str, Any]]]:
@@ -43,7 +66,3 @@ class EventBus:
             yield queue
         finally:
             self._subscribers.discard(queue)
-
-    @property
-    def subscriber_count(self) -> int:
-        return len(self._subscribers)

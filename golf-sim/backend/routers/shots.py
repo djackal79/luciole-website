@@ -1,88 +1,91 @@
-"""Read API over the shot packages on disk."""
+"""Shot read/patch API and media serving."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import FileResponse
 
-from ..deps import ClocksDep, CorrelatorDep, SettingsDep
-from ..models import ShotListResponse, ShotStatus, ShotSummary
 from .. import storage
+from ..deps import CorrelatorDep, SettingsDep
+from ..models import ShotPatch, parse_ts
 
-router = APIRouter(prefix="/api/v1", tags=["shots"])
+router = APIRouter(tags=["shots"])
 
 
-def _shot_dir(settings: SettingsDep, shot_id: str) -> Path:
-    """Resolve a shot directory, refusing anything that escapes ``shots/``."""
+def _resolve_dir(settings: SettingsDep, folder: str) -> Path:
+    """Resolve a shot folder, refusing anything that escapes ``shots/``."""
     root = settings.shots_dir.resolve()
-    candidate = (root / shot_id).resolve()
+    candidate = (root / folder).resolve()
     if candidate.parent != root or not candidate.is_dir():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="unknown shot")
     return candidate
 
 
-@router.get("/shots", response_model=ShotListResponse)
+@router.get("/api/shots")
 async def list_shots(
     settings: SettingsDep,
-    limit: int = Query(default=50, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
-    shot_status: ShotStatus | None = Query(default=None, alias="status"),
-) -> ShotListResponse:
+    session_id: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+    since: str | None = Query(
+        default=None, description="ISO-8601; returns shots created strictly after this"
+    ),
+) -> list[dict[str, Any]]:
+    """Newest first. shot_id is lexically sortable, so this is a plain sort."""
     shots = storage.iter_shots(settings)
-    if shot_status is not None:
-        shots = [s for s in shots if s.get("status") == shot_status.value]
-    window = shots[offset : offset + limit]
-    return ShotListResponse(
-        count=len(shots),
-        shots=[
-            ShotSummary(
-                shot_id=s["shot_id"],
-                status=s["status"],
-                anchor_timestamp=s["anchor"]["timestamp"],
-                anchor_iso=s["anchor"]["iso"],
-                club=s.get("club"),
-                present_sources=s.get("present_sources", []),
-                missing_sources=s.get("missing_sources", []),
+    if session_id:
+        shots = [s for s in shots if s.get("session_id") == session_id]
+    if since:
+        cutoff = parse_ts(since)
+        if cutoff is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="unparseable 'since'"
             )
-            for s in window
-        ],
-    )
+        shots = [
+            s
+            for s in shots
+            if (created := parse_ts(s.get("created_at"))) is not None and created > cutoff
+        ]
+    return shots[:limit]
 
 
-@router.get("/shots/{shot_id}")
-async def get_shot(settings: SettingsDep, shot_id: str) -> dict:
-    metadata = storage.load_shot(_shot_dir(settings, shot_id))
+@router.get("/api/shots/{shot_id}")
+async def get_shot(settings: SettingsDep, shot_id: str) -> dict[str, Any]:
+    metadata = storage.load_metadata(_resolve_dir(settings, f"shot_{shot_id}"))
     if metadata is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="unknown shot")
     return metadata
 
 
-@router.get("/shots/{shot_id}/media/{filename}")
-async def get_shot_media(settings: SettingsDep, shot_id: str, filename: str) -> FileResponse:
-    """Serve a clip. Starlette answers Range requests here, which is what the
-    Build 2 scrubber needs for seeking without downloading the whole file."""
-    directory = _shot_dir(settings, shot_id)
+@router.patch("/api/shots/{shot_id}")
+async def patch_shot(
+    correlator: CorrelatorDep, shot_id: str, patch: ShotPatch
+) -> dict[str, Any]:
+    """Accepts tags, notes, club_used and impact_offset_ms only.
+
+    The frontend's calibration slider writes impact_offset_ms here so it
+    survives reload. Emits shot.patched to every client, including the one
+    that made the change.
+    """
+    metadata = await correlator.patch(shot_id, patch)
+    if metadata is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="unknown shot")
+    return metadata
+
+
+@router.get("/shots/{folder}/{filename}")
+async def get_media(settings: SettingsDep, folder: str, filename: str) -> FileResponse:
+    """Static media with HTTP range support.
+
+    Range support is not optional: without it the frontend's scrubber and
+    frame stepping cannot work, because the browser can't seek a video it has
+    to download linearly. Starlette's FileResponse answers Range; a naive
+    streaming response does not.
+    """
+    directory = _resolve_dir(settings, folder)
     target = (directory / filename).resolve()
     if target.parent != directory or not target.is_file():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="unknown media file")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="unknown file")
     return FileResponse(target)
-
-
-@router.get("/status")
-async def ingest_status(
-    settings: SettingsDep,
-    correlator: CorrelatorDep,
-    clocks: ClocksDep,
-) -> dict:
-    """Operational snapshot: what is mid-flight right now."""
-    return {
-        "watching": str(settings.kinovea_export_dir),
-        "shots_dir": str(settings.shots_dir),
-        "pair_window_seconds": settings.pair_window_seconds,
-        "settle_seconds": settings.settle_seconds,
-        "expected_sources": settings.expected_sources,
-        "open_shots": correlator.open_snapshot(),
-        "device_clocks": clocks.snapshot(),
-    }

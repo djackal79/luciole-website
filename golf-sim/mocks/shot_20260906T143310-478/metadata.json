@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0",
+  "shot_id": "20260906T143310-478",
+  "session_id": "20260906-morning",
+  "created_at": "2026-09-06T14:33:10.478+00:00",
+  "status": "complete",
+  "sources": {
+    "body_swing": true,
+    "impact_strike": true,
+    "telemetry": true
+  },
+  "media": {
+    "body_swing": {
+      "path": "body_swing.mp4",
+      "camera": "face_on",
+      "capture_fps": 30.0,
+      "container_fps": 30.0,
+      "duration_ms": 4000,
+      "width": 1280,
+      "height": 720
+    },
+    "impact_strike": {
+      "path": "impact_strike.mp4",
+      "camera": "impact",
+      "capture_fps": 240.0,
+      "container_fps": 30.0,
+      "duration_ms": 1500,
+      "width": 1920,
+      "height": 1080
+    }
+  },
+  "sync": {
+    "trigger_ts": "2026-09-06T14:33:10.478+00:00",
+    "impact_offset_ms": 0
+  },
+  "telemetry": {
+    "source": "gspro_connect_v1",
+    "received_at": "2026-09-06T14:33:11.102+00:00",
+    "ball": {
+      "speed_mph": 124.7,
+      "total_spin_rpm": 5980.0,
+      "back_spin_rpm": 5960.0,
+      "side_spin_rpm": -210.0,
+      "spin_axis_deg": -2.0,
+      "launch_angle_deg": 16.4,
+      "launch_direction_deg": 0.6
+    },
+    "club": {
+      "speed_mph": null,
+      "angle_of_attack_deg": null,
+      "path_deg": null,
+      "face_to_target_deg": null,
+      "loft_deg": null,
+      "closure_rate_dps": null
+    },
+    "derived": {
+      "smash_factor": null,
+      "face_to_path_deg": null
+    },
+    "distance": {
+      "carry_m": null,
+      "total_m": null
+    },
+    "raw": {
+      "DeviceID": "MockMonitor",
+      "Units": "Yards",
+      "APIversion": "1",
+      "BallData": {
+        "Speed": 124.7,
+        "SpinAxis": -2.0,
+        "TotalSpin": 5980.0,
+        "BackSpin": 5960.0,
+        "SideSpin": -210.0,
+        "HLA": 0.6,
+        "VLA": 16.4
+      },
+      "ShotDataOptions": {
+        "ContainsBallData": true,
+        "ContainsClubData": false,
+        "LaunchMonitorIsReady": true,
+        "LaunchMonitorBallDetected": true,
+        "IsHeartBeat": false
+      }
+    }
+  },
+  "club_used": null,
+  "tags": [],
+  "notes": "Monitor reported ball data only."
+}

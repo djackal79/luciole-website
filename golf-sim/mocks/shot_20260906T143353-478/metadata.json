@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.0",
+  "shot_id": "20260906T143353-478",
+  "session_id": "20260906-morning",
+  "created_at": "2026-09-06T14:33:53.478+00:00",
+  "status": "complete",
+  "sources": {
+    "body_swing": true,
+    "impact_strike": true,
+    "telemetry": true
+  },
+  "media": {
+    "body_swing": {
+      "path": "body_swing.mp4",
+      "camera": "face_on",
+      "capture_fps": 30.0,
+      "container_fps": 30.0,
+      "duration_ms": 4000,
+      "width": 1280,
+      "height": 720
+    },
+    "impact_strike": {
+      "path": "impact_strike.mp4",
+      "camera": "impact",
+      "capture_fps": 240.0,
+      "container_fps": 30.0,
+      "duration_ms": 1500,
+      "width": 1920,
+      "height": 1080
+    }
+  },
+  "sync": {
+    "trigger_ts": "2026-09-06T14:33:53.478+00:00",
+    "impact_offset_ms": 80
+  },
+  "telemetry": {
+    "source": "gspro_connect_v1",
+    "received_at": "2026-09-06T14:33:54.102+00:00",
+    "ball": {
+      "speed_mph": 121.8,
+      "total_spin_rpm": 7120.0,
+      "back_spin_rpm": 6820.0,
+      "side_spin_rpm": -2040.0,
+      "spin_axis_deg": -16.7,
+      "launch_angle_deg": 15.8,
+      "launch_direction_deg": 3.1
+    },
+    "club": {
+      "speed_mph": 85.0,
+      "angle_of_attack_deg": -3.4,
+      "path_deg": 4.2,
+      "face_to_target_deg": -1.8,
+      "loft_deg": 24.6,
+      "closure_rate_dps": 61.4
+    },
+    "derived": {
+      "smash_factor": 1.43,
+      "face_to_path_deg": -6.0
+    },
+    "distance": {
+      "carry_m": null,
+      "total_m": null
+    },
+    "raw": {
+      "DeviceID": "MockMonitor",
+      "Units": "Yards",
+      "APIversion": "1",
+      "BallData": {
+        "Speed": 121.8,
+        "SpinAxis": -16.7,
+        "TotalSpin": 7120.0,
+        "BackSpin": 6820.0,
+        "SideSpin": -2040.0,
+        "HLA": 3.1,
+        "VLA": 15.8
+      },
+      "ShotDataOptions": {
+        "ContainsBallData": true,
+        "ContainsClubData": true,
+        "LaunchMonitorIsReady": true,
+        "LaunchMonitorBallDetected": true,
+        "IsHeartBeat": false
+      },
+      "ClubData": {
+        "Speed": 85.0,
+        "AngleOfAttack": -3.4,
+        "FaceToTarget": -1.8,
+        "Loft": 24.6,
+        "Path": 4.2,
+        "ClosureRate": 61.4
+      }
+    }
+  },
+  "club_used": "7I",
+  "tags": [
+    "Good Strike"
+  ],
+  "notes": "Face 6.0 deg closed to a 4.2 deg in-to-out path: heavy draw."
+}

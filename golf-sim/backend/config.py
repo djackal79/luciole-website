@@ -1,4 +1,4 @@
-"""Configuration for the golf simulator ingestion backend.
+"""Configuration.
 
 Every value can be overridden with a ``GOLFSIM_``-prefixed environment
 variable or an entry in ``golf-sim/.env`` (see ``.env.example``).
@@ -8,12 +8,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-KinoveaTimestampMode = Literal["filename", "mtime", "mtime_minus_duration"]
 
 
 class Settings(BaseSettings):
@@ -30,59 +27,56 @@ class Settings(BaseSettings):
 
     # ---- storage ----------------------------------------------------------
     data_root: Path = Path("./data")
-    #: Directory Kinovea is configured to export finished clips into.
-    kinovea_export_dir: Path = Path("./data/kinovea_export")
+    #: Blank means "derive one on boot", e.g. ``20260906-morning``.
+    session_id: str = ""
 
     # ---- pairing ----------------------------------------------------------
-    #: Two artefacts belong to the same shot when their impact timestamps are
-    #: within +/- this many seconds of each other.
-    pair_window_seconds: float = 3.0
-    #: How long an incomplete shot stays open before it is written out as
-    #: ``partial``. Must comfortably exceed the slowest upload.
-    settle_seconds: float = 12.0
-    #: A finalized shot can still absorb a straggler for this long.
-    late_attach_seconds: float = 90.0
-    reaper_interval_seconds: float = 0.5
-    #: Artefacts required before a shot counts as ``complete``.
+    #: Contract default. Artefacts of one strike must reach the PC inside this
+    #: window of each other, measured on PC receipt time.
+    pair_window_ms: int = 3000
+    #: Grace after a shot closes during which a straggler still joins it
+    #: instead of opening a phantom shot. Set to 0 for strict window behaviour.
+    late_attach_ms: int = 5000
+    reaper_interval_ms: int = 250
     expected_sources: list[str] = Field(
-        default_factory=lambda: ["swing_video", "impact_video", "telemetry"]
+        default_factory=lambda: ["body_swing", "impact_strike", "telemetry"]
     )
 
-    # ---- Kinovea ingest ---------------------------------------------------
+    # ---- GSPro Open Connect v1 listener -----------------------------------
+    gspro_enabled: bool = True
+    gspro_host: str = "127.0.0.1"
+    #: GSPro itself binds 921, so only one of the two can listen at a time.
+    #: The listener can be stopped at runtime without killing the service.
+    gspro_port: int = 921
+    gspro_device_id: str = "GolfSimIngest"
+
+    # ---- media defaults ---------------------------------------------------
+    body_swing_camera: str = "face_on"
+    body_swing_capture_fps: float = 30.0
+    body_swing_container_fps: float = 30.0
+    impact_camera: str = "impact"
+    impact_capture_fps: float = 240.0
+    impact_container_fps: float = 30.0
+
+    # ---- Kinovea fallback watcher -----------------------------------------
+    #: Preferred path is Kinovea's Automation hook posting to
+    #: /api/ingest/body_swing. The watcher exists only for clips that appear
+    #: without a notification.
+    kinovea_watch_enabled: bool = False
+    kinovea_export_dir: Path = Path("./data/kinovea_export")
     kinovea_extensions: list[str] = Field(
         default_factory=lambda: [".mp4", ".avi", ".mkv", ".mov"]
     )
-    kinovea_timestamp_mode: KinoveaTimestampMode = "mtime"
-    #: Seconds between the real-world impact and Kinovea closing the file
-    #: (encode + flush). Subtracted from mtime. Calibrate once, see README.
-    kinovea_write_lag_seconds: float = 0.0
-    #: Where impact sits *inside* the exported clip. Kinovea's delayed capture
-    #: keeps a pre-roll, so impact is not at t=0. Recorded in metadata so the
-    #: Build 2 player can align both videos on the impact frame.
-    kinovea_impact_offset_seconds: float = 0.0
-    #: strptime patterns tried against the filename in "filename" mode.
-    kinovea_filename_time_formats: list[str] = Field(
-        default_factory=lambda: [
-            "%Y%m%d-%H%M%S",
-            "%Y%m%d_%H%M%S",
-            "%Y-%m-%d %H-%M-%S",
-            "%Y-%m-%dT%H-%M-%S",
-        ]
-    )
-    #: Ingest files already present in the export dir when the service boots.
-    ingest_existing_on_start: bool = False
-
-    # ---- write-completion detection ---------------------------------------
-    #: A file is considered fully written once its size is unchanged across
-    #: this many consecutive polls.
+    #: The watcher only sees a file once encoding finished, which is later than
+    #: the strike. Back-dates its receipt stamp so pairing still lands.
+    kinovea_lag_ms: int = 0
     file_stable_checks: int = 3
-    file_stable_interval_seconds: float = 0.4
-    file_stable_timeout_seconds: float = 120.0
+    file_stable_interval_ms: int = 400
+    file_stable_timeout_ms: int = 120_000
 
     # ---- uploads ----------------------------------------------------------
     max_upload_bytes: int = 512 * 1024 * 1024
-    #: Optional shared secret; when set, ingest endpoints require
-    #: ``X-Golfsim-Token``. Leave empty on a trusted LAN.
+    #: Optional shared secret; when set, ingest requires ``X-Golfsim-Token``.
     ingest_token: str = ""
 
     # ---- media probing ----------------------------------------------------
@@ -100,16 +94,15 @@ class Settings(BaseSettings):
         return self.data_root / "shots"
 
     @property
-    def staging_dir(self) -> Path:
-        return self.data_root / "staging"
+    def pair_window_s(self) -> float:
+        return self.pair_window_ms / 1000.0
+
+    @property
+    def late_attach_s(self) -> float:
+        return self.late_attach_ms / 1000.0
 
     def ensure_dirs(self) -> None:
-        for directory in (
-            self.data_root,
-            self.shots_dir,
-            self.staging_dir,
-            self.kinovea_export_dir,
-        ):
+        for directory in (self.data_root, self.shots_dir, self.kinovea_export_dir):
             directory.mkdir(parents=True, exist_ok=True)
 
 

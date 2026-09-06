@@ -1,0 +1,419 @@
+[
+  {
+    "schema_version": "1.0",
+    "shot_id": "20260906T143052-478",
+    "session_id": "20260906-morning",
+    "created_at": "2026-09-06T14:30:52.478+00:00",
+    "status": "complete",
+    "sources": {
+      "body_swing": true,
+      "impact_strike": true,
+      "telemetry": true
+    },
+    "media": {
+      "body_swing": {
+        "path": "body_swing.mp4",
+        "camera": "face_on",
+        "capture_fps": 30.0,
+        "container_fps": 30.0,
+        "duration_ms": 4000,
+        "width": 1280,
+        "height": 720
+      },
+      "impact_strike": {
+        "path": "impact_strike.mp4",
+        "camera": "impact",
+        "capture_fps": 240.0,
+        "container_fps": 30.0,
+        "duration_ms": 1500,
+        "width": 1920,
+        "height": 1080
+      }
+    },
+    "sync": {
+      "trigger_ts": "2026-09-06T14:30:52.478+00:00",
+      "impact_offset_ms": 0
+    },
+    "telemetry": {
+      "source": "gspro_connect_v1",
+      "received_at": "2026-09-06T14:30:53.102+00:00",
+      "ball": {
+        "speed_mph": 132.4,
+        "total_spin_rpm": 6200.0,
+        "back_spin_rpm": 6100.0,
+        "side_spin_rpm": -900.0,
+        "spin_axis_deg": -8.3,
+        "launch_angle_deg": 17.2,
+        "launch_direction_deg": 1.4
+      },
+      "club": {
+        "speed_mph": 92.1,
+        "angle_of_attack_deg": -3.1,
+        "path_deg": 2.4,
+        "face_to_target_deg": -1.1,
+        "loft_deg": 24.6,
+        "closure_rate_dps": null
+      },
+      "derived": {
+        "smash_factor": 1.44,
+        "face_to_path_deg": -3.5
+      },
+      "distance": {
+        "carry_m": null,
+        "total_m": null
+      },
+      "raw": {
+        "DeviceID": "MockMonitor",
+        "Units": "Yards",
+        "APIversion": "1",
+        "BallData": {
+          "Speed": 132.4,
+          "SpinAxis": -8.3,
+          "TotalSpin": 6200.0,
+          "BackSpin": 6100.0,
+          "SideSpin": -900.0,
+          "HLA": 1.4,
+          "VLA": 17.2
+        },
+        "ShotDataOptions": {
+          "ContainsBallData": true,
+          "ContainsClubData": true,
+          "LaunchMonitorIsReady": true,
+          "LaunchMonitorBallDetected": true,
+          "IsHeartBeat": false
+        },
+        "ClubData": {
+          "Speed": 92.1,
+          "AngleOfAttack": -3.1,
+          "FaceToTarget": -1.1,
+          "Loft": 24.6,
+          "Path": 2.4,
+          "ClosureRate": null
+        }
+      }
+    },
+    "club_used": "7I",
+    "tags": [
+      "Good Strike"
+    ],
+    "notes": "Baseline reference shot."
+  },
+  {
+    "schema_version": "1.0",
+    "shot_id": "20260906T143134-478",
+    "session_id": "20260906-morning",
+    "created_at": "2026-09-06T14:31:34.478+00:00",
+    "status": "partial",
+    "sources": {
+      "body_swing": true,
+      "impact_strike": false,
+      "telemetry": true
+    },
+    "media": {
+      "body_swing": {
+        "path": "body_swing.mp4",
+        "camera": "face_on",
+        "capture_fps": 30.0,
+        "container_fps": 30.0,
+        "duration_ms": 4000,
+        "width": 1280,
+        "height": 720
+      }
+    },
+    "sync": {
+      "trigger_ts": "2026-09-06T14:31:34.478+00:00",
+      "impact_offset_ms": 0
+    },
+    "telemetry": {
+      "source": "gspro_connect_v1",
+      "received_at": "2026-09-06T14:31:35.102+00:00",
+      "ball": {
+        "speed_mph": 118.9,
+        "total_spin_rpm": 6840.0,
+        "back_spin_rpm": 6800.0,
+        "side_spin_rpm": 740.0,
+        "spin_axis_deg": 6.2,
+        "launch_angle_deg": 18.9,
+        "launch_direction_deg": -2.1
+      },
+      "club": {
+        "speed_mph": 83.6,
+        "angle_of_attack_deg": -4.2,
+        "path_deg": -2.9,
+        "face_to_target_deg": -0.4,
+        "loft_deg": 24.6,
+        "closure_rate_dps": null
+      },
+      "derived": {
+        "smash_factor": 1.42,
+        "face_to_path_deg": 2.5
+      },
+      "distance": {
+        "carry_m": null,
+        "total_m": null
+      },
+      "raw": {
+        "DeviceID": "MockMonitor",
+        "Units": "Yards",
+        "APIversion": "1",
+        "BallData": {
+          "Speed": 118.9,
+          "SpinAxis": 6.2,
+          "TotalSpin": 6840.0,
+          "BackSpin": 6800.0,
+          "SideSpin": 740.0,
+          "HLA": -2.1,
+          "VLA": 18.9
+        },
+        "ShotDataOptions": {
+          "ContainsBallData": true,
+          "ContainsClubData": true,
+          "LaunchMonitorIsReady": true,
+          "LaunchMonitorBallDetected": true,
+          "IsHeartBeat": false
+        },
+        "ClubData": {
+          "Speed": 83.6,
+          "AngleOfAttack": -4.2,
+          "FaceToTarget": -0.4,
+          "Loft": 24.6,
+          "Path": -2.9,
+          "ClosureRate": null
+        }
+      }
+    },
+    "club_used": "7I",
+    "tags": [
+      "Pushed"
+    ],
+    "notes": ""
+  },
+  {
+    "schema_version": "1.0",
+    "shot_id": "20260906T143227-478",
+    "session_id": "20260906-morning",
+    "created_at": "2026-09-06T14:32:27.478+00:00",
+    "status": "partial",
+    "sources": {
+      "body_swing": true,
+      "impact_strike": true,
+      "telemetry": false
+    },
+    "media": {
+      "body_swing": {
+        "path": "body_swing.mp4",
+        "camera": "face_on",
+        "capture_fps": 30.0,
+        "container_fps": 30.0,
+        "duration_ms": 4000,
+        "width": 1280,
+        "height": 720
+      },
+      "impact_strike": {
+        "path": "impact_strike.mp4",
+        "camera": "impact",
+        "capture_fps": 240.0,
+        "container_fps": 30.0,
+        "duration_ms": 1500,
+        "width": 1920,
+        "height": 1080
+      }
+    },
+    "sync": {
+      "trigger_ts": "2026-09-06T14:32:27.478+00:00",
+      "impact_offset_ms": -120
+    },
+    "telemetry": null,
+    "club_used": "7I",
+    "tags": [],
+    "notes": "LM was unplugged; video only."
+  },
+  {
+    "schema_version": "1.0",
+    "shot_id": "20260906T143310-478",
+    "session_id": "20260906-morning",
+    "created_at": "2026-09-06T14:33:10.478+00:00",
+    "status": "complete",
+    "sources": {
+      "body_swing": true,
+      "impact_strike": true,
+      "telemetry": true
+    },
+    "media": {
+      "body_swing": {
+        "path": "body_swing.mp4",
+        "camera": "face_on",
+        "capture_fps": 30.0,
+        "container_fps": 30.0,
+        "duration_ms": 4000,
+        "width": 1280,
+        "height": 720
+      },
+      "impact_strike": {
+        "path": "impact_strike.mp4",
+        "camera": "impact",
+        "capture_fps": 240.0,
+        "container_fps": 30.0,
+        "duration_ms": 1500,
+        "width": 1920,
+        "height": 1080
+      }
+    },
+    "sync": {
+      "trigger_ts": "2026-09-06T14:33:10.478+00:00",
+      "impact_offset_ms": 0
+    },
+    "telemetry": {
+      "source": "gspro_connect_v1",
+      "received_at": "2026-09-06T14:33:11.102+00:00",
+      "ball": {
+        "speed_mph": 124.7,
+        "total_spin_rpm": 5980.0,
+        "back_spin_rpm": 5960.0,
+        "side_spin_rpm": -210.0,
+        "spin_axis_deg": -2.0,
+        "launch_angle_deg": 16.4,
+        "launch_direction_deg": 0.6
+      },
+      "club": {
+        "speed_mph": null,
+        "angle_of_attack_deg": null,
+        "path_deg": null,
+        "face_to_target_deg": null,
+        "loft_deg": null,
+        "closure_rate_dps": null
+      },
+      "derived": {
+        "smash_factor": null,
+        "face_to_path_deg": null
+      },
+      "distance": {
+        "carry_m": null,
+        "total_m": null
+      },
+      "raw": {
+        "DeviceID": "MockMonitor",
+        "Units": "Yards",
+        "APIversion": "1",
+        "BallData": {
+          "Speed": 124.7,
+          "SpinAxis": -2.0,
+          "TotalSpin": 5980.0,
+          "BackSpin": 5960.0,
+          "SideSpin": -210.0,
+          "HLA": 0.6,
+          "VLA": 16.4
+        },
+        "ShotDataOptions": {
+          "ContainsBallData": true,
+          "ContainsClubData": false,
+          "LaunchMonitorIsReady": true,
+          "LaunchMonitorBallDetected": true,
+          "IsHeartBeat": false
+        }
+      }
+    },
+    "club_used": null,
+    "tags": [],
+    "notes": "Monitor reported ball data only."
+  },
+  {
+    "schema_version": "1.0",
+    "shot_id": "20260906T143353-478",
+    "session_id": "20260906-morning",
+    "created_at": "2026-09-06T14:33:53.478+00:00",
+    "status": "complete",
+    "sources": {
+      "body_swing": true,
+      "impact_strike": true,
+      "telemetry": true
+    },
+    "media": {
+      "body_swing": {
+        "path": "body_swing.mp4",
+        "camera": "face_on",
+        "capture_fps": 30.0,
+        "container_fps": 30.0,
+        "duration_ms": 4000,
+        "width": 1280,
+        "height": 720
+      },
+      "impact_strike": {
+        "path": "impact_strike.mp4",
+        "camera": "impact",
+        "capture_fps": 240.0,
+        "container_fps": 30.0,
+        "duration_ms": 1500,
+        "width": 1920,
+        "height": 1080
+      }
+    },
+    "sync": {
+      "trigger_ts": "2026-09-06T14:33:53.478+00:00",
+      "impact_offset_ms": 80
+    },
+    "telemetry": {
+      "source": "gspro_connect_v1",
+      "received_at": "2026-09-06T14:33:54.102+00:00",
+      "ball": {
+        "speed_mph": 121.8,
+        "total_spin_rpm": 7120.0,
+        "back_spin_rpm": 6820.0,
+        "side_spin_rpm": -2040.0,
+        "spin_axis_deg": -16.7,
+        "launch_angle_deg": 15.8,
+        "launch_direction_deg": 3.1
+      },
+      "club": {
+        "speed_mph": 85.0,
+        "angle_of_attack_deg": -3.4,
+        "path_deg": 4.2,
+        "face_to_target_deg": -1.8,
+        "loft_deg": 24.6,
+        "closure_rate_dps": 61.4
+      },
+      "derived": {
+        "smash_factor": 1.43,
+        "face_to_path_deg": -6.0
+      },
+      "distance": {
+        "carry_m": null,
+        "total_m": null
+      },
+      "raw": {
+        "DeviceID": "MockMonitor",
+        "Units": "Yards",
+        "APIversion": "1",
+        "BallData": {
+          "Speed": 121.8,
+          "SpinAxis": -16.7,
+          "TotalSpin": 7120.0,
+          "BackSpin": 6820.0,
+          "SideSpin": -2040.0,
+          "HLA": 3.1,
+          "VLA": 15.8
+        },
+        "ShotDataOptions": {
+          "ContainsBallData": true,
+          "ContainsClubData": true,
+          "LaunchMonitorIsReady": true,
+          "LaunchMonitorBallDetected": true,
+          "IsHeartBeat": false
+        },
+        "ClubData": {
+          "Speed": 85.0,
+          "AngleOfAttack": -3.4,
+          "FaceToTarget": -1.8,
+          "Loft": 24.6,
+          "Path": 4.2,
+          "ClosureRate": 61.4
+        }
+      }
+    },
+    "club_used": "7I",
+    "tags": [
+      "Good Strike"
+    ],
+    "notes": "Face 6.0 deg closed to a 4.2 deg in-to-out path: heavy draw."
+  }
+]

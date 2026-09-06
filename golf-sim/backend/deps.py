@@ -6,7 +6,6 @@ from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request, status
 
-from .clock import ClockRegistry
 from .config import Settings, get_settings
 from .correlator import ShotCorrelator
 from .events import EventBus
@@ -20,12 +19,12 @@ def get_bus(request: Request) -> EventBus:
     return request.app.state.bus
 
 
-def get_clocks(request: Request) -> ClockRegistry:
-    return request.app.state.clocks
+def get_gspro(request: Request):
+    return request.app.state.gspro
 
 
-def get_control_hub(request: Request):
-    return request.app.state.control_hub
+def get_watcher(request: Request):
+    return request.app.state.watcher
 
 
 def require_token(
@@ -42,4 +41,3 @@ def require_token(
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 CorrelatorDep = Annotated[ShotCorrelator, Depends(get_correlator)]
 BusDep = Annotated[EventBus, Depends(get_bus)]
-ClocksDep = Annotated[ClockRegistry, Depends(get_clocks)]
