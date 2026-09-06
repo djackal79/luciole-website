@@ -30,6 +30,27 @@ export interface PoseSummary {
   hand_speed_mph: number | null;
 }
 
+export interface PoseWorldPoint {
+  x: number;
+  y: number;
+  z: number;
+  reprojection_px: number;
+}
+
+export interface PoseWorldFrame {
+  t_ms: number;
+  points: ([number, number, number, number] | null)[];
+}
+
+export interface PoseWorldBlock {
+  coordinate_space: string;
+  origin: string;
+  point_format: string[];
+  t_ms_origin: string;
+  frame_count: number;
+  frames: PoseWorldFrame[];
+}
+
 export interface PoseBlock {
   status: 'pending' | 'ready' | 'failed' | 'unavailable';
   path: string;
@@ -39,6 +60,7 @@ export interface PoseBlock {
   frame_count: number;
   error: string | null;
   summary: PoseSummary;
+  world?: PoseWorldBlock;
 }
 
 export interface PressureSummary {

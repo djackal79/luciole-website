@@ -16,6 +16,20 @@ export interface PoseTrack {
   frames: PoseFrame[];
 }
 
+export interface PoseWorldFrame {
+  t_ms: number;
+  points: ([number, number, number, number] | null)[];
+}
+
+export interface PoseWorldTrack {
+  coordinate_space: string;
+  origin: string;
+  point_format: string[];
+  t_ms_origin: string;
+  frame_count: number;
+  frames: PoseWorldFrame[];
+}
+
 export interface PoseData {
   schema_version: string;
   model: string;
@@ -27,6 +41,7 @@ export interface PoseData {
     body_swing?: PoseTrack;
     body_swing_dtl?: PoseTrack;
   };
+  world?: PoseWorldTrack;
 }
 
 export function usePoseData() {

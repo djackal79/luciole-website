@@ -168,8 +168,15 @@ export const MultiCameraPlayer: React.FC = () => {
         const track = (poseData.tracks as any)[trackName];
         if (!track || !track.frames || track.frames.length === 0) return;
 
+        if (track.impact_ms == null) {
+          ctx.fillStyle = "rgba(255, 50, 50, 0.8)";
+          ctx.font = "14px monospace";
+          ctx.fillText("⚠ POSE UNALIGNED: Missing impact_ms", 10, 24);
+          return;
+        }
+
         // Find frame closest to current video time
-        const target_t_ms = (t_from_impact_sec * 1000) + (track.impact_ms ?? 0);
+        const target_t_ms = (t_from_impact_sec * 1000) + track.impact_ms;
         let closestFrame = track.frames[0];
         let minDist = Infinity;
         for (const frame of track.frames) {
