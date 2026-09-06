@@ -16,15 +16,40 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 
 YARDS_TO_METRES = 0.9144
 
 
 class SourceName(str, Enum):
     BODY_SWING = "body_swing"
+    #: Second Kinovea camera, down-the-line. Optional (schema v1.1).
+    BODY_SWING_DTL = "body_swing_dtl"
     IMPACT_STRIKE = "impact_strike"
     TELEMETRY = "telemetry"
+    #: Derived from the body-swing clips after the shot closes, not captured.
+    POSE = "pose"
+    #: Force / pressure plates. Optional, hardware not yet built.
+    PRESSURE = "pressure"
+
+
+#: Sources that are video files under ``media``.
+VIDEO_SOURCES = (SourceName.BODY_SWING, SourceName.BODY_SWING_DTL, SourceName.IMPACT_STRIKE)
+
+#: Every key that always appears in ``sources``, so the frontend can read them
+#: without existence checks.
+ALL_SOURCES = tuple(SourceName)
+
+
+class DataStatus(str, Enum):
+    """Lifecycle of a derived or optional data block."""
+
+    #: Extraction queued or running. The frontend should show progress.
+    PENDING = "pending"
+    READY = "ready"
+    FAILED = "failed"
+    #: No such input exists for this shot -- no plates, no second camera.
+    UNAVAILABLE = "unavailable"
 
 
 class ShotStatus(str, Enum):
@@ -108,6 +133,13 @@ class MediaEntry(BaseModel):
     duration_ms: int | None = None
     width: int | None = None
     height: int | None = None
+    #: Where impact sits inside THIS clip, in file playback milliseconds --
+    #: what you would assign to `video.currentTime * 1000`. Schema v1.1.
+    #:
+    #: Often null: Kinovea's pre-roll is configurable and knowable, but the
+    #: phone's Super Slow-mo auto-trigger picks its own and does not say. That
+    #: gap is what sync.impact_offset_ms and the calibration slider close.
+    impact_ms: int | None = None
 
 
 class SyncBlock(BaseModel):
@@ -167,6 +199,70 @@ class TelemetryBlock(BaseModel):
     raw: dict[str, Any] = Field(default_factory=dict)
 
 
+# ---------------------------------------------------------------------------
+# Pose (derived) and pressure (captured) -- schema v1.1
+#
+# Both are time series, and a time series has no business inside
+# metadata.json: pose at 30 fps over 4 s is 120 frames of 33 landmarks, and
+# pressure at 100 Hz is 400 samples. They live in sidecar files next to the
+# clips, and metadata carries only the reference plus what the HUD needs.
+#
+# Both sidecars timestamp frames relative to their own clip or capture start,
+# and carry their own impact_ms, so the frontend maps to the master timeline
+# with one subtraction: t_from_impact = t_ms - impact_ms.
+# ---------------------------------------------------------------------------
+
+
+class PoseSummary(BaseModel):
+    """Angles the HUD shows. Nulls are expected and meaningful.
+
+    A single camera cannot recover pelvis rotation, shoulder turn or X-factor
+    with any honesty -- those need two calibrated views. Swing plane and spine
+    angle survive monocular estimation.
+    """
+
+    swing_plane_deg: float | None = None
+    spine_angle_deg: float | None = None
+    shoulder_turn_deg: float | None = None
+    pelvis_rotation_deg: float | None = None
+    x_factor_deg: float | None = None
+    hand_speed_mph: float | None = None
+
+
+class PoseBlock(BaseModel):
+    status: DataStatus = DataStatus.UNAVAILABLE
+    #: Sidecar filename, relative to the shot folder.
+    path: str | None = None
+    model: str | None = None
+    #: "2d" -- normalised image coordinates from one camera.
+    #: "3d" -- metres, triangulated from two calibrated cameras.
+    dimensions: str | None = None
+    #: Which media sources fed the estimate.
+    cameras: list[str] = Field(default_factory=list)
+    frame_count: int | None = None
+    #: Populated when status is "failed", so the UI can say why.
+    error: str | None = None
+    summary: PoseSummary | None = None
+
+
+class PressureSummary(BaseModel):
+    peak_grf_n: float | None = None
+    trail_pct_at_impact: float | None = None
+    lead_pct_at_impact: float | None = None
+    cop_excursion_mm: float | None = None
+
+
+class PressureBlock(BaseModel):
+    status: DataStatus = DataStatus.UNAVAILABLE
+    path: str | None = None
+    device: str | None = None
+    sample_rate_hz: float | None = None
+    samples: int | None = None
+    #: Impact position within the capture, in milliseconds from its start.
+    impact_ms: int | None = None
+    summary: PressureSummary | None = None
+
+
 class ShotPackage(BaseModel):
     """The complete ``metadata.json`` object, in contract field order."""
 
@@ -177,16 +273,16 @@ class ShotPackage(BaseModel):
     session_id: str
     created_at: str
     status: ShotStatus = ShotStatus.PENDING
+    #: Every key is always present, so the frontend never needs an existence
+    #: check -- only a truth check.
     sources: dict[str, bool] = Field(
-        default_factory=lambda: {
-            SourceName.BODY_SWING.value: False,
-            SourceName.IMPACT_STRIKE.value: False,
-            SourceName.TELEMETRY.value: False,
-        }
+        default_factory=lambda: {source.value: False for source in ALL_SOURCES}
     )
     media: dict[str, MediaEntry] = Field(default_factory=dict)
     sync: SyncBlock
     telemetry: TelemetryBlock | None = None
+    pose: PoseBlock | None = None
+    pressure: PressureBlock | None = None
     club_used: str | None = None
     tags: list[str] = Field(default_factory=list)
     notes: str = ""

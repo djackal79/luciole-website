@@ -141,11 +141,23 @@ async def ingest_impact(
     return {"shot_id": package.shot_id, "status": package.status, "shot": package.to_json()}
 
 
+#: Which Kinovea camera a clip came from. This is the routing key, kept
+#: separate from the ``camera`` label so that relabelling a camera in the UI
+#: cannot silently misroute its clips.
+BODY_SWING_SOURCES = {
+    SourceName.BODY_SWING.value: SourceName.BODY_SWING,
+    SourceName.BODY_SWING_DTL.value: SourceName.BODY_SWING_DTL,
+}
+
+
 @router.post("/body_swing", dependencies=[Depends(require_token)])
 async def ingest_body_swing(
     settings: SettingsDep,
     correlator: CorrelatorDep,
     file: Annotated[UploadFile | None, File(description="Kinovea clip")] = None,
+    source: Annotated[
+        str, Form(description="body_swing (face-on) or body_swing_dtl")
+    ] = SourceName.BODY_SWING.value,
     path: Annotated[
         str | None, Form(description="Local path, as handed over by Kinovea's Automation hook")
     ] = None,
@@ -157,25 +169,48 @@ async def ingest_body_swing(
     width: Annotated[int | None, Form()] = None,
     height: Annotated[int | None, Form()] = None,
 ) -> dict:
-    """Receive the Kinovea body-swing clip, by upload or by local path."""
+    """Receive a Kinovea body-swing clip, by upload or by local path.
+
+    Two cameras run at once and their Automation hooks fire within
+    milliseconds of each other. Without a distinct ``source`` per camera the
+    correlator sees two clips of the same kind, applies its duplicate-source
+    rule, and opens a second shot -- silently doubling every swing. So each
+    camera's hook must send its own source.
+    """
     if (file is None) == (path is None):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="supply exactly one of 'file' or 'path'",
         )
 
+    kind = BODY_SWING_SOURCES.get(source)
+    if kind is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"source must be one of {sorted(BODY_SWING_SOURCES)}, got {source!r}",
+        )
+    is_dtl = kind is SourceName.BODY_SWING_DTL
+
     if path is not None:
-        source, copy = _local_source(path), True
+        clip, copy = _local_source(path), True
     else:
-        source, copy = await _stage_upload(file, settings), False
+        clip, copy = await _stage_upload(file, settings), False
 
     package = await correlator.submit_media(
         MediaArrival(
-            source=SourceName.BODY_SWING,
-            file=source,
-            camera=camera or settings.body_swing_camera,
-            capture_fps=capture_fps or settings.body_swing_capture_fps,
-            container_fps=container_fps or settings.body_swing_container_fps,
+            source=kind,
+            file=clip,
+            camera=camera or (
+                settings.body_swing_dtl_camera if is_dtl else settings.body_swing_camera
+            ),
+            capture_fps=capture_fps or (
+                settings.body_swing_dtl_capture_fps if is_dtl
+                else settings.body_swing_capture_fps
+            ),
+            container_fps=container_fps or (
+                settings.body_swing_dtl_container_fps if is_dtl
+                else settings.body_swing_container_fps
+            ),
             duration_ms=duration_ms,
             width=width,
             height=height,

@@ -1,13 +1,16 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "shot_id": "20260906T143353-478",
   "session_id": "20260906-morning",
   "created_at": "2026-09-06T14:33:53.478+00:00",
   "status": "complete",
   "sources": {
     "body_swing": true,
+    "body_swing_dtl": false,
     "impact_strike": true,
-    "telemetry": true
+    "telemetry": true,
+    "pose": false,
+    "pressure": false
   },
   "media": {
     "body_swing": {
@@ -17,7 +20,8 @@
       "container_fps": 30.0,
       "duration_ms": 4000,
       "width": 1280,
-      "height": 720
+      "height": 720,
+      "impact_ms": 2450
     },
     "impact_strike": {
       "path": "impact_strike.mp4",
@@ -26,7 +30,8 @@
       "container_fps": 30.0,
       "duration_ms": 1500,
       "width": 1920,
-      "height": 1080
+      "height": 1080,
+      "impact_ms": 750
     }
   },
   "sync": {
@@ -91,6 +96,8 @@
       }
     }
   },
+  "pose": null,
+  "pressure": null,
   "club_used": "7I",
   "tags": [
     "Good Strike"

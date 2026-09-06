@@ -1,7 +1,8 @@
 # Golf Studio — Single Source of Truth
 
 **Status date:** 2026-09-06 · **Branch:** `claude/golf-simulator-backend-9a46d5`
-**Decisions D1, D2 and D6 answered** — see §3.
+**Schema v1.1 shipped** — two-camera routing, pose and pressure blocks, per-clip
+`impact_ms`. See [`CONTRACT.md`](CONTRACT.md) §v1.1.
 
 Four agents are working on this (Claude Code, Claude chat, Gemini chat,
 Antigravity) across surfaces that cannot see each other. This document is the
@@ -32,10 +33,10 @@ will you in three weeks.
 | GSPro Open Connect listener | Claude Code | **Done** | `backend/gspro.py` |
 | Shot pairing correlator | Claude Code | **Done** | `backend/correlator.py` |
 | S23 impact watcher (Android) | Claude Code | **Written, untested on hardware** | `android/impact-watcher/` |
-| Mock fixtures (5 scenarios) | Claude Code | **Done** | `mocks/shots.json` |
+| Mock fixtures (7 scenarios) | Claude Code | **Done** | `mocks/shots.json` |
 | Frontend (React/Vite) | Antigravity | **Built, NOT IN THE REPO** | *nowhere — see D0* |
-| 3D biomechanics | Claude Code | **Not started** — UI placeholder only | — |
-| Pressure / force mat | Claude Code | **Not started** — UI placeholder only | — |
+| 3D biomechanics | Claude Code | **Schema + fixtures shipped**; pipeline next | `scripts/_sidecars.py` |
+| Pressure / force mat | Claude Code | **Schema + fixtures shipped**; ingest deferred | `scripts/_sidecars.py` |
 | Kinovea hook | Claude Code | **Done** | `scripts/kinovea_hook.bat` |
 
 ### Hardware
@@ -45,7 +46,7 @@ will you in three weeks.
 | PC + Kinovea | Body swing (face-on) | Automation hook → `POST /api/ingest/body_swing` |
 | Samsung **S23 Plus** | Impact, Super Slow-mo | Impact Watcher app → `POST /api/ingest/impact` |
 | Square launch monitor | Ball/club telemetry | GSPro Open Connect socket, `127.0.0.1:921` |
-| Second Kinovea camera (DTL) | Down-the-line | **Set up in Kinovea; no ingest path yet — D1** |
+| Second Kinovea camera (DTL) | Down-the-line | `kinovea_hook_dtl.bat` → `POST /api/ingest/body_swing` |
 | Pressure plates | Weight transfer / CoP | **Parts on hand, unbuilt (~Christmas) — D2** |
 
 > The frontend brief says "Samsung S24 Ultra". It is an **S23 Plus**. Correct
@@ -80,14 +81,14 @@ are now answered; their decisions are recorded below and are binding.
 | # | Divergence | Severity | Status |
 |---|---|---|---|
 | D0 | Frontend exists only on Antigravity's machine | **Blocking** | Open |
-| D1 | UI shows 3 cameras; contract has 2 video sources | High | **Resolved** — add `body_swing_dtl` |
-| D2 | Pressure mat UI has no backend or schema | Medium | **Resolved** — reserve schema, defer ingest |
+| D1 | UI shows 3 cameras; contract has 2 video sources | High | **Shipped** — `body_swing_dtl` |
+| D2 | Pressure mat UI has no backend or schema | Medium | **Schema shipped**, ingest deferred |
 | D3 | 3D biomech UI has no pose data source | High | Scoped — triangulation, needs calibration |
 | D4 | Media URL shape may not match the backend route | High | Verify |
-| D5 | Master timeline is ambiguous with clips of differing fps/duration | Medium | Decide |
+| D5 | Master timeline is ambiguous with clips of differing fps/duration | Medium | **Shipped** — per-clip `impact_ms` |
 | D6 | Supabase sync is outside the contract entirely | Medium | **Resolved** — backend writes metrics |
 | D7 | "Side Offline 8.3 YDS R" equals the spin axis magnitude | Medium | Verify |
-| D8 | Two Kinovea cameras collide on one ingest endpoint | High | **New** — see D1 |
+| D8 | Two Kinovea cameras collide on one ingest endpoint | High | **Fixed** — routed on `source` |
 | D9 | Frontend owns the Supabase write path | Medium | **New** — see D6 |
 
 ### D0 — The frontend is not in the repo
@@ -260,23 +261,27 @@ In this order. Do not skip to 5.
 4. **Correct S24 Ultra → S23 Plus**, and drop the "Compatible with BodiTrak /
    Smart2Move" claim (D2).
 5. **Move Supabase to read-only** (D9). Keep the client, drop the writes.
-6. **Hold** on the DTL camera, pressure and biomechanics panels until contract
-   v1.1 lands. The shapes are decided but not yet published; anything invented
-   in the meantime will not match.
+6. **Contract v1.1 has landed — the shapes are published.** Build the DTL
+   camera, biomechanics and pressure panels against `CONTRACT.md` §v1.1 and
+   fixtures 6 and 7 in `mocks/shots.json`. Read the landmark order from
+   `pose.json` rather than hard-coding it, and handle `pose.status: "pending"`
+   from the start — extraction finishes after the shot appears.
 
 Not wanted: more theming, more animation, more panels. Both themes are done.
 
 ### Claude Code (Build 1)
 
-1. **Contract v1.1 — schema first, pipelines second.** Publish
-   `body_swing_dtl`, `pressure`, `pose` and per-clip `impact_ms` so both agents
-   can work in parallel instead of blocking on each other.
-2. **Camera-role routing** (D8) before the second camera can be used at all,
-   plus a role argument in `kinovea_hook.bat`.
-3. **Extend `mocks/shots.json`** with pose and pressure fixtures, so those
-   panels can be built long before the hardware or the pipeline exists.
+1. ~~Contract v1.1 — schema first, pipelines second.~~ **Done.**
+   `body_swing_dtl`, `pose`, `pressure`, per-clip `impact_ms`, and every source
+   key always emitted.
+2. ~~Camera-role routing (D8).~~ **Done.** Routed on an explicit `source`
+   field, with `kinovea_hook.bat` and `kinovea_hook_dtl.bat` for the two
+   cameras. Verified live: both hooks pair into one shot.
+3. ~~Pose and pressure fixtures.~~ **Done.** Scenarios 6 and 7 in
+   `mocks/shots.json`, with `pose.json` / `pressure.json` sidecars generated by
+   `scripts/_sidecars.py`.
 4. **Pose extraction** — MediaPipe per camera, async after the shot closes,
-   2D first (D3).
+   2D first (D3). *Next.*
 5. **Camera calibration** — checkerboard intrinsics and extrinsics, then
    triangulated 3D.
 6. **Supabase sync** — backend-owned, offline-tolerant outbox (D6, D9).

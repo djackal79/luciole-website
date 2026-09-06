@@ -1,5 +1,7 @@
 # Golf Sim App · Build 1 ↔ Build 2 Contract
 
+**Schema v1.1.** Additive over v1.0 — nothing was removed or renamed. See §v1.1 at the end.
+
 **The single source of truth for both builds.** Backend writes exactly this;
 frontend reads exactly this. Give this document to both agents verbatim —
 where it disagrees with either original prompt, this wins.
@@ -244,3 +246,207 @@ path:
 3. `partial` — both videos, no telemetry (LM not connected)
 4. `complete` — ball data only, `ContainsClubData` false → `smash_factor` null
 5. `complete` — heavy draw: negative `spin_axis`, `face_to_path` strongly negative
+
+
+---
+
+# Schema v1.1 — additions
+
+Everything in v1.0 still holds. These are additions, and every one is
+optional: a v1.0 consumer that ignores them keeps working.
+
+## Every source key is always emitted
+
+`sources` now always carries all six keys, so the frontend needs only a truth
+check, never an existence check:
+
+```json
+"sources": {
+  "body_swing": true,
+  "body_swing_dtl": true,
+  "impact_strike": true,
+  "telemetry": true,
+  "pose": false,
+  "pressure": false
+}
+```
+
+## `body_swing_dtl` — second Kinovea camera
+
+Two cameras are set up: face-on and down-the-line. DTL is a full media entry
+under the same rules as `body_swing`, and its file is `body_swing_dtl.mp4`.
+
+It is **optional**: a shot without it is still `complete`. Add
+`body_swing_dtl` to `GOLFSIM_EXPECTED_SOURCES` only once both cameras are
+trusted to fire every time.
+
+**Ingest routes on an explicit `source` field, not on the `camera` label.**
+Both Automation hooks fire within milliseconds of each other, so without
+distinct sources the correlator applies its duplicate-source rule and opens a
+second shot — silently doubling every swing.
+
+```
+POST /api/ingest/body_swing
+  source = body_swing | body_swing_dtl     <- routing key
+  camera = face_on | dtl | <anything>      <- display label only
+```
+
+`camera` stays a free label so renaming a camera cannot misroute its clips.
+
+## `media.*.impact_ms` — per-clip impact position
+
+Where impact sits inside **that** clip, in file playback milliseconds — what
+you would assign to `video.currentTime * 1000`.
+
+This is what lets the player align on the strike rather than on file start,
+which matters because the clips have different durations, different capture
+rates and different pre-rolls.
+
+Often `null`. Kinovea's pre-roll is configurable and knowable; the phone's
+Super Slow-mo auto-trigger picks its own and does not tell us. That gap is what
+`sync.impact_offset_ms` and the calibration slider close — they stay.
+
+## `pose` — derived, not captured
+
+Computed from the body-swing clips after the shot closes, so it arrives later
+than everything else and the UI must handle `pending`.
+
+```json
+"pose": {
+  "status": "ready",              // pending | ready | failed | unavailable
+  "path": "pose.json",
+  "model": "mediapipe_pose_lite",
+  "dimensions": "2d",             // "3d" once the cameras are calibrated
+  "cameras": ["body_swing"],
+  "frame_count": 120,
+  "error": null,
+  "summary": {
+    "swing_plane_deg": 62.4,
+    "spine_angle_deg": 31.2,
+    "shoulder_turn_deg": null,
+    "pelvis_rotation_deg": null,
+    "x_factor_deg": null,
+    "hand_speed_mph": 21.4
+  }
+}
+```
+
+**The nulls are the point.** A single camera cannot recover shoulder turn,
+pelvis rotation or X-factor with any honesty — those need two calibrated views
+and triangulation. Swing plane and spine angle survive monocular estimation.
+Render nulls as an em-dash, exactly as with carry distance.
+
+`sources.pose` is true only when `status` is `ready`. A pending extraction is
+not data the UI can draw.
+
+## `pressure` — force / pressure plates
+
+Hardware not yet built. The schema is reserved and fixtures ship, so the panel
+can be built now; the ingest endpoint waits until the plates exist and can say
+what they emit.
+
+```json
+"pressure": {
+  "status": "ready",              // ready | unavailable
+  "path": "pressure.json",
+  "device": "custom_dual_plate",
+  "sample_rate_hz": 100,
+  "samples": 401,
+  "impact_ms": 2450,
+  "summary": {
+    "peak_grf_n": 750.0,
+    "trail_pct_at_impact": 45.0,
+    "lead_pct_at_impact": 55.0,
+    "cop_excursion_mm": 62.5
+  }
+}
+```
+
+## Sidecar files
+
+Pose and pressure are time series and do not belong in `metadata.json`: pose at
+30 fps over 4 s is 120 frames of 33 landmarks (~88 KB), pressure at 100 Hz is
+401 samples (~42 KB). Both live beside the clips and are referenced by `path`,
+served through the same media route:
+
+```
+shots/shot_20260906T143436-478/
+  metadata.json
+  body_swing.mp4
+  body_swing_dtl.mp4
+  impact_strike.mp4
+  pose.json
+  pressure.json
+```
+
+**Both sidecars timestamp relative to their own capture start and carry their
+own `impact_ms`**, so the frontend maps either onto the master timeline the
+same way:
+
+```
+t_from_impact = t_ms - impact_ms
+```
+
+`pose.json`:
+
+```json
+{
+  "schema_version": "1.0",
+  "model": "mediapipe_pose_lite",
+  "dimensions": "2d",
+  "coordinate_space": "normalised_image",
+  "point_format": ["x", "y", "visibility"],
+  "landmarks": ["nose", "left_eye_inner", "..."],
+  "camera": "body_swing",
+  "fps": 30.0,
+  "width": 1280, "height": 720,
+  "impact_ms": 2450,
+  "frame_count": 120,
+  "frames": [
+    { "t_ms": 0, "points": [[0.5, 0.2, 0.95], "..."] }
+  ]
+}
+```
+
+`landmarks` is the **MediaPipe Pose order**, and `points` indexes into it.
+Use the order from the file rather than hard-coding it, or a skeleton that
+works on fixtures will break on real data. 2D points are normalised image
+coordinates in `[0,1]` with the origin top-left, plus a visibility score;
+3D will be metres in a world frame.
+
+`pressure.json`:
+
+```json
+{
+  "schema_version": "1.0",
+  "device": "custom_dual_plate",
+  "sample_rate_hz": 100.0,
+  "units": { "force": "N", "position": "mm", "time": "ms" },
+  "impact_ms": 2450,
+  "sample_count": 401,
+  "samples": [
+    { "t_ms": 0, "trail_pct": 52.0, "lead_pct": 48.0, "grf_n": 585.0,
+      "cop": { "x_mm": -3.4, "y_mm": 0.0 } }
+  ],
+  "summary": { "peak_grf_n": 750.0, "...": null }
+}
+```
+
+## Mock scenarios, v1.1
+
+The contract's five keep their exact shot ids. Two more exercise v1.1:
+
+6. `complete` — both cameras, pose `ready` (2D), pressure `ready`
+7. `complete` — both cameras, pose `pending`, pressure `unavailable`
+
+Scenario 7 exists so the biomechanics panel is built against a running
+extraction from the start, rather than having that state bolted on later.
+
+## Cloud sync
+
+Scope is telemetry and derived metrics. **Never media** — clips stay on the sim
+PC by design.
+
+**The backend owns the write; the frontend reads.** The browser is the wrong
+writer: shots would only sync while someone has the app open, and nobody is
+watching a screen mid-swing.

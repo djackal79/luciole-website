@@ -27,11 +27,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _fixtures import make_clip  # noqa: E402
+from _sidecars import build_pose, build_pressure  # noqa: E402
 from backend.models import (  # noqa: E402
+    ALL_SOURCES,
     BallData,
     ClubData,
+    DataStatus,
     DistanceData,
     MediaEntry,
+    PoseBlock,
+    PoseSummary,
+    PressureBlock,
+    PressureSummary,
     ShotPackage,
     ShotStatus,
     SyncBlock,
@@ -41,6 +48,9 @@ from backend.models import (  # noqa: E402
     local_now,
     shot_id_for,
 )
+
+#: Impact sits 2.45 s into the body-swing clip.
+BODY_SWING_IMPACT_MS = 2450
 
 SESSION_ID = "20260906-morning"
 
@@ -57,6 +67,18 @@ BODY_SWING_MEDIA = MediaEntry(
     duration_ms=4000,
     width=1280,
     height=720,
+    impact_ms=BODY_SWING_IMPACT_MS,
+)
+#: Second Kinovea camera, down-the-line (schema v1.1).
+BODY_SWING_DTL_MEDIA = MediaEntry(
+    path="body_swing_dtl.mp4",
+    camera="dtl",
+    capture_fps=60,
+    container_fps=60,
+    duration_ms=4000,
+    width=1280,
+    height=720,
+    impact_ms=BODY_SWING_IMPACT_MS,
 )
 #: 240 fps footage in a 30 fps container -- the distinction Build 2 must honour.
 IMPACT_MEDIA = MediaEntry(
@@ -67,6 +89,9 @@ IMPACT_MEDIA = MediaEntry(
     duration_ms=1500,
     width=1920,
     height=1080,
+    # 1500 ms of playback at 30 fps is 187 ms of real time at 240 fps capture.
+    # Impact sits mid-clip.
+    impact_ms=750,
 )
 
 
@@ -91,6 +116,9 @@ def _package(
     body_swing: bool,
     impact_strike: bool,
     telemetry: TelemetryBlock | None,
+    body_swing_dtl: bool = False,
+    pose: PoseBlock | None = None,
+    pressure: PressureBlock | None = None,
     club_used: str | None = None,
     tags: list[str] | None = None,
     notes: str = "",
@@ -99,21 +127,31 @@ def _package(
     media = {}
     if body_swing:
         media["body_swing"] = BODY_SWING_MEDIA
+    if body_swing_dtl:
+        media["body_swing_dtl"] = BODY_SWING_DTL_MEDIA
     if impact_strike:
         media["impact_strike"] = IMPACT_MEDIA
+
+    present = {
+        "body_swing": body_swing,
+        "body_swing_dtl": body_swing_dtl,
+        "impact_strike": impact_strike,
+        "telemetry": telemetry is not None,
+        "pose": pose is not None and pose.status == DataStatus.READY,
+        "pressure": pressure is not None and pressure.status == DataStatus.READY,
+    }
     return ShotPackage(
         shot_id=shot_id_for(moment),
         session_id=SESSION_ID,
         created_at=iso(moment),
         status=status,
-        sources={
-            "body_swing": body_swing,
-            "impact_strike": impact_strike,
-            "telemetry": telemetry is not None,
-        },
+        # Every key always present, so the frontend needs only a truth check.
+        sources={s.value: present.get(s.value, False) for s in ALL_SOURCES},
         media=media,
         sync=SyncBlock(trigger_ts=iso(moment), impact_offset_ms=impact_offset_ms),
         telemetry=telemetry,
+        pose=pose,
+        pressure=pressure,
         club_used=club_used,
         tags=tags or [],
         notes=notes,
@@ -226,6 +264,91 @@ def build_scenarios(base: datetime | None = None) -> list[ShotPackage]:
             impact_offset_ms=80,
         )
     )
+
+    # 6. v1.1 -- everything: both Kinovea cameras, pose and pressure ready
+    moment = base + timedelta(seconds=224)
+    ball = BallData(
+        speed_mph=129.6, total_spin_rpm=6410, back_spin_rpm=6390, side_spin_rpm=-510,
+        spin_axis_deg=-4.6, launch_angle_deg=16.9, launch_direction_deg=0.8,
+    )
+    club = ClubData(
+        speed_mph=90.4, angle_of_attack_deg=-3.6, path_deg=1.1,
+        face_to_target_deg=-0.3, loft_deg=24.6, closure_rate_dps=48.2,
+    )
+    packages.append(
+        _package(
+            moment,
+            status=ShotStatus.COMPLETE,
+            body_swing=True,
+            body_swing_dtl=True,
+            impact_strike=True,
+            telemetry=_telemetry(ball, club, moment, _raw(ball, club)),
+            pose=PoseBlock(
+                status=DataStatus.READY,
+                path="pose.json",
+                model="mediapipe_pose_lite",
+                # 2D until the cameras are calibrated for triangulation.
+                dimensions="2d",
+                cameras=["body_swing"],
+                frame_count=120,
+                summary=PoseSummary(
+                    swing_plane_deg=62.4,
+                    spine_angle_deg=31.2,
+                    hand_speed_mph=21.4,
+                    # Monocular estimation cannot recover these honestly.
+                    shoulder_turn_deg=None,
+                    pelvis_rotation_deg=None,
+                    x_factor_deg=None,
+                ),
+            ),
+            pressure=PressureBlock(
+                status=DataStatus.READY,
+                path="pressure.json",
+                device="custom_dual_plate",
+                sample_rate_hz=100,
+                samples=401,
+                impact_ms=BODY_SWING_IMPACT_MS,
+                summary=PressureSummary(
+                    peak_grf_n=750.0,
+                    trail_pct_at_impact=45.0,
+                    lead_pct_at_impact=55.0,
+                    cop_excursion_mm=62.5,
+                ),
+            ),
+            club_used="7I",
+            tags=["Good Strike"],
+            notes="Both cameras, pose and pressure present.",
+        )
+    )
+
+    # 7. v1.1 -- pose still extracting; the panel must show progress, not a
+    #    crash and not an empty skeleton.
+    moment = base + timedelta(seconds=268)
+    ball = BallData(
+        speed_mph=126.1, total_spin_rpm=6700, back_spin_rpm=6680, side_spin_rpm=430,
+        spin_axis_deg=3.7, launch_angle_deg=18.1, launch_direction_deg=-1.2,
+    )
+    club = ClubData(
+        speed_mph=88.9, angle_of_attack_deg=-4.0, path_deg=-1.9,
+        face_to_target_deg=-0.5, loft_deg=24.6, closure_rate_dps=None,
+    )
+    packages.append(
+        _package(
+            moment,
+            status=ShotStatus.COMPLETE,
+            body_swing=True,
+            body_swing_dtl=True,
+            impact_strike=True,
+            telemetry=_telemetry(ball, club, moment, _raw(ball, club)),
+            pose=PoseBlock(
+                status=DataStatus.PENDING,
+                cameras=["body_swing"],
+            ),
+            pressure=PressureBlock(status=DataStatus.UNAVAILABLE),
+            club_used="7I",
+            notes="Pose extraction still running.",
+        )
+    )
     return packages
 
 
@@ -276,6 +399,22 @@ def write_packages(packages: list[ShotPackage], root: Path, *, media: bool) -> N
         (directory / "metadata.json").write_text(
             json.dumps(package.to_json(), indent=2) + "\n", encoding="utf-8"
         )
+        if package.pose and package.pose.path:
+            (directory / package.pose.path).write_text(
+                json.dumps(
+                    build_pose(impact_ms=BODY_SWING_IMPACT_MS), separators=(",", ":")
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        if package.pressure and package.pressure.path:
+            (directory / package.pressure.path).write_text(
+                json.dumps(
+                    build_pressure(impact_ms=BODY_SWING_IMPACT_MS), separators=(",", ":")
+                )
+                + "\n",
+                encoding="utf-8",
+            )
         if not media:
             continue
         for name, entry in package.media.items():

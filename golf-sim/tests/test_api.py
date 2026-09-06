@@ -12,6 +12,12 @@ from backend.main import app
 from tests.conftest import MP4_STUB
 
 
+def present_sources(shot: dict) -> set[str]:
+    """The sources actually present. Every key is always emitted in v1.1, so
+    comparing the whole dict would break on each new optional source."""
+    return {name for name, present in shot["sources"].items() if present}
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     settings = Settings(
@@ -47,6 +53,66 @@ def upload_body_swing(client, **data):
     )
 
 
+# ---- two Kinovea cameras (schema v1.1) ------------------------------------
+
+
+def test_the_two_kinovea_cameras_pair_into_one_shot(client):
+    """Both Automation hooks fire within milliseconds of each other. Routed on
+    distinct sources they are one swing; without that they would be two."""
+    face_on = upload_body_swing(client, source="body_swing").json()["shot_id"]
+    dtl = upload_body_swing(client, source="body_swing_dtl").json()["shot_id"]
+    assert face_on == dtl
+
+    shot = client.get(f"/api/shots/{face_on}").json()
+    assert shot["sources"]["body_swing"] is True
+    assert shot["sources"]["body_swing_dtl"] is True
+    assert set(shot["media"]) == {"body_swing", "body_swing_dtl"}
+    assert shot["media"]["body_swing_dtl"]["path"] == "body_swing_dtl.mp4"
+
+    # Distinct files, not one overwriting the other.
+    for name in ("body_swing.mp4", "body_swing_dtl.mp4"):
+        assert client.get(f"/shots/shot_{face_on}/{name}").status_code == 200
+
+
+def test_the_same_camera_twice_is_still_two_shots(client):
+    """The duplicate-source rule must survive the routing change: two face-on
+    clips are two swings, not one shot with a clobbered clip."""
+    first = upload_body_swing(client, source="body_swing").json()["shot_id"]
+    second = upload_body_swing(client, source="body_swing").json()["shot_id"]
+    assert first != second
+
+
+def test_dtl_defaults_come_from_config_not_the_face_on_camera(client):
+    shot_id = upload_body_swing(
+        client, source="body_swing_dtl", capture_fps="", container_fps=""
+    ).json()["shot_id"]
+    entry = client.get(f"/api/shots/{shot_id}").json()["media"]["body_swing_dtl"]
+    assert entry["camera"] == "dtl"
+    assert entry["capture_fps"] == 60.0
+
+
+def test_an_unknown_source_is_rejected(client):
+    """A typo in a Kinovea hook must fail loudly, not silently file the clip
+    as a face-on swing."""
+    response = client.post(
+        "/api/ingest/body_swing",
+        data={"source": "down_the_line"},
+        files={"file": ("clip.mp4", MP4_STUB, "video/mp4")},
+    )
+    assert response.status_code == 400
+    assert "body_swing_dtl" in response.json()["detail"]
+
+
+def test_dtl_absence_does_not_make_a_shot_partial(client):
+    """DTL is optional by default; only adding it to GOLFSIM_EXPECTED_SOURCES
+    should make a missing DTL clip incomplete."""
+    shot_id = upload_body_swing(client, source="body_swing").json()["shot_id"]
+    upload_impact(client)
+    shot = client.get(f"/api/shots/{shot_id}").json()
+    assert shot["sources"]["body_swing_dtl"] is False
+    assert shot["status"] == "pending"
+
+
 # ---- health ---------------------------------------------------------------
 
 
@@ -67,9 +133,7 @@ def test_impact_upload_opens_a_pending_shot(client):
     body = upload_impact(client).json()
     assert body["status"] == "pending"
     shot = body["shot"]
-    assert shot["sources"] == {
-        "body_swing": False, "impact_strike": True, "telemetry": False
-    }
+    assert present_sources(shot) == {"impact_strike"}
     assert shot["media"]["impact_strike"]["capture_fps"] == 240
     assert shot["media"]["impact_strike"]["container_fps"] == 30
     assert shot["media"]["impact_strike"]["camera"] == "impact"
@@ -125,9 +189,7 @@ def test_both_videos_pair_into_one_shot(client):
     assert first == second
 
     shot = client.get(f"/api/shots/{first}").json()
-    assert shot["sources"] == {
-        "body_swing": True, "impact_strike": True, "telemetry": False
-    }
+    assert present_sources(shot) == {"body_swing", "impact_strike"}
     assert shot["status"] == "pending"          # still waiting on telemetry
     assert set(shot["media"]) == {"body_swing", "impact_strike"}
 
@@ -332,9 +394,7 @@ def test_a_late_clip_joins_the_swing_it_was_captured_with(trusting_client):
     assert joined != shot_b
 
     shot = trusting_client.get(f"/api/shots/{shot_a}").json()
-    assert shot["sources"] == {
-        "body_swing": True, "impact_strike": True, "telemetry": False
-    }
+    assert present_sources(shot) == {"body_swing", "impact_strike"}
     # And swing B is left honestly incomplete rather than wearing A's clip.
     assert trusting_client.get(f"/api/shots/{shot_b}").json()["sources"][
         "impact_strike"

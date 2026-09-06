@@ -1,5 +1,5 @@
 @echo off
-REM Kinovea Automation hook -> golf sim backend.
+REM Kinovea Automation hook -> golf sim backend. DOWN-THE-LINE CAMERA.
 REM
 REM Options -> Preferences -> Capture -> Automation, "command after capture".
 REM Point it at this file and pass the recorded filename as the argument. The
@@ -21,10 +21,10 @@ REM original where Kinovea put it.
 setlocal
 
 set BACKEND=http://127.0.0.1:8000
-set SOURCE=body_swing
-set CAPTURE_FPS=30
-set CONTAINER_FPS=30
-set CAMERA=face_on
+set SOURCE=body_swing_dtl
+set CAPTURE_FPS=60
+set CONTAINER_FPS=60
+set CAMERA=dtl
 
 if "%~1"=="" (
   echo [kinovea_hook] no filename argument supplied

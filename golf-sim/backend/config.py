@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     body_swing_camera: str = "face_on"
     body_swing_capture_fps: float = 30.0
     body_swing_container_fps: float = 30.0
+    #: Second Kinovea camera, down-the-line.
+    body_swing_dtl_camera: str = "dtl"
+    body_swing_dtl_capture_fps: float = 60.0
+    body_swing_dtl_container_fps: float = 60.0
     impact_camera: str = "impact"
     impact_capture_fps: float = 240.0
     impact_container_fps: float = 30.0

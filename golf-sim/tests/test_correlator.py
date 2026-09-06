@@ -50,6 +50,10 @@ def telemetry(speed: float = 132.4) -> TelemetryBlock:
     )
 
 
+def present_sources(shot: dict) -> set[str]:
+    return {name for name, present in shot["sources"].items() if present}
+
+
 def metadata_of(settings, shot_id: str) -> dict:
     path = settings.shots_dir / f"shot_{shot_id}" / "metadata.json"
     return json.loads(path.read_text())
@@ -65,9 +69,7 @@ async def test_three_sources_pair_into_one_complete_shot(correlator, settings, t
     assert len(list(settings.shots_dir.iterdir())) == 1
     written = metadata_of(settings, package.shot_id)
     assert written["status"] == "complete"
-    assert written["sources"] == {
-        "body_swing": True, "impact_strike": True, "telemetry": True
-    }
+    assert present_sources(written) == {"body_swing", "impact_strike", "telemetry"}
     assert written["media"]["impact_strike"]["capture_fps"] == 240.0
     assert written["media"]["impact_strike"]["container_fps"] == 30.0
     assert written["telemetry"]["derived"]["smash_factor"] == 1.44
@@ -114,9 +116,7 @@ async def test_window_expiry_writes_a_partial_shot(correlator, settings, tmp_pat
 
     written = metadata_of(settings, package.shot_id)
     assert written["status"] == "partial"
-    assert written["sources"] == {
-        "body_swing": True, "impact_strike": False, "telemetry": False
-    }
+    assert present_sources(written) == {"body_swing"}
 
 
 async def test_shots_outside_the_window_stay_separate(correlator, settings, tmp_path):

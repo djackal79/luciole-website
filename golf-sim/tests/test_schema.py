@@ -53,16 +53,23 @@ def test_top_level_keys_match_the_contract_exactly():
     package = build_scenarios()[0].to_json()
     assert list(package) == [
         "schema_version", "shot_id", "session_id", "created_at", "status",
-        "sources", "media", "sync", "telemetry", "club_used", "tags", "notes",
+        "sources", "media", "sync", "telemetry", "pose", "pressure",
+        "club_used", "tags", "notes",
     ]
-    assert package["schema_version"] == "1.0"
-    assert list(package["sources"]) == ["body_swing", "impact_strike", "telemetry"]
+    assert package["schema_version"] == "1.1"
+    # Every source key is always emitted, so the frontend needs only a truth
+    # check, never an existence check.
+    assert list(package["sources"]) == [
+        "body_swing", "body_swing_dtl", "impact_strike",
+        "telemetry", "pose", "pressure",
+    ]
     assert list(package["sync"]) == ["trigger_ts", "impact_offset_ms"]
     assert list(package["telemetry"]) == [
         "source", "received_at", "ball", "club", "derived", "distance", "raw"
     ]
     assert list(package["media"]["impact_strike"]) == [
-        "path", "camera", "capture_fps", "container_fps", "duration_ms", "width", "height"
+        "path", "camera", "capture_fps", "container_fps",
+        "duration_ms", "width", "height", "impact_ms",
     ]
 
 
@@ -97,13 +104,19 @@ def test_carry_and_total_are_null_on_the_gspro_path():
 
 
 def test_the_five_required_scenarios_are_present():
+    """The contract's five come first and keep their ids; v1.1 appends."""
     packages = build_scenarios()
-    assert len(packages) == 5
+    assert len(packages) == 7
 
-    complete_full, partial_no_impact, partial_no_telemetry, ball_only, draw = packages
+    complete_full, partial_no_impact, partial_no_telemetry, ball_only, draw = packages[:5]
 
     assert complete_full.status == "complete"
-    assert all(complete_full.sources.values())
+    # "Complete" means the three sources the contract requires. The optional
+    # v1.1 sources being absent does not make a shot incomplete.
+    assert all(
+        complete_full.sources[name]
+        for name in ("body_swing", "impact_strike", "telemetry")
+    )
     assert complete_full.telemetry.club.speed_mph is not None
 
     assert partial_no_impact.status == "partial"
@@ -120,6 +133,68 @@ def test_the_five_required_scenarios_are_present():
 
     assert draw.telemetry.ball.spin_axis_deg < 0
     assert draw.telemetry.derived.face_to_path_deg <= -5
+
+
+def test_v11_scenario_carries_both_cameras_pose_and_pressure():
+    everything = build_scenarios()[5].to_json()
+    assert everything["sources"]["body_swing_dtl"] is True
+    assert everything["media"]["body_swing_dtl"]["camera"] == "dtl"
+    assert everything["sources"]["pose"] is True
+    assert everything["sources"]["pressure"] is True
+    assert everything["pose"]["status"] == "ready"
+    assert everything["pose"]["dimensions"] == "2d"
+    # Monocular pose cannot recover these, and must say so rather than guess.
+    assert everything["pose"]["summary"]["shoulder_turn_deg"] is None
+    assert everything["pose"]["summary"]["swing_plane_deg"] == 62.4
+    assert everything["pressure"]["summary"]["lead_pct_at_impact"] == 55.0
+
+
+def test_pending_pose_is_not_reported_as_a_present_source():
+    """A pending extraction must not read as data the UI can draw."""
+    pending = build_scenarios()[6].to_json()
+    assert pending["pose"]["status"] == "pending"
+    assert pending["sources"]["pose"] is False
+    assert pending["pose"]["path"] is None
+    assert pending["pressure"]["status"] == "unavailable"
+
+
+def test_every_clip_carries_its_own_impact_position():
+    """Per-clip impact_ms is what lets the player align on the strike rather
+    than on file start."""
+    everything = build_scenarios()[5].to_json()
+    assert everything["media"]["body_swing"]["impact_ms"] == 2450
+    assert everything["media"]["body_swing_dtl"]["impact_ms"] == 2450
+    # The impact clip is shorter and has its own position within itself.
+    assert everything["media"]["impact_strike"]["impact_ms"] == 750
+
+
+def test_sidecar_shapes():
+    """The sidecars are the reason pose and pressure are not inline: they are
+    two orders of magnitude bigger than the metadata that references them."""
+    import json
+    import sys
+    from pathlib import Path as _Path
+
+    sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "scripts"))
+    from _sidecars import MEDIAPIPE_LANDMARKS, build_pose, build_pressure
+
+    pose = build_pose(impact_ms=2450)
+    assert pose["dimensions"] == "2d"
+    assert pose["coordinate_space"] == "normalised_image"
+    assert pose["landmarks"] == MEDIAPIPE_LANDMARKS
+    assert len(pose["frames"][0]["points"]) == 33
+    assert all(0.0 <= c <= 1.0 for c in pose["frames"][0]["points"][0][:2])
+    assert pose["impact_ms"] == 2450
+
+    pressure = build_pressure(impact_ms=2450)
+    at_impact = min(pressure["samples"], key=lambda s: abs(s["t_ms"] - 2450))
+    # Address balanced, loaded at the top, transferring by impact.
+    assert pressure["samples"][0]["trail_pct"] == pytest.approx(52.0, abs=1.0)
+    assert at_impact["trail_pct"] == pytest.approx(45.0, abs=1.0)
+    assert pressure["samples"][-1]["lead_pct"] > 70
+    assert pressure["summary"]["peak_grf_n"] == 750.0
+
+    assert len(json.dumps(pose)) > 20_000
 
 
 def test_derived_matches_the_contract_worked_example():
