@@ -268,6 +268,13 @@ class PoseBlock(BaseModel):
     frame_count: int | None = None
     #: Populated when status is "failed", so the UI can say why.
     error: str | None = None
+    #: Why shoulder turn, pelvis rotation and X-factor are absent, in words.
+    #: Null when they arrived. Most values are ordinary states rather than
+    #: faults -- an uncalibrated rig, a shot with one camera -- so the UI
+    #: should read as informative, not alarming. Note this can be set while
+    #: `dimensions` is "3d": a triangulated skeleton that is not anatomically
+    #: possible is still drawn, but its angles are withheld.
+    depth_reason: str | None = None
     summary: PoseSummary | None = None
 
 

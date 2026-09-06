@@ -27,6 +27,7 @@ from backend.pose.calibration import (
 from backend.pose.landmarks import INDEX, MEDIAPIPE_LANDMARKS
 from backend.pose.triangulate import (
     MAX_REPROJECTION_PX,
+    blocked_reason,
     summarise_3d,
     triangulate_tracks,
 )
@@ -703,3 +704,50 @@ async def test_clips_without_an_impact_frame_stay_2d(correlator, settings, tmp_p
     assert metadata["pose"]["dimensions"] == "2d"
     assert metadata["pose"]["summary"]["shoulder_turn_deg"] is None
     assert "world" not in sidecar
+
+
+# ---- saying why 3D is off ------------------------------------------------
+
+
+def test_every_reason_3d_is_off_is_explained_in_words():
+    """A panel of blanks is not an answer. Each of these is an ordinary state,
+    and the app has to be able to tell the user which one it is in."""
+    skeletons = turning_skeletons()
+    good = {
+        "body_swing": make_track(FACE_ON, skeletons[::2], 30, 0),
+        "body_swing_dtl": make_track(DTL, skeletons, 60, 0),
+    }
+    assert blocked_reason(good, rig()) is None
+
+    assert "not been calibrated" in blocked_reason(good, None)
+
+    half = Calibration(cameras={
+        "body_swing": FACE_ON,
+        "body_swing_dtl": CameraCalibration((WIDTH, HEIGHT), DTL.matrix, DTL.distortion, 0.2),
+    })
+    assert "1 of 2 cameras" in blocked_reason(good, half)
+
+    one_clip = {"body_swing": good["body_swing"]}
+    assert "only one body-swing clip" in blocked_reason(one_clip, rig())
+
+    unaligned = {**good, "body_swing": {**good["body_swing"], "impact_ms": None}}
+    reason = blocked_reason(unaligned, rig())
+    assert "body_swing" in reason and "IMPACT_MS" in reason
+
+
+@pytest.mark.asyncio
+async def test_the_shot_records_why_it_stayed_2d(correlator, settings, tmp_path):
+    """The reason reaches metadata.json, not just the backend log."""
+    rig().save(settings.pose_calibration_path)
+    metadata, _ = await _run_pose(correlator, settings, tmp_path, impact_ms=None)
+
+    assert metadata["pose"]["dimensions"] == "2d"
+    assert "IMPACT_MS" in metadata["pose"]["depth_reason"]
+
+
+@pytest.mark.asyncio
+async def test_a_3d_shot_carries_no_reason(correlator, settings, tmp_path):
+    rig().save(settings.pose_calibration_path)
+    metadata, _ = await _run_pose(correlator, settings, tmp_path)
+    assert metadata["pose"]["dimensions"] == "3d"
+    assert metadata["pose"]["depth_reason"] is None

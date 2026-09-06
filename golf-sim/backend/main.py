@@ -64,6 +64,9 @@ async def lifespan(app: FastAPI):
 
     await correlator.start()
     await pose.start()
+    # A shot that was extracting when the last run died reads "computing"
+    # forever otherwise; the clips are still there, so redo the work.
+    await pose.reconcile_pending()
     if settings.gspro_enabled:
         # A failure to bind is expected when GSPro itself is running; the
         # service stays up and the listener can be started later.

@@ -12,6 +12,56 @@ from ..models import SessionRequest, local_now
 router = APIRouter(prefix="/api", tags=["system"])
 
 
+def _calibration_state(settings: Any) -> dict[str, Any]:
+    """Whether the rig can produce 3D, and what is left if not.
+
+    Read from disk on each call rather than cached, matching the pose worker:
+    running the calibration script takes effect immediately, and the panel
+    showing "not calibrated" after you just calibrated would be its own bug.
+    """
+    from ..pose.calibration import Calibration, camera_position
+
+    path = settings.pose_calibration_path
+    calibration = Calibration.load(path)
+    if calibration is None:
+        return {
+            "ready": False,
+            "path": str(path),
+            "cameras": {},
+            "detail": "no calibration file; run scripts/calibrate_cameras.py",
+        }
+
+    cameras: dict[str, Any] = {}
+    for name, camera in calibration.cameras.items():
+        entry: dict[str, Any] = {
+            "placed": camera.placed,
+            "lens_rms_px": round(camera.rms_px, 3),
+            "pose_rms_px": (
+                None if camera.pose_rms_px is None else round(camera.pose_rms_px, 3)
+            ),
+        }
+        if camera.placed:
+            # The number to check against a tape measure. If this is wrong,
+            # so is every distance the 3D metrics are built on.
+            entry["position_m"] = [round(float(v), 3) for v in camera_position(camera)]
+        cameras[name] = entry
+
+    unplaced = sorted(set(cameras) - set(calibration.triangulable))
+    return {
+        "ready": calibration.ready,
+        "path": str(path),
+        "calibrated_at": calibration.created_at,
+        "board": calibration.board.as_dict(),
+        "cameras": cameras,
+        "detail": (
+            None
+            if calibration.ready
+            else f"needs 2 placed cameras, have {len(calibration.triangulable)}"
+            + (f" ({', '.join(unplaced)} not placed)" if unplaced else "")
+        ),
+    }
+
+
 @router.get("/health")
 async def health(
     request: Request, settings: SettingsDep, correlator: CorrelatorDep
@@ -56,6 +106,7 @@ async def health(
                 "enabled": settings.pose_enabled,
                 "model": str(settings.pose_model_path),
                 "reason": request.app.state.pose.extractor.available(),
+                "calibration": _calibration_state(settings),
             },
         },
         "pairing": {

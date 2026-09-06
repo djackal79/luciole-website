@@ -27,6 +27,8 @@ def client(tmp_path, monkeypatch):
         reaper_interval_ms=50,
         gspro_enabled=False,
         kinovea_watch_enabled=False,
+        # Hermetic: never read a real rig calibration from ./models.
+        pose_calibration_path=tmp_path / "calibration.json",
         _env_file=None,
     )
     app.dependency_overrides[get_settings] = lambda: settings
@@ -448,3 +450,58 @@ def test_impact_position_is_optional(client):
     does not report it. The calibration slider covers that."""
     shot_id = upload_body_swing(client).json()["shot_id"]
     assert client.get(f"/api/shots/{shot_id}").json()["media"]["body_swing"]["impact_ms"] is None
+
+
+def test_health_says_the_rig_is_not_calibrated(client):
+    """Before today there was no way to ask a running backend this, so the
+    diagnostics panel could not show it and you had to run a script."""
+    state = client.get("/api/health").json()["listeners"]["pose_worker"]["calibration"]
+    assert state["ready"] is False
+    assert "calibrate_cameras" in state["detail"]
+    assert state["cameras"] == {}
+
+
+def test_health_reports_a_calibrated_rig_and_where_the_cameras_are(client):
+    """The camera positions are the number to check against a tape measure."""
+    from tests.test_calibration import rig
+
+    rig().save(client.settings.pose_calibration_path)
+    state = client.get("/api/health").json()["listeners"]["pose_worker"]["calibration"]
+
+    assert state["ready"] is True
+    assert state["detail"] is None
+    assert set(state["cameras"]) == {"body_swing", "body_swing_dtl"}
+    assert state["cameras"]["body_swing"]["placed"] is True
+    assert state["cameras"]["body_swing"]["position_m"] == pytest.approx(
+        [0.0, -3.5, 1.4], abs=0.01
+    )
+    assert state["board"]["square_mm"] == 150.0
+
+
+def test_health_names_the_camera_still_to_be_placed(client):
+    from backend.pose.calibration import Calibration, CameraCalibration
+    from tests.test_calibration import DTL, FACE_ON, HEIGHT, WIDTH
+
+    Calibration(cameras={
+        "body_swing": FACE_ON,
+        "body_swing_dtl": CameraCalibration(
+            (WIDTH, HEIGHT), DTL.matrix, DTL.distortion, 0.2
+        ),
+    }).save(client.settings.pose_calibration_path)
+
+    state = client.get("/api/health").json()["listeners"]["pose_worker"]["calibration"]
+    assert state["ready"] is False
+    assert "body_swing_dtl" in state["detail"]
+    assert "position_m" not in state["cameras"]["body_swing_dtl"]
+
+
+def test_calibrating_takes_effect_without_a_restart(client):
+    """Read from disk per call, so the panel never says 'not calibrated'
+    after you have just calibrated."""
+    from tests.test_calibration import rig
+
+    assert client.get("/api/health").json()[
+        "listeners"]["pose_worker"]["calibration"]["ready"] is False
+    rig().save(client.settings.pose_calibration_path)
+    assert client.get("/api/health").json()[
+        "listeners"]["pose_worker"]["calibration"]["ready"] is True

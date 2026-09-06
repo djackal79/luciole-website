@@ -362,3 +362,79 @@ def test_real_mediapipe_runs_over_a_real_video(tmp_path):
     for frame in track.frames:
         assert len(frame["points"]) == 33
         assert all(0.0 <= axis <= 1.0 for axis in frame["points"][0][:2])
+
+
+# ---------------------------------------------------------------------------
+# Crash recovery
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_shot_left_computing_by_a_crash_is_picked_up(
+    correlator, settings, tmp_path
+):
+    """Kill the backend mid-extraction and the queue dies with it. The clips
+    are still on disk, so the work is simply redone on the next start."""
+    pipeline = PosePipeline(settings, correlator)
+    pipeline.extractor = StubExtractor()
+    correlator.pose_pipeline = pipeline
+    await pipeline.start()
+
+    package = await _shot_with_clips(correlator, settings, tmp_path)
+    await correlator.close_all()
+    await _drain(pipeline)
+
+    # Rewind to what a crash mid-extraction leaves behind.
+    directory = settings.shots_dir / f"shot_{package.shot_id}"
+    metadata = json.loads((directory / "metadata.json").read_text())
+    metadata["pose"] = {"status": "pending", "cameras": ["body_swing"]}
+    metadata["sources"]["pose"] = False
+    (directory / "metadata.json").write_text(json.dumps(metadata))
+
+    assert await pipeline.reconcile_pending() == 1
+    await _drain(pipeline)
+    await pipeline.stop()
+
+    recovered = json.loads((directory / "metadata.json").read_text())
+    assert recovered["pose"]["status"] == "ready"
+    assert recovered["sources"]["pose"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_stranded_shot_is_never_left_computing_forever(
+    correlator, settings, tmp_path
+):
+    """When the estimator cannot run there is nothing to redo, and a shot that
+    reads "computing" for ever is the one state the UI cannot make sense of."""
+    pipeline = PosePipeline(settings, correlator)
+    pipeline.extractor = StubExtractor()
+    correlator.pose_pipeline = pipeline
+    await pipeline.start()
+    package = await _shot_with_clips(correlator, settings, tmp_path)
+    await correlator.close_all()
+    await _drain(pipeline)
+    await pipeline.stop()          # worker gone: enqueue can no longer accept
+
+    directory = settings.shots_dir / f"shot_{package.shot_id}"
+    metadata = json.loads((directory / "metadata.json").read_text())
+    metadata["pose"] = {"status": "pending", "cameras": []}
+    (directory / "metadata.json").write_text(json.dumps(metadata))
+
+    assert await pipeline.reconcile_pending() == 0
+    after = json.loads((directory / "metadata.json").read_text())
+    assert after["pose"]["status"] == "failed"
+    assert "interrupted by a restart" in after["pose"]["error"]
+
+
+@pytest.mark.asyncio
+async def test_a_clean_start_has_nothing_to_recover(correlator, settings, tmp_path):
+    pipeline = PosePipeline(settings, correlator)
+    pipeline.extractor = StubExtractor()
+    correlator.pose_pipeline = pipeline
+    await pipeline.start()
+    await _shot_with_clips(correlator, settings, tmp_path)
+    await correlator.close_all()
+    await _drain(pipeline)
+
+    assert await pipeline.reconcile_pending() == 0
+    await pipeline.stop()

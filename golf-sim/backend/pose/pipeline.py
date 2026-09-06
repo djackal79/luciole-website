@@ -30,7 +30,13 @@ from .calibration import Calibration
 from .extractor import ExtractionError, PoseExtractor, PoseTrack
 from .landmarks import MEDIAPIPE_LANDMARKS
 from .metrics import summarise
-from .triangulate import Frame3D, summarise_3d, triangulate_tracks
+from .triangulate import (
+    Frame3D,
+    blocked_reason,
+    implausible_reason,
+    summarise_3d,
+    triangulate_tracks,
+)
 
 log = logging.getLogger(__name__)
 
@@ -77,6 +83,45 @@ class PosePipeline:
     @property
     def live(self) -> bool:
         return self._worker is not None and not self._worker.done()
+
+    # -- crash recovery ----------------------------------------------------
+
+    async def reconcile_pending(self) -> int:
+        """Pick up shots the last run left mid-extraction.
+
+        The queue does not survive a restart, so a shot that was extracting
+        when the process died reads "computing" forever and nothing in memory
+        is ever going to finish it. The clips are still on disk, so the honest
+        move is to redo the work -- and where that is not possible (pose is off
+        or the estimator cannot run) to say so, because a permanent "computing"
+        is the one state the UI cannot make sense of.
+
+        Returns how many shots were re-queued.
+        """
+        stranded = await asyncio.to_thread(_stranded_shots, self.settings)
+        if not stranded:
+            return 0
+
+        requeued = 0
+        for shot_id in stranded:
+            if self.enqueue(shot_id):
+                requeued += 1
+                continue
+            await self.correlator.set_pose(
+                shot_id,
+                {
+                    "status": DataStatus.FAILED.value,
+                    "error": (
+                        "extraction was interrupted by a restart and could not "
+                        "be resumed"
+                    ),
+                },
+            )
+        log.info(
+            "recovered %d shot(s) left mid-extraction, %d marked failed",
+            requeued, len(stranded) - requeued,
+        )
+        return requeued
 
     # -- queueing ----------------------------------------------------------
 
@@ -165,7 +210,7 @@ class PosePipeline:
             return
 
         summary = summarise(tracks)
-        world = await asyncio.to_thread(self._triangulate, tracks)
+        world, reason = await asyncio.to_thread(self._triangulate, tracks)
         if world is not None:
             # 3D only ever fills in what 2D left null; it never overwrites the
             # plane and spine angles, which are measured better in the image.
@@ -181,6 +226,11 @@ class PosePipeline:
                 "path": POSE_FILENAME,
                 "model": self.settings.pose_model_path.stem,
                 "dimensions": "3d" if world else "2d",
+                # Set whenever the depth metrics are absent -- which includes
+                # the case where a 3D track exists but the skeleton it produced
+                # was not anatomically possible, so "3d" alone does not mean
+                # the angles arrived.
+                "depth_reason": reason,
                 "cameras": list(tracks),
                 "frame_count": total_frames,
                 "error": None,
@@ -193,8 +243,10 @@ class PosePipeline:
             f", {len(world)} triangulated" if world else "",
         )
 
-    def _triangulate(self, tracks: dict[str, PoseTrack]) -> list[Frame3D] | None:
-        """World-frame track, when the rig has been calibrated.
+    def _triangulate(
+        self, tracks: dict[str, PoseTrack]
+    ) -> tuple[list[Frame3D] | None, str | None]:
+        """World-frame track and, when there isn't one, why not.
 
         The calibration file is read per shot rather than cached at startup, so
         running the calibration script takes effect on the next swing instead
@@ -203,27 +255,23 @@ class PosePipeline:
         Never raises: 3D is a bonus on top of a shot that is already complete,
         and losing it must not cost the 2D pose that came with it.
         """
+        as_dicts = {name: track.as_dict() for name, track in tracks.items()}
         try:
             calibration = Calibration.load(self.settings.pose_calibration_path)
-            if calibration is None:
-                log.debug(
-                    "no calibration at %s; pose stays 2D",
-                    self.settings.pose_calibration_path,
-                )
-                return None
-            if not calibration.ready:
-                log.info(
-                    "calibration has %d placed camera(s), need 2; pose stays 2D",
-                    len(calibration.triangulable),
-                )
-                return None
-            world = triangulate_tracks(
-                {name: track.as_dict() for name, track in tracks.items()}, calibration
-            )
+            if (reason := blocked_reason(as_dicts, calibration)) is not None:
+                return None, reason
+            world = triangulate_tracks(as_dicts, calibration)
+            if not world:
+                return None, "no frame could be solved from both cameras"
+            if (reason := implausible_reason(world)) is not None:
+                # The track is still written -- seeing the skeleton come out
+                # wrong is how the rig gets fixed -- but the angles are not
+                # reported, because a number is believed.
+                return world, reason
         except Exception:
             log.exception("triangulation failed; falling back to 2D pose")
-            return None
-        return world or None
+            return None, "triangulation failed; see the backend log"
+        return world, None
 
     def _extract_all(
         self, clips: list[tuple[str, Path, dict[str, Any]]]
@@ -237,6 +285,24 @@ class PosePipeline:
                 max_fps=self.settings.pose_max_fps,
             )
         return tracks
+
+
+def _stranded_shots(settings: Settings) -> list[str]:
+    """Shot ids whose pose is still marked pending on disk, oldest first."""
+    from .. import storage
+
+    stranded = [
+        metadata["shot_id"]
+        for metadata in reversed(storage.iter_shots(settings))
+        if (metadata.get("pose") or {}).get("status") == DataStatus.PENDING.value
+        and metadata.get("shot_id")
+    ]
+    if stranded:
+        log.warning(
+            "%d shot(s) still marked pending from a previous run: %s",
+            len(stranded), ", ".join(stranded[:5]) + ("..." if len(stranded) > 5 else ""),
+        )
+    return stranded
 
 
 def _pose_inputs(

@@ -605,3 +605,90 @@ up to the pattern's symmetry, so two cameras 90° apart can describe the same
 board in world frames 180° apart — each fitting its own view perfectly while
 triangulation between them returns nonsense. ArUco markers carry their own
 identity, so every view agrees on the origin by construction.
+
+---
+
+# Schema v1.4 — saying why, and recovering from a crash
+
+Supersedes v1.3 where they disagree. Additive: two new read-only fields and
+one behaviour change on restart. Nothing is removed or renamed.
+
+## `pose.depth_reason` — why the depth metrics are missing
+
+Most shots will not be 3D for a while, and every reason for that is an
+ordinary state rather than a fault. A panel of blank metrics cannot say which
+one applies, so the backend now says it in words.
+
+```json
+"pose": {
+  "status": "ready",
+  "dimensions": "2d",
+  "depth_reason": "no impact frame on body_swing_dtl — set IMPACT_MS in the Kinovea hook for each camera",
+  "summary": { "shoulder_turn_deg": null, ... }
+}
+```
+
+`null` when the three depth metrics arrived. Otherwise one of:
+
+| Situation | Reads roughly |
+|---|---|
+| No calibration file | *the cameras have not been calibrated yet* |
+| One camera placed | *only 1 of 2 cameras has been placed against the board* |
+| One body-swing clip | *this shot has only one body-swing clip, and 3D needs both* |
+| Missing impact frame | *no impact frame on `<camera>` — set IMPACT\_MS…* |
+| Skeleton not anatomically possible | *shoulder width triangulates to 54 cm (expected 28-52)…* |
+
+**`dimensions: "3d"` does not on its own mean the angles arrived.** The last
+row above produces a 3D track that is still written and still worth drawing —
+seeing the skeleton come out wrong is how a mis-measured board gets found —
+while its derived angles are withheld. Read `depth_reason`, not `dimensions`,
+to decide whether to show the numbers.
+
+Phrase these to the user as information, not as errors. Four of the five are
+just "not set up yet".
+
+## `listeners.pose_worker.calibration` on `GET /api/health`
+
+Whether the rig can produce 3D at all, without reading a shot.
+
+```json
+"calibration": {
+  "ready": true,
+  "path": "models/calibration.json",
+  "calibrated_at": "2026-09-06T11:04:22+00:00",
+  "board": { "squares_x": 10, "squares_y": 7, "square_mm": 150.0, ... },
+  "cameras": {
+    "body_swing":     { "placed": true, "lens_rms_px": 0.31, "pose_rms_px": 0.44,
+                        "position_m": [0.02, -3.48, 1.41] },
+    "body_swing_dtl": { "placed": true, "lens_rms_px": 0.29, "pose_rms_px": 0.51,
+                        "position_m": [3.51, 0.01, 1.39] }
+  },
+  "detail": null
+}
+```
+
+- `ready` is the one to gate a "3D" indicator on. `detail` says what is left
+  when it is false, and is `null` when it is true.
+- `position_m` is where each camera solved to, in metres, Z up, from the
+  board's first inner corner. **This is the number to check against a tape
+  measure.** If it is wrong then so is every distance the 3D metrics are built
+  on — most often because the board's real square size does not match what was
+  passed to the calibration script. Worth surfacing somewhere a human will see
+  it, not just in diagnostics.
+- `lens_rms_px` above about 1.0 means the lens fit was poor. `pose_rms_px` is
+  the placement fit.
+- Read from disk on every call, so calibrating takes effect immediately and no
+  restart is needed.
+
+## Shots interrupted by a restart
+
+Pose extraction runs on an in-memory queue that does not survive the process.
+Previously a shot that was extracting when the backend died read `pending` for
+ever, and nothing would ever finish it.
+
+On startup the backend now re-queues every shot still marked `pending` on
+disk, oldest first, and marks any it cannot re-queue as `failed` with
+`error: "extraction was interrupted by a restart and could not be resumed"`.
+
+For the frontend this changes nothing structurally — but `pending` is now
+genuinely temporary, so it is safe to show a spinner and wait.

@@ -108,41 +108,71 @@ def _interpolate(
     ]
 
 
+def _pair(tracks: dict[str, dict[str, Any]], calibration: Calibration) -> list[str]:
+    """The two calibrated cameras that actually produced frames."""
+    return [
+        name
+        for name in calibration.triangulable
+        if name in tracks and tracks[name].get("frames")
+    ][:2]
+
+
+def blocked_reason(
+    tracks: dict[str, dict[str, Any]], calibration: Calibration | None
+) -> str | None:
+    """Why this shot cannot go 3D, phrased for someone standing in the bay.
+
+    Returned rather than only logged, so the app can say which of the several
+    perfectly normal reasons applies instead of showing a panel of blanks.
+    """
+    if calibration is None:
+        return "the cameras have not been calibrated yet"
+    if not calibration.ready:
+        placed = len(calibration.triangulable)
+        return (
+            f"only {placed} of 2 cameras has been placed against the board"
+            if placed
+            else "the cameras have not been calibrated yet"
+        )
+
+    pair = _pair(tracks, calibration)
+    if len(pair) < 2:
+        return "this shot has only one body-swing clip, and 3D needs both"
+
+    unaligned = [name for name in pair if tracks[name].get("impact_ms") is None]
+    if unaligned:
+        return (
+            f"no impact frame on {', '.join(unaligned)} — set IMPACT_MS in the "
+            f"Kinovea hook for each camera"
+        )
+    return None
+
+
 def triangulate_tracks(
     tracks: dict[str, dict[str, Any]], calibration: Calibration
 ) -> list[Frame3D] | None:
     """3D world points per instant, driven by the higher-rate camera.
 
-    Returns ``None`` when fewer than two calibrated cameras have tracks.
+    Returns ``None`` when the shot cannot be triangulated; ``blocked_reason``
+    says why in words.
     """
     import cv2
     import numpy as np
 
-    usable = [
-        name
-        for name in calibration.triangulable
-        if name in tracks and tracks[name].get("frames")
-    ]
-    if len(usable) < 2:
-        log.info("triangulation needs two calibrated tracks, have %d", len(usable))
-        return None
-
-    unaligned = [name for name in usable[:2] if tracks[name].get("impact_ms") is None]
-    if unaligned:
-        # Without impact on both clips there is no shared clock: the two
-        # cameras started recording independently. See the module docstring --
-        # a guess here reprojects cleanly and reads tens of degrees wrong.
-        log.warning(
-            "no impact_ms on %s; refusing to triangulate against an unknown "
-            "time offset. Set IMPACT_MS in the Kinovea hook for each camera "
-            "(the capture trigger's pre-roll) to enable 3D.",
-            ", ".join(unaligned),
+    if (reason := blocked_reason(tracks, calibration)) is not None:
+        # Logged as a warning only for the alignment case, which is the one
+        # the user can act on. The rest are ordinary states, not problems.
+        log.log(
+            logging.WARNING if "impact frame" in reason else logging.INFO,
+            "not triangulating: %s", reason,
         )
         return None
 
+    usable = _pair(tracks, calibration)
+
     # Drive off whichever camera sampled fastest; the other is interpolated.
     primary, secondary = sorted(
-        usable[:2], key=lambda n: -float(tracks[n].get("fps") or 0)
+        usable, key=lambda n: -float(tracks[n].get("fps") or 0)
     )
     log.info("triangulating %s (primary) against %s", primary, secondary)
 
@@ -235,7 +265,7 @@ PLAUSIBLE_WIDTH_M = {
 }
 
 
-def _implausible(frames: list[Frame3D]) -> str | None:
+def implausible_reason(frames: list[Frame3D]) -> str | None:
     """Why these 3D points cannot be a human, or None if they can be.
 
     Uses the median length across the swing: landmark jitter is zero-mean and
@@ -313,7 +343,7 @@ def summarise_3d(frames: list[Frame3D], impact_index: int | None = None) -> dict
     if address is None:
         return summary
 
-    if (reason := _implausible(frames)) is not None:
+    if (reason := implausible_reason(frames)) is not None:
         # The 3D track still gets written -- the skeleton is worth looking at
         # even when it is wrong, and seeing it wrong is how the rig gets fixed.
         # Only the derived angles are withheld, because a number is believed.
