@@ -100,7 +100,7 @@ are now answered; their decisions are recorded below and are binding.
 | D0 | Frontend exists only on Antigravity's machine | — | **Closed** — pushed, 36 files, builds |
 | D1 | UI shows 3 cameras; contract has 2 video sources | High | **Shipped** — `body_swing_dtl` |
 | D2 | Pressure mat UI has no backend or schema | Medium | **Schema shipped**, ingest deferred |
-| D3 | 3D biomech UI has no pose data source | High | Scoped — triangulation, needs calibration |
+| D3 | 3D biomech UI has no pose data source | High | **Shipped** — calibration + triangulation; needs a board capture |
 | D4 | Media URL shape may not match the backend route | — | **Verified correct** |
 | D5 | Master timeline is ambiguous with clips of differing fps/duration | Medium | **Shipped** — per-clip `impact_ms` |
 | D6 | Supabase sync is outside the contract entirely | Medium | **Resolved** — backend writes metrics |
@@ -108,6 +108,8 @@ are now answered; their decisions are recorded below and are binding.
 | D8 | Two Kinovea cameras collide on one ingest endpoint | High | **Fixed** — routed on `source` |
 | D9 | Frontend owns the Supabase write path | Medium | **New** — see D6 |
 | D10 | `POST /session/end` cancelled the shot reaper | High | **Found and fixed** |
+| D15 | Reprojection error cannot see a time skew between the two cameras | High | **Closed by refusal** — see below |
+| D16 | A plain chessboard has no absolute origin | High | **Closed** — ChArUco board |
 | D11 | Root-level route aliases duplicate the contract paths | Low | Converge |
 | D12 | Square LM not registering the ball | **Blocking hardware** | Vendor-side |
 | D13 | Kinovea capture trigger not located | Medium | Research |
@@ -336,6 +338,62 @@ fields mean *measured*, and null is the honest value. The UI's "Model:
 Em-Dash (—)" toggle suggests this is already understood; codifying it here so
 it survives.
 
+### D15 — Reprojection error is blind to time skew — CLOSED BY REFUSAL
+
+The obvious check on a triangulated point is how far apart the two cameras
+placed it. With the cameras 90° apart that check cannot do the job: face-on
+fixes X and Z, down-the-line fixes Y, so almost any (X, Y) pair satisfies both
+rays. Feeding the two views different instants of the swing reprojects at well
+under a pixel while the body angle comes out tens of degrees wrong.
+
+Measured on synthetic data where the true shoulder turn is 90°:
+
+| Skew between the two clips | Shoulder turn | Worst reprojection | Caught? |
+|---|---|---|---|
+| none | 90° — correct | 0.00 px | — |
+| 50 ms | 61° | 0.14 px | **no** |
+| 100 ms | 37° | 0.28 px | **no** |
+| 200 ms | 8° | 0.53 px | yes, by anatomy |
+
+Every one of those is cleaner-looking than the ~4 px that 2 px of honest
+landmark jitter produces. Reprojection error is not merely a weak signal here;
+it points the wrong way.
+
+Two defences, and it matters which does what:
+
+1. **Both clips must carry a real `media.*.impact_ms`.** Missing it on either
+   camera means there is no shared clock at all, and the backend declines to
+   triangulate rather than lining one clip's impact up against the other's
+   first frame. This is the one that closes the common case.
+2. **The triangulated skeleton must be anatomically possible.** A shoulder or
+   hip width outside human range means the reconstruction is wrong — most
+   often a mistyped board square size, which scales the whole world while
+   leaving every angle plausible. This is a backstop for gross errors, and the
+   table above shows its limit: it catches 200 ms, not 50 ms.
+
+**So the honest position is that a modest, wrong-but-present `impact_ms` is not
+detectable from the geometry, and nothing downstream will flag it.** The
+practical requirement that follows: `IMPACT_MS` in the Kinovea hooks needs to
+be right to within roughly one frame — 33 ms at 30 fps — not merely present.
+It comes from the capture trigger's pre-roll, which is a setting rather than a
+guess, so this is achievable; it just has to be done deliberately once and
+re-checked if the trigger's buffer changes.
+
+### D16 — Chessboard origin ambiguity — CLOSED
+
+`findChessboardCorners` returns corners in the order it walked the image, and
+that order is unique only up to the pattern's own symmetry. One view can come
+back numbered from one end of the board and another from the other — the same
+board described in two world frames 180° apart. Each camera still fits its own
+view perfectly, so nothing in the reprojection error complains; triangulation
+between the two frames is simply garbage.
+
+Two cameras 90° apart photographing one board on the floor are the case most
+likely to hit this. The board is therefore a **ChArUco** board: every white
+square carries a coded marker, so the origin is absolute and every view agrees
+on it. It also calibrates from a partly occluded board, which a chessboard
+cannot.
+
 ---
 
 ## 4. Next steps
@@ -385,8 +443,12 @@ Not wanted: more theming, more animation, more panels. Both themes are done.
    live: shot closes, pose goes pending, both cameras extract, `pose.json`
    lands and `shot.updated` fires. Swing plane and spine angle only; the
    depth-dependent metrics stay null.
-5. **Camera calibration** — checkerboard intrinsics and extrinsics, then
-   triangulated 3D. *Next, and blocked on a calibration capture.*
+5. ~~Camera calibration and triangulated 3D.~~ **Done.**
+   `backend/pose/calibration.py`, `backend/pose/triangulate.py`,
+   `scripts/calibrate_cameras.py`, contract v1.3. Shoulder turn, pelvis
+   rotation and X-factor are computed the moment a board capture exists; the
+   `world` block of metre-space landmarks is written alongside the 2D tracks.
+   *Now blocked only on printing the board and taking the capture.*
 5b. ~~Ball flight model.~~ **Done.** `backend/flight.py`, schema v1.2,
    `telemetry.flight`. RK4 with drag, Magnus and spin decay, fitted to within
    4% of published carries from driver to wedge. `telemetry.distance` still
@@ -397,10 +459,22 @@ Not wanted: more theming, more animation, more panels. Both themes are done.
 
 ### You
 
-- Nothing blocking. The three open questions are answered.
-- Worth doing before the pose work lands: **print a checkerboard and take a
-  calibration capture** with both cameras seeing it at once. Without that,
-  3D stays 2D.
+- **Print the calibration board.** This is now the only thing standing between
+  the rig and 3D biomechanics. `python scripts/calibrate_cameras.py board
+  --out board.png` writes the exact pattern the code looks for — a ChArUco
+  board, 1.5 × 1.05 m, so a print shop rather than the office printer. Mount
+  it on something stiff, then **measure a square with a ruler**: that number
+  sets the scale of the whole world and "fit to page" quietly changes it.
+  Do not substitute a chessboard off the internet; the markers are what stop
+  the two cameras disagreeing about which way round the board is.
+- **Set `IMPACT_MS` in both Kinovea hooks.** Both ship blank, and without it
+  on both cameras the backend will not triangulate however well the rig is
+  calibrated. It is the pre-roll of your capture trigger — buffer 3 s and
+  impact sits ~3000 ms into the clip. This is a refusal, not a bug: a 50 ms
+  alignment error turns a real 90° shoulder turn into 61° at 0.4 px of
+  reprojection error, so nothing downstream could catch it.
+- Still open from before: the Square is not registering the ball, and
+  Kinovea's audio trigger has not been located.
 
 ## 5. Context for the chat surfaces
 

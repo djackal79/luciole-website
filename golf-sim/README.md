@@ -298,11 +298,23 @@ That one figure sets the scale of the entire world, and "fit to page" quietly
 rescales the print. `status` reports how far apart the two cameras solved to;
 check it against a tape measure before trusting anything downstream.
 
-**Set `IMPACT_MS` in both Kinovea hooks.** The two capture screens start
-recording independently, so impact is the only clock the clips share. Without
-it on both, the backend will not triangulate — and that is deliberate. A 50 ms
-error in the alignment turns a real 90° shoulder turn into 61° at 0.4 px of
-reprojection error, so the geometry cannot catch it and neither could you.
+**Set `IMPACT_MS` in both Kinovea hooks, and set it accurately.** The two
+capture screens start recording independently, so impact is the only clock the
+clips share. Without it on both the backend will not triangulate at all, which
+is deliberate — but a *wrong* value is the dangerous case, because nothing can
+detect it. Measured on synthetic data where the true answer is 90°:
+
+| Skew between the clips | Shoulder turn | Worst reprojection |
+|---|---|---|
+| none | 90° | 0.00 px |
+| 50 ms | 61° | 0.14 px |
+| 100 ms | 37° | 0.28 px |
+
+Face-on fixes X and down-the-line fixes Y, so almost any (X, Y) pair satisfies
+both camera rays — a mistimed pair reprojects *cleaner* than honest landmark
+jitter. Aim to be right within about one frame (33 ms at 30 fps). The value is
+your capture trigger's pre-roll, so it is a setting to read off rather than a
+number to guess; re-check it if you change the trigger's buffer.
 
 Once `status` says the rig is ready, the next shot picks it up — no restart.
 `pose.dimensions` reads `3d`, the three angles arrive, and `pose.json` grows a
