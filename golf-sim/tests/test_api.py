@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -246,3 +248,122 @@ def test_ws_announces_session_reset(client):
         event = socket.receive_json()
         assert event["type"] == "session.reset"
         assert event["payload"] == {"session_id": "20260906-evening"}
+
+
+# ---- store-and-forward pairing --------------------------------------------
+#
+# The stock-camera + watcher path uploads a clip seconds after the strike.
+# Two settings have to cooperate for that to pair correctly:
+#
+#   late_attach_ms          keeps the shot reachable after its window closed
+#   impact_trust_trigger_ts makes late-attach pick the RIGHT shot, by matching
+#                           on the clip's capture time instead of its arrival
+#
+# Without the second, a clip is simply nearest to whichever swing happened
+# most recently -- which, once you are hitting balls steadily, is the wrong one.
+
+
+def _sf_settings(tmp_path, monkeypatch, **overrides):
+    base = dict(
+        data_root=tmp_path / "data",
+        kinovea_export_dir=tmp_path / "kinovea",
+        # Compressed timings so the suite stays fast: a 0.6 s gap between
+        # swings stands in for the real 10-30 s, and a 1.2 s upload lag for
+        # the real 4-9 s.
+        pair_window_ms=200,
+        late_attach_ms=5000,
+        reaper_interval_ms=50,
+        gspro_enabled=False,
+        kinovea_watch_enabled=False,
+        _env_file=None,
+    )
+    base.update(overrides)
+    settings = Settings(**base)
+    app.dependency_overrides[get_settings] = lambda: settings
+    monkeypatch.setattr("backend.main.get_settings", lambda: settings)
+    return settings
+
+
+@pytest.fixture
+def trusting_client(tmp_path, monkeypatch):
+    _sf_settings(
+        tmp_path, monkeypatch, impact_trust_trigger_ts=True, trigger_ts_max_skew_ms=30_000
+    )
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def stamping_client(tmp_path, monkeypatch):
+    _sf_settings(tmp_path, monkeypatch, impact_trust_trigger_ts=False)
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+
+def _capture_now() -> str:
+    from datetime import datetime
+
+    return datetime.now().astimezone().isoformat(timespec="milliseconds")
+
+
+def _two_swings_then_a_late_clip(client, trigger_ts: str | None):
+    """Swing A, swing B, then A's impact clip arriving after both closed.
+
+    Returns ``(shot_a, shot_b, shot_the_clip_joined)``.
+    """
+    captured_at = _capture_now()
+    shot_a = upload_body_swing(client).json()["shot_id"]
+    time.sleep(0.6)
+    shot_b = upload_body_swing(client).json()["shot_id"]
+    time.sleep(0.6)
+
+    hint = trigger_ts if trigger_ts is not None else captured_at
+    clip = upload_impact(client, **({} if trigger_ts == "" else {"trigger_ts": hint}))
+    return shot_a, shot_b, clip.json()["shot_id"]
+
+
+def test_a_late_clip_joins_the_swing_it_was_captured_with(trusting_client):
+    """The clip belongs to swing A and says so; it must not land on swing B
+    just because B happened more recently."""
+    shot_a, shot_b, joined = _two_swings_then_a_late_clip(trusting_client, None)
+    assert joined == shot_a
+    assert joined != shot_b
+
+    shot = trusting_client.get(f"/api/shots/{shot_a}").json()
+    assert shot["sources"] == {
+        "body_swing": True, "impact_strike": True, "telemetry": False
+    }
+    # And swing B is left honestly incomplete rather than wearing A's clip.
+    assert trusting_client.get(f"/api/shots/{shot_b}").json()["sources"][
+        "impact_strike"
+    ] is False
+
+
+def test_receipt_stamping_puts_a_late_clip_on_the_wrong_swing(stamping_client):
+    """This is the failure the setting exists to prevent, pinned so nobody
+    'simplifies' it away. Receipt stamping is still the right default for any
+    capture path whose clips arrive promptly."""
+    shot_a, shot_b, joined = _two_swings_then_a_late_clip(stamping_client, None)
+    assert joined == shot_b
+
+
+def test_an_implausible_clock_falls_back_to_receipt(trusting_client):
+    """Upload lag is seconds. A 27-year offset is a broken clock, and filing
+    the shot in 1999 is worse than pairing it to the wrong swing."""
+    _, shot_b, joined = _two_swings_then_a_late_clip(
+        trusting_client, "1999-01-01T00:00:00.000+00:00"
+    )
+    assert joined == shot_b
+    assert joined.startswith("2")
+
+
+def test_an_unparseable_trigger_ts_falls_back_to_receipt(trusting_client):
+    _, shot_b, joined = _two_swings_then_a_late_clip(trusting_client, "not-a-time")
+    assert joined == shot_b
+
+
+def test_a_missing_trigger_ts_falls_back_to_receipt(trusting_client):
+    _, shot_b, joined = _two_swings_then_a_late_clip(trusting_client, "")
+    assert joined == shot_b

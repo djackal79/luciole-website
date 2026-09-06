@@ -13,15 +13,17 @@ from __future__ import annotations
 
 import logging
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
+from ..config import Settings
 from ..correlator import MediaArrival
 from ..deps import CorrelatorDep, SettingsDep, require_token
-from ..models import SourceName
+from ..models import SourceName, parse_ts
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +62,33 @@ async def _stage_upload(upload: UploadFile, settings: SettingsDep) -> Path:
         staged.unlink(missing_ok=True)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="empty upload")
     return staged
+
+
+def _pairing_timestamp(settings: Settings, trigger_ts: str | None) -> float | None:
+    """Which clock the impact clip pairs on.
+
+    ``None`` means "stamp on receipt" -- the contract default, and correct for
+    any path where the clip arrives promptly. Store-and-forward capture (the
+    stock camera app plus a watcher) arrives seconds late, so with
+    ``impact_trust_trigger_ts`` the client's capture time is used instead,
+    provided it is close enough to now to be upload lag rather than a broken
+    clock.
+    """
+    if not settings.impact_trust_trigger_ts or not trigger_ts:
+        return None
+    parsed = parse_ts(trigger_ts)
+    if parsed is None:
+        log.warning("unparseable trigger_ts %r; stamping on receipt", trigger_ts)
+        return None
+    skew_ms = abs(parsed.timestamp() - time.time()) * 1000.0
+    if skew_ms > settings.trigger_ts_max_skew_ms:
+        log.warning(
+            "trigger_ts %s is %.0fms from now (max %dms); stamping on receipt",
+            trigger_ts, skew_ms, settings.trigger_ts_max_skew_ms,
+        )
+        return None
+    log.info("pairing impact clip on client trigger_ts %s (lag %.0fms)", trigger_ts, skew_ms)
+    return parsed.timestamp()
 
 
 def _local_source(raw_path: str) -> Path:
@@ -106,7 +135,8 @@ async def ingest_impact(
             width=width,
             height=height,
             trigger_hint=trigger_ts,
-        )
+        ),
+        received_at=_pairing_timestamp(settings, trigger_ts),
     )
     return {"shot_id": package.shot_id, "status": package.status, "shot": package.to_json()}
 

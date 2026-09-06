@@ -74,6 +74,18 @@ class Settings(BaseSettings):
     file_stable_interval_ms: int = 400
     file_stable_timeout_ms: int = 120_000
 
+    # ---- store-and-forward capture ----------------------------------------
+    #: The stock-camera + watcher path reaches the PC seconds after the strike
+    #: (Samsung processes the clip, then it uploads), so receipt time cannot
+    #: pair it -- and a wider window would pair it to the *next* swing. When
+    #: set, a plausible client-supplied trigger_ts is used for impact clips
+    #: instead. Off by default: the contract's rule is that the PC stamps on
+    #: receipt, and that is right for any live-trigger capture path.
+    impact_trust_trigger_ts: bool = False
+    #: A trigger_ts further than this from receipt time is a broken clock, not
+    #: upload lag. Such a hint is ignored and the clip stamped on receipt.
+    trigger_ts_max_skew_ms: int = 30_000
+
     # ---- uploads ----------------------------------------------------------
     max_upload_bytes: int = 512 * 1024 * 1024
     #: Optional shared secret; when set, ingest requires ``X-Golfsim-Token``.

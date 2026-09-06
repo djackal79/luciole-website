@@ -9,6 +9,7 @@ those packages and nothing else.
 | [`CONTRACT.md`](CONTRACT.md) | The Build 1 ↔ Build 2 schema contract. The authority for both builds. |
 | [`DEPLOY.md`](DEPLOY.md) | Getting this onto the golf sim PC, LAN access, remote access |
 | [`HANDOVER.md`](HANDOVER.md) | Build 2 brief: scope, traps, fixtures, definition of done |
+| [`android/impact-watcher/`](android/impact-watcher/README.md) | S23 app: stock camera → impact clip upload |
 
 This implements the **Build 1 ↔ Build 2 Contract** verbatim. Where the
 original Build 1 prompt disagreed with the contract, the contract won:

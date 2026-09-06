@@ -112,16 +112,26 @@ If the Automation hook can't be made to work, set
 back to the filesystem watcher. It's later and less precise; calibrate
 `GOLFSIM_KINOVEA_LAG_MS` upward until swings pair reliably.
 
-### Phone
+### Phone (S23, stock camera)
 
-Two options.
+Install the Impact Watcher app from `android/impact-watcher` — it watches the
+stock Camera app's output and uploads each clip. Full setup in
+[`android/impact-watcher/README.md`](android/impact-watcher/README.md).
 
-**USB (recommended).** `adb reverse tcp:8000 tcp:8000`, then the phone posts to
-`http://127.0.0.1:8000/api/ingest/impact` over the cable. No Wi-Fi dependency,
-no firewall rule, sub-millisecond round trip.
+**This path needs two settings in `.env`:**
 
-**Wi-Fi.** Post to `http://<sim-pc-ip>:8000/api/ingest/impact`. Find the IP with
-`ipconfig`; use 5 GHz.
+```ini
+GOLFSIM_IMPACT_TRUST_TRIGGER_TS=true
+GOLFSIM_LATE_ATTACH_MS=30000
+```
+
+Super Slow-mo is store-and-forward: the clip reaches the PC 4–9 s after the
+strike. Without these, it misses its own shot and pairs to the next swing.
+
+Point the app at `http://<sim-pc-ip>:8000`, which needs the firewall rule
+below. (`adb reverse tcp:8000 tcp:8000` over USB also works and avoids Wi-Fi
+entirely, but tethering the phone to the mat is usually more nuisance than the
+firewall rule.)
 
 ---
 

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The golf sim PC is reached over the LAN by IP on plain HTTP, and the IP is
+  set at runtime in the app, so cleartext has to be permitted broadly here.
+
+  There is no way to scope this to a private address range: domain-config
+  matches DNS names, not CIDR blocks, and an IP literal only ever matches
+  itself. Listing 192.168.0.0 would NOT match 192.168.1.50 -- it would just
+  break the connection silently.
+
+  If you want this tightened, replace the base-config below with a
+  domain-config naming your PC's exact address, and rebuild when it changes:
+
+      <base-config cleartextTrafficPermitted="false" />
+      <domain-config cleartextTrafficPermitted="true">
+          <domain includeSubdomains="false">192.168.1.50</domain>
+      </domain-config>
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
