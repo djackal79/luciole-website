@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { ShotPackage, ShotPatch, WebSocketEnvelope, PressureSample, BiomechanicsSample } from '../types/contract';
 import mockShotsData from '../../../mocks/shots.json';
 import { getStoredSupabaseConfig, saveStoredSupabaseConfig } from '../services/supabase';
+import { fetchShots } from '../services/api';
 
 // Local storage key for offline patch persistence
 const STORAGE_PATCHES_KEY = 'golf_studio_local_patches';
@@ -208,6 +209,7 @@ interface ShotStoreState {
   // Actions
   selectShot: (shotId: string) => void;
   loadScenario: (index: number) => void;
+  loadShotsFromBackend: () => Promise<void>;
   toggleDistanceUnit: () => void;
   toggleHistoryDrawer: () => void;
   setWsStatus: (status: 'connected' | 'connecting' | 'disconnected') => void;
@@ -255,6 +257,24 @@ export const useShotStore = create<ShotStoreState>((set, get) => ({
       set({ currentShotId: shots[index].shot_id });
     }
   },
+
+  loadShotsFromBackend: async () => {
+    try {
+      const remoteShots = await fetchShots();
+      if (Array.isArray(remoteShots) && remoteShots.length > 0) {
+        const enriched = enrichMockShots(remoteShots);
+        set((state) => ({
+          shots: enriched,
+          currentShotId: enriched.find((s) => s.shot_id === state.currentShotId)
+            ? state.currentShotId
+            : enriched[0].shot_id
+        }));
+      }
+    } catch (err) {
+      console.warn('[shotStore] Real backend shots fetch fallback to cache:', err);
+    }
+  },
+
 
   toggleDistanceUnit: () => {
     set((state) => ({

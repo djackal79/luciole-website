@@ -26,6 +26,7 @@ const queryClient = new QueryClient({
 export const AppContent: React.FC = () => {
   const currentShot = useShotStore((s) => s.getCurrentShot());
   const toggleHistoryDrawer = useShotStore((s) => s.toggleHistoryDrawer);
+  const loadShotsFromBackend = useShotStore((s) => s.loadShotsFromBackend);
   const { currentTheme } = useThemeStore();
   const isBoutique = currentTheme === 'boutique';
 
@@ -43,10 +44,11 @@ export const AppContent: React.FC = () => {
   const impactContainerFps = currentShot?.media.impact_strike?.container_fps ?? null;
   const containerFps = bodyContainerFps ?? impactContainerFps ?? 30.0;
 
-  // Initialize WebSocket connection to backend on mount
+  // Initialize WebSocket connection and fetch real shots from backend on mount
   useEffect(() => {
     initWebSocket();
-  }, []);
+    loadShotsFromBackend();
+  }, [loadShotsFromBackend]);
 
   // Global Keyboard Shortcuts
   useEffect(() => {

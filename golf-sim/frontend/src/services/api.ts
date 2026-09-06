@@ -1,5 +1,5 @@
 import type { HealthResponse, SessionStartResponse, ListenerToggleResponse } from '../types/diagnostics';
-import type { ShotPatch } from '../types/contract';
+import type { ShotPatch, ShotPackage } from '../types/contract';
 
 const BACKEND_URL = ''; // Proxied by Vite in dev mode
 
@@ -80,3 +80,12 @@ export async function patchShotRemote(shotId: string, patch: ShotPatch): Promise
     body: JSON.stringify(patch)
   });
 }
+
+export async function fetchShots(): Promise<ShotPackage[]> {
+  const res = await fetch(`${BACKEND_URL}/api/shots`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch shots: ${res.status}`);
+  }
+  return await res.json();
+}
+
