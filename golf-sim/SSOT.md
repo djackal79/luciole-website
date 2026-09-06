@@ -59,7 +59,7 @@ will you in three weeks.
 |---|---|
 | Backend + frontend on the sim PC | **Working.** Mock shots render, pairing verified |
 | GSPro socket ← SQG-GSPRO-Connect | **Working.** Bridge connects, protocol confirmed |
-| Square LM → bridge (Bluetooth) | **Blocked.** Monitor not registering the ball — D12 |
+| Square LM (original, **not Omni**) → SQG-GSPRO-Connect | **Blocked.** Monitor not registering the ball — D12 |
 | Kinovea post-recording hooks | Configured; per capture screen, not Preferences |
 | Kinovea capture trigger | **Not found yet** — D13 |
 | Phone watcher | Not started |
@@ -111,7 +111,7 @@ are now answered; their decisions are recorded below and are binding.
 | D11 | Root-level route aliases duplicate the contract paths | Low | Converge |
 | D12 | Square LM not registering the ball | **Blocking hardware** | Vendor-side |
 | D13 | Kinovea capture trigger not located | Medium | Research |
-| D14 | flighthook could replace the LM bridge, drop-in | — | **Recommended**, try next session |
+| D14 | flighthook could replace the LM bridge | — | **Ruled out** — Omni only, bay has the original Square |
 
 ### D0 — The frontend is not in the repo
 
@@ -215,7 +215,22 @@ Left in place rather than deleted, since the app calls them. But the `/api/*`
 paths are canonical, and two routes for one thing will drift. Worth converging
 on `/api/session/end` and dropping the aliases when convenient.
 
-### D14 — flighthook as the launch monitor bridge — RECOMMENDED
+### D14 — flighthook as the launch monitor bridge — NOT APPLICABLE
+
+**Ruled out: the bay has the original Square LM, not the Omni.** flighthook
+supports the Omni only — the original Square and Square Home use a different
+club-code scheme and are explicitly unsupported. Recorded here so nobody
+re-proposes it.
+
+**SQG-GSPRO-Connect therefore stays**, and the pass-through built into this
+backend matters more than it did: that bridge forwards to exactly one target,
+so relaying through this listener is the *only* way to run the app and GSPro
+together. Without it, it is one or the other.
+
+The DMCA'd `squaregolf-connector` may well have covered the original unit,
+which is why its absence is felt. Nothing to do about that.
+
+The rest of this entry is kept for reference should the hardware change.
 
 [divotmaker/flighthook](https://github.com/divotmaker/flighthook) is a
 maintained Rust bridge that talks to the **Square Golf Omni over BLE directly**
@@ -254,11 +269,11 @@ however appealing "one fewer moving part" sounds: that is exactly the
 dependency that gets removed. Keep a local copy of whichever bridge binary is
 in use.
 
-Its device notes also carry a finding relevant to the current
-ball-detection problem: a ball struck near the **front edge of the detection
-zone** comes back with zero spin, which flighthook discards as a failed read.
-That points at ball placement in the zone, consistent with the advice to raise
-the unit and keep the ball on the laser dot.
+One finding may still transfer, as a hypothesis rather than a fact: on the
+Omni, a ball struck near the **front edge of the detection zone** returns zero
+spin, which flighthook treats as a failed read. If the original unit shares
+that geometry it points at ball placement, alongside the advice to raise the
+unit and keep the ball on the laser dot.
 
 ### D4 — Media URL — VERIFIED CORRECT
 
