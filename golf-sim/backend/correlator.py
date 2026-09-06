@@ -107,11 +107,19 @@ class ShotCorrelator:
             await self.close_all()
 
     async def reset_session(self, session_id: str) -> None:
-        """Start a new session; the frontend clears its history drawer."""
+        """Start a new session; the frontend clears its history drawer.
+
+        Restarts the reaper defensively. A caller that stopped the correlator
+        first would otherwise leave it running without one, and every
+        subsequent shot would sit open forever instead of timing out into
+        ``partial`` -- silent, and invisible until someone noticed no shot ever
+        completed again.
+        """
         await self.close_all()
         async with self._lock:
             self.session_id = session_id
             self._tracked.clear()
+        await self.start()
         self.bus.publish(events.SESSION_RESET, {"session_id": session_id})
         log.info("session reset -> %s", session_id)
 

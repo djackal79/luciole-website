@@ -34,7 +34,7 @@ will you in three weeks.
 | Shot pairing correlator | Claude Code | **Done** | `backend/correlator.py` |
 | S23 impact watcher (Android) | Claude Code | **Written, untested on hardware** | `android/impact-watcher/` |
 | Mock fixtures (7 scenarios) | Claude Code | **Done** | `mocks/shots.json` |
-| Frontend (React/Vite) | Antigravity | **Built, NOT IN THE REPO** | *nowhere — see D0* |
+| Frontend (React/Vite) | Antigravity | **In the repo, builds clean** | `frontend/` |
 | Pose extraction (2D) | Claude Code | **Done** — MediaPipe, async, tested live | `backend/pose/` |
 | 3D biomechanics | Claude Code | Blocked on camera calibration | — |
 | Pressure / force mat | Claude Code | **Schema + fixtures shipped**; ingest deferred | `scripts/_sidecars.py` |
@@ -81,16 +81,18 @@ are now answered; their decisions are recorded below and are binding.
 
 | # | Divergence | Severity | Status |
 |---|---|---|---|
-| D0 | Frontend exists only on Antigravity's machine | **Blocking** | Open |
+| D0 | Frontend exists only on Antigravity's machine | — | **Closed** — pushed, 36 files, builds |
 | D1 | UI shows 3 cameras; contract has 2 video sources | High | **Shipped** — `body_swing_dtl` |
 | D2 | Pressure mat UI has no backend or schema | Medium | **Schema shipped**, ingest deferred |
 | D3 | 3D biomech UI has no pose data source | High | Scoped — triangulation, needs calibration |
-| D4 | Media URL shape may not match the backend route | High | Verify |
+| D4 | Media URL shape may not match the backend route | — | **Verified correct** |
 | D5 | Master timeline is ambiguous with clips of differing fps/duration | Medium | **Shipped** — per-clip `impact_ms` |
 | D6 | Supabase sync is outside the contract entirely | Medium | **Resolved** — backend writes metrics |
-| D7 | "Side Offline 8.3 YDS R" equals the spin axis magnitude | Medium | Verify |
+| D7 | "Side Offline 8.3 YDS R" equals the spin axis magnitude | — | **Verified correct** |
 | D8 | Two Kinovea cameras collide on one ingest endpoint | High | **Fixed** — routed on `source` |
 | D9 | Frontend owns the Supabase write path | Medium | **New** — see D6 |
+| D10 | `POST /session/end` cancelled the shot reaper | High | **Found and fixed** |
+| D11 | Root-level route aliases duplicate the contract paths | Low | Converge |
 
 ### D0 — The frontend is not in the repo
 
@@ -171,16 +173,35 @@ useful and needs no calibration at all. Add triangulated 3D once the
 calibration step exists. The panel should say which mode it is showing rather
 than implying quaternions it does not have.
 
-### D4 — Media URL
+### D10 — `/session/end` cancelled the shot reaper — FIXED
 
-The brief describes `api.ts` calling `/shots/{id}/media/{kind}`. The backend
-serves `GET /shots/{folder}/{filename}`, where `folder` is `shot_{shot_id}`
-(with the prefix) and `filename` comes from `metadata.media.<source>.path`.
-If the code does what the prose says, every video 404s.
+Antigravity's `POST /session/end` called `correlator.stop(flush=True)`, which
+cancels the reaper task. Nothing restarted it, so after one "end session" no
+shot could ever time out into `partial` again for the life of the process —
+shots would close only when all three sources happened to arrive. Silent, and
+invisible until somebody noticed nothing ever completed.
 
-Likely the prose is loose and the code is right — the screenshots render, but
-they render *canvas simulations*, which would look identical either way.
-**Verify against a running backend**, not against internal mocks.
+Fixed on both sides: the endpoint now flushes rather than tearing down, and
+`reset_session` restarts the reaper defensively so any future caller cannot
+reproduce it. Two regression tests pin it.
+
+### D11 — Root-level route aliases
+
+The frontend added unprefixed aliases: `/health`, `/session/start`,
+`/session/end`, `/listener/toggle`, duplicating the contract's `/api/*` paths.
+They work, and `/session/end` is genuinely useful — the contract has no way to
+end a session.
+
+Left in place rather than deleted, since the app calls them. But the `/api/*`
+paths are canonical, and two routes for one thing will drift. Worth converging
+on `/api/session/end` and dropping the aliases when convenient.
+
+### D4 — Media URL — VERIFIED CORRECT
+
+The brief described `/shots/{id}/media/{kind}`, which does not exist. The code
+builds `/shots/shot_${shot_id}/${media.path}`, which is exactly right. The
+prose was loose; the code was correct. Vite proxies both `/shots` and `/api`
+to port 8000 in dev.
 
 ### D5 — Master timeline
 
@@ -223,13 +244,12 @@ Sync must also be offline-tolerant. The sim PC shows `CLOUD: LOCAL OFFLINE`,
 and a shot must never be lost because the internet was down — the same outbox
 pattern the Android watcher uses for uploads.
 
-### D7 — Side offline
+### D7 — Side offline — VERIFIED CORRECT
 
-The trajectory card shows `SIDE OFFLINE 8.3 YDS R`. Fixture 1 has
-`spin_axis_deg: -8.3`. A lateral distance in yards should not be numerically
-identical to a spin axis in degrees — that smells like a field being reused.
-It also reads oddly: a negative spin axis is a left tilt, so a draw should
-finish left of where it started.
+The pushed code computes a genuine estimate — HLA displacement plus a
+spin-axis curve term, correctly signed so a negative axis finishes left — and
+gates it behind `hasRawCarry`, showing "est" or an em-dash otherwise. The
+`8.3` in the screenshot came from an earlier build.
 
 Estimated ballistics are a fine feature. **The rule is that estimates must
 never be written into `telemetry.distance` and never PATCHed back** — those

@@ -103,7 +103,10 @@ async def root_start_session(request: Request, correlator: CorrelatorDep, body: 
 async def root_end_session(request: Request, correlator: CorrelatorDep) -> dict[str, Any]:
     """End the current session and flush open shots."""
     old_session = correlator.session_id
-    await correlator.stop(flush=True)
+    # close_all(), not stop(): stop() cancels the reaper, and nothing here
+    # would bring it back. reset_session restarts it either way, but ending a
+    # session should never have torn down the worker in the first place.
+    await correlator.close_all()
     new_id = default_session_id()
     await correlator.reset_session(new_id)
     return {"ended_session_id": old_session, "new_session_id": new_id, "ok": True}

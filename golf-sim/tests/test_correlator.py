@@ -268,3 +268,30 @@ async def test_session_reset_closes_open_shots_and_announces(
 
     later = await correlator.submit_telemetry(telemetry())
     assert later.session_id == "20260906-afternoon"
+
+
+async def test_ending_a_session_leaves_a_working_reaper(correlator, settings, tmp_path):
+    """Regression: /session/end used to stop() the correlator, cancelling the
+    reaper with nothing to restart it. Every later shot then stayed open
+    forever instead of timing out into partial -- silent, and invisible until
+    somebody noticed nothing ever completed again."""
+    settings.pair_window_ms = 200
+    await correlator.start()
+    await correlator.reset_session("20260906-afternoon")
+
+    package = await correlator.submit_media(media(tmp_path, SourceName.BODY_SWING, "a.mp4"))
+    await asyncio.sleep(0.5)
+    assert metadata_of(settings, package.shot_id)["status"] == "partial"
+    await correlator.stop()
+
+
+async def test_reset_session_recovers_a_stopped_correlator(correlator, settings, tmp_path):
+    settings.pair_window_ms = 200
+    await correlator.start()
+    await correlator.stop(flush=True)          # as /session/end used to do
+    await correlator.reset_session("recovered")
+
+    package = await correlator.submit_media(media(tmp_path, SourceName.BODY_SWING, "b.mp4"))
+    await asyncio.sleep(0.5)
+    assert metadata_of(settings, package.shot_id)["status"] == "partial"
+    await correlator.stop()
