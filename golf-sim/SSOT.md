@@ -111,6 +111,7 @@ are now answered; their decisions are recorded below and are binding.
 | D11 | Root-level route aliases duplicate the contract paths | Low | Converge |
 | D12 | Square LM not registering the ball | **Blocking hardware** | Vendor-side |
 | D13 | Kinovea capture trigger not located | Medium | Research |
+| D14 | flighthook could replace the LM bridge, drop-in | — | **Recommended**, try next session |
 
 ### D0 — The frontend is not in the repo
 
@@ -213,6 +214,38 @@ end a session.
 Left in place rather than deleted, since the app calls them. But the `/api/*`
 paths are canonical, and two routes for one thing will drift. Worth converging
 on `/api/session/end` and dropping the aliases when convenient.
+
+### D14 — flighthook as the launch monitor bridge — RECOMMENDED
+
+[divotmaker/flighthook](https://github.com/divotmaker/flighthook) is a
+maintained Rust bridge that talks to the **Square Golf Omni over BLE directly**
+(GATT, no pairing) and forwards to GSPro. Its GSPro target is configurable:
+
+```toml
+[gspro.0]
+address = "127.0.0.1:922"   # this backend, not GSPro
+```
+
+which means it drops into the existing chain with **no code change here**:
+
+```
+Square Omni --BLE--> flighthook --OpenConnect--> this backend (922) --relay--> GSPro (921)
+```
+
+It replaces SQG-GSPRO-Connect, removing the intermediate app and the link that
+does not auto-reconnect. It also exposes its own REST/WebSocket shot stream on
+5880, which is an alternative to impersonating Open Connect, but the drop-in
+above needs nothing written so it is the one to try first.
+
+**Caveat: only the Omni is supported.** The original Square and Square Home use
+a different club-code scheme and are explicitly unsupported. Confirm which unit
+is in the bay before switching.
+
+Its device notes also carry a finding relevant to the current
+ball-detection problem: a ball struck near the **front edge of the detection
+zone** comes back with zero spin, which flighthook discards as a failed read.
+That points at ball placement in the zone, consistent with the advice to raise
+the unit and keep the ball on the laser dot.
 
 ### D4 — Media URL — VERIFIED CORRECT
 
