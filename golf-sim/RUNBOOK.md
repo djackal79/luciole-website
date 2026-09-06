@@ -221,13 +221,19 @@ curl.exe -X POST "http://127.0.0.1:8000/api/listeners/gspro?enabled=false"
 
 ### 5b — Kinovea, both cameras
 
-Options → Preferences → Capture → **Automation** → "command after capture".
+**Right-click the capture screen's viewport background → "Post-recording
+command…"**. It is a per-capture-screen setting, not a global preference,
+which suits two cameras exactly: each screen gets its own.
 
-- Face-on camera → `scripts\kinovea_hook.bat`
-- Down-the-line camera → `scripts\kinovea_hook_dtl.bat`
+- Face-on screen → `C:\luciole-website\golf-sim\scripts\kinovea_hook.bat`
+- Down-the-line screen → `C:\luciole-website\golf-sim\scripts\kinovea_hook_dtl.bat`
 
-Pass the recorded filename as the argument; the macro name differs between
-Kinovea versions, so check the hint text next to the field.
+Pass the recorded file path as the argument, in quotes. The dialog lists the
+variables Kinovea offers; use whichever names the output file.
+
+**Every run appends to `data\kinovea_hook.log`.** Kinovea closes the console
+instantly, so that file is the only way to see whether the hook fired, what
+path it received, and what the backend said.
 
 **Each camera must use its own .bat.** They differ by one line — `SOURCE`. If
 both send the same source, the backend reads the second clip as a *second

@@ -1,22 +1,21 @@
 @echo off
-REM Kinovea Automation hook -> golf sim backend.
+REM Kinovea post-recording command -> golf sim backend.
 REM
-REM Options -> Preferences -> Capture -> Automation, "command after capture".
-REM Point it at this file and pass the recorded filename as the argument. The
-REM macro name for the filename varies by Kinovea version -- check the hint text
-REM next to the field in your build.
+REM Right-click the capture screen's viewport background and choose
+REM "Post-recording command...". The setting is PER CAPTURE SCREEN, so each
+REM camera gets its own -- which is exactly what you want:
 REM
-REM TWO CAMERAS: copy this file once per camera and set SOURCE below. Both
-REM hooks fire within milliseconds of each other, and if they post the same
-REM source the backend reads the second clip as a SECOND SWING and doubles
-REM every shot. SOURCE is what keeps them apart.
+REM   face-on screen        this file          (SOURCE=body_swing)
+REM   down-the-line screen  kinovea_hook_dtl.bat (SOURCE=body_swing_dtl)
 REM
-REM   face-on camera      SOURCE=body_swing      CAMERA=face_on
-REM   down-the-line       SOURCE=body_swing_dtl  CAMERA=dtl
+REM If both screens ran the same file, the backend would read the second clip
+REM as a SECOND SWING and silently double every shot. SOURCE keeps them apart.
 REM
-REM Kinovea runs on this PC, so the hook hands over a PATH rather than uploading
-REM the file. The backend copies it into the shot folder and leaves your
-REM original where Kinovea put it.
+REM Pass the recorded file path as the argument. Check the dialog for the
+REM variable Kinovea offers for it, and wrap it in quotes.
+REM
+REM Every run appends to data\kinovea_hook.log -- Kinovea closes the console
+REM instantly, so that file is the only way to see what happened.
 
 setlocal
 
@@ -26,8 +25,20 @@ set CAPTURE_FPS=30
 set CONTAINER_FPS=30
 set CAMERA=face_on
 
+set LOG=%~dp0..\data\kinovea_hook.log
+if not exist "%~dp0..\data" mkdir "%~dp0..\data"
+
+echo. >> "%LOG%"
+echo [%date% %time%] %SOURCE% arg=[%~1] >> "%LOG%"
+
 if "%~1"=="" (
-  echo [kinovea_hook] no filename argument supplied
+  echo   FAILED: no filename argument. Check the variable in the >> "%LOG%"
+  echo   post-recording command dialog. >> "%LOG%"
+  exit /b 1
+)
+
+if not exist "%~1" (
+  echo   FAILED: file does not exist: %~f1 >> "%LOG%"
   exit /b 1
 )
 
@@ -36,11 +47,12 @@ curl.exe -sS -X POST "%BACKEND%/api/ingest/body_swing" ^
   -F "source=%SOURCE%" ^
   -F "capture_fps=%CAPTURE_FPS%" ^
   -F "container_fps=%CONTAINER_FPS%" ^
-  -F "camera=%CAMERA%"
+  -F "camera=%CAMERA%" >> "%LOG%" 2>&1
 
 if errorlevel 1 (
-  echo [kinovea_hook] POST failed -- is the backend running?
+  echo   FAILED: POST error -- is the backend running? >> "%LOG%"
   exit /b 1
 )
 
+echo. >> "%LOG%"
 endlocal
