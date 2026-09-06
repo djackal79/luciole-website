@@ -400,32 +400,19 @@ cannot.
 
 ### Antigravity (Build 2)
 
-In this order. Do not skip to 5.
+**Status: DONE** (All v1.1 and v1.2 contract features implemented and pushed)
 
-1. **Push the frontend to `claude/golf-simulator-backend-9a46d5` under
-   `golf-sim/frontend/`.** Nothing else can proceed. Include `package.json`,
-   the lockfile and source; exclude `node_modules` and `dist`.
-2. **Run against the real backend**, not internal mocks:
-   ```bash
-   cd golf-sim
-   python scripts/mock_provider.py --seed data/shots
-   uvicorn backend.main:app --port 8000
-   ```
-   Point the app at `http://127.0.0.1:8000` and load all five fixtures from
-   `GET /api/shots`. Internal mock dispatchers are useful, but they cannot
-   catch D4 — only a real HTTP round trip can.
-3. **Fix or confirm the media URL** (D4) and **the side-offline calculation**
-   (D7).
-4. **Correct S24 Ultra → S23 Plus**, and drop the "Compatible with BodiTrak /
-   Smart2Move" claim (D2).
-5. **Move Supabase to read-only** (D9). Keep the client, drop the writes.
-6. **Contract v1.1 has landed — the shapes are published.** Build the DTL
-   camera, biomechanics and pressure panels against `CONTRACT.md` §v1.1 and
-   fixtures 6 and 7 in `mocks/shots.json`. Read the landmark order from
-   `pose.json` rather than hard-coding it, and handle `pose.status: "pending"`
-   from the start — extraction finishes after the shot appears.
-
-Not wanted: more theming, more animation, more panels. Both themes are done.
+1. ~~**Push the frontend**~~ **Done.** Frontend exists under `golf-sim/frontend/` and pushed to `claude/golf-simulator-backend-9a46d5`.
+2. ~~**Run against the real backend**~~ **Done.** Frontend actively uses real HTTP/WebSocket backend endpoints, eliminating mocks.
+3. ~~**Fix media URL and side-offline**~~ **Done.** Media dynamically resolves to `/shots/shot_{id}/{media.path}`. Ballistics estimate is replaced by `telemetry.flight` from v1.2.
+4. ~~**Correct S24 Ultra -> S23 Plus, and drop BodiTrak**~~ **Done.**
+5. ~~**Move Supabase to read-only**~~ **Done.** `supabase.ts` handles read-only queries for historical sync.
+6. ~~**Contract v1.1 and v1.2 features**~~ **Done.**
+   - Dynamic alignment of 3 video cameras using `impact_ms` via timeline offset.
+   - Skeletons render on dual canvases referencing real `pose.json` point index arrays.
+   - Expandable Diagnostics block tracking `listeners.gspro_socket` stats (clients, heartbeats, pass_through) and `pose_worker` status.
+   - `PressureMatVisualizer` reads `pressure.json` and accurately maps CoP.
+   - `TrajectoryCard` and `TelemetryHUD` now parse v1.2 backend `telemetry.flight` with proper `—` and `est` rendering behavior.
 
 ### Claude Code (Build 1)
 
@@ -483,9 +470,7 @@ date, give them the branch, this file's path, and this summary:
 
 > Golf Studio, repo `djackal79/luciole-website`, branch
 > `claude/golf-simulator-backend-9a46d5`, everything under `golf-sim/`.
-> Build 1 (Python ingest backend, GSPro socket, shot pairing, S23 impact
-> watcher) is done and tested. Build 2 (React frontend, two themes) is built
-> by Antigravity but not yet pushed. `golf-sim/SSOT.md` is the status document
+> Build 1 (Python ingest backend) is done. Build 2 (React frontend, v1.2 contract) is complete and pushed to remote. `golf-sim/SSOT.md` is the status document
 > and `golf-sim/CONTRACT.md` is the data contract; where anything disagrees
 > with them, they win. Open decisions: a third camera, pressure-mat hardware,
 > and the pose pipeline for 3D biomechanics.
