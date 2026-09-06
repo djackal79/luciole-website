@@ -6,6 +6,7 @@ those packages and nothing else.
 
 | Document | For |
 |---|---|
+| [`SSOT.md`](SSOT.md) | **Start here.** Project status, who owns what, open decisions, next steps. |
 | [`CONTRACT.md`](CONTRACT.md) | The Build 1 ↔ Build 2 schema contract. The authority for both builds. |
 | [`DEPLOY.md`](DEPLOY.md) | Getting this onto the golf sim PC, LAN access, remote access |
 | [`HANDOVER.md`](HANDOVER.md) | Build 2 brief: scope, traps, fixtures, definition of done |

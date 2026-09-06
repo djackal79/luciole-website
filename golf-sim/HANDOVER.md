@@ -3,6 +3,10 @@
 **Read `CONTRACT.md` first. It is the authority.** Where it disagrees with any
 prompt, including this one, the contract wins.
 
+> **Current status and next steps live in [`SSOT.md`](SSOT.md), not here.**
+> This file is the standing brief for what Build 2 is; the SSOT is what is
+> built, what diverged, and what to do next. Read both.
+
 ---
 
 ## What this project is
