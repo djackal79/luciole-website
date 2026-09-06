@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-SIDECAR_SCHEMA_VERSION = "1.0"
+SIDECAR_SCHEMA_VERSION = "1.1"
 
 #: MediaPipe Pose landmark order. The pipeline emits these indices, so the
 #: fixtures must use the same order or the frontend will wire up a skeleton
@@ -158,16 +158,16 @@ def _pose_frame(turn: float, hand_swing: float) -> list[list[float]]:
     return [frame[name] for name in MEDIAPIPE_LANDMARKS]
 
 
-def build_pose(
+def build_pose_track(
     *,
-    camera: str = "body_swing",
+    camera: str = "face_on",
     fps: float = 30.0,
     duration_ms: int = 4000,
     impact_ms: int = 2450,
     width: int = 1280,
     height: int = 720,
 ) -> dict[str, Any]:
-    """A 2D pose track, as monocular MediaPipe would produce it."""
+    """One camera's landmark track."""
     step_ms = 1000.0 / fps
     frames = []
     t = 0.0
@@ -184,6 +184,33 @@ def build_pose(
         t += step_ms
 
     return {
+        "camera": camera,
+        "fps": fps,
+        "width": width,
+        "height": height,
+        "impact_ms": impact_ms,
+        "frame_count": len(frames),
+        "frames": frames,
+    }
+
+
+def build_pose(
+    *,
+    cameras: dict[str, str] | None = None,
+    impact_ms: int = 2450,
+    duration_ms: int = 4000,
+) -> dict[str, Any]:
+    """A 2D pose file, as monocular MediaPipe produces it.
+
+    Keyed by media source rather than carrying one camera, because two Kinovea
+    cameras run and the player draws a skeleton over each view. It is also
+    where a triangulated ``world`` track will sit once the cameras are
+    calibrated.
+    """
+    cameras = cameras or {"body_swing": "face_on"}
+    rates = {"body_swing": 30.0, "body_swing_dtl": 60.0}
+
+    return {
         "schema_version": SIDECAR_SCHEMA_VERSION,
         "model": "mediapipe_pose_lite",
         # 2D: normalised image coordinates in [0,1], origin top-left, plus a
@@ -192,13 +219,15 @@ def build_pose(
         "coordinate_space": "normalised_image",
         "point_format": ["x", "y", "visibility"],
         "landmarks": MEDIAPIPE_LANDMARKS,
-        "camera": camera,
-        "fps": fps,
-        "width": width,
-        "height": height,
-        "impact_ms": impact_ms,
-        "frame_count": len(frames),
-        "frames": frames,
+        "tracks": {
+            source: build_pose_track(
+                camera=camera,
+                fps=rates.get(source, 30.0),
+                duration_ms=duration_ms,
+                impact_ms=impact_ms,
+            )
+            for source, camera in cameras.items()
+        },
     }
 
 

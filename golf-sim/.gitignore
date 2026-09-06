@@ -1,5 +1,6 @@
 .env
 data/
+models/
 mocks/**/*.mp4
 __pycache__/
 *.pyc

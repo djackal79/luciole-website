@@ -38,6 +38,12 @@ async def health(
                 "watch_dir": str(settings.kinovea_export_dir),
             },
             "phone_endpoint": {"live": True, "endpoint": "/api/ingest/impact"},
+            "pose_worker": {
+                "live": request.app.state.pose.live,
+                "enabled": settings.pose_enabled,
+                "model": str(settings.pose_model_path),
+                "reason": request.app.state.pose.extractor.available(),
+            },
         },
         "pairing": {
             "window_ms": settings.pair_window_ms,

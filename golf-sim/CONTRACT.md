@@ -387,26 +387,36 @@ same way:
 t_from_impact = t_ms - impact_ms
 ```
 
-`pose.json`:
+`pose.json` — **keyed by camera**, because two Kinovea cameras run and the
+player draws a skeleton over each view. It is also where a triangulated
+`world` track will sit once the cameras are calibrated.
 
 ```json
 {
-  "schema_version": "1.0",
-  "model": "mediapipe_pose_lite",
+  "schema_version": "1.1",
+  "model": "mediapipe_pose",
   "dimensions": "2d",
   "coordinate_space": "normalised_image",
   "point_format": ["x", "y", "visibility"],
   "landmarks": ["nose", "left_eye_inner", "..."],
-  "camera": "body_swing",
-  "fps": 30.0,
-  "width": 1280, "height": 720,
-  "impact_ms": 2450,
-  "frame_count": 120,
-  "frames": [
-    { "t_ms": 0, "points": [[0.5, 0.2, 0.95], "..."] }
-  ]
+  "tracks": {
+    "body_swing": {
+      "camera": "face_on",
+      "fps": 30.0,
+      "width": 1280, "height": 720,
+      "impact_ms": 2450,
+      "frame_count": 120,
+      "detection_rate": 0.98,
+      "frames": [ { "t_ms": 0, "points": [[0.5, 0.2, 0.95], "..."] } ]
+    },
+    "body_swing_dtl": { "...": null }
+  }
 }
 ```
+
+`detection_rate` is the fraction of sampled frames where the model found the
+golfer. A few misses are normal (motion blur at impact); a low rate means the
+framing is wrong, and the summary metrics are suppressed below 60%.
 
 `landmarks` is the **MediaPipe Pose order**, and `points` indexes into it.
 Use the order from the file rather than hard-coding it, or a skeleton that

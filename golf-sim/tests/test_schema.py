@@ -178,13 +178,19 @@ def test_sidecar_shapes():
     sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "scripts"))
     from _sidecars import MEDIAPIPE_LANDMARKS, build_pose, build_pressure
 
-    pose = build_pose(impact_ms=2450)
+    pose = build_pose(
+        cameras={"body_swing": "face_on", "body_swing_dtl": "dtl"}, impact_ms=2450
+    )
     assert pose["dimensions"] == "2d"
     assert pose["coordinate_space"] == "normalised_image"
     assert pose["landmarks"] == MEDIAPIPE_LANDMARKS
-    assert len(pose["frames"][0]["points"]) == 33
-    assert all(0.0 <= c <= 1.0 for c in pose["frames"][0]["points"][0][:2])
-    assert pose["impact_ms"] == 2450
+    # Keyed by media source: two cameras run, and the player draws a skeleton
+    # over each view.
+    assert set(pose["tracks"]) == {"body_swing", "body_swing_dtl"}
+    face_on = pose["tracks"]["body_swing"]
+    assert face_on["impact_ms"] == 2450
+    assert len(face_on["frames"][0]["points"]) == 33
+    assert all(0.0 <= c <= 1.0 for c in face_on["frames"][0]["points"][0][:2])
 
     pressure = build_pressure(impact_ms=2450)
     at_impact = min(pressure["samples"], key=lambda s: abs(s["t_ms"] - 2450))

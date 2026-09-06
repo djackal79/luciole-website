@@ -78,6 +78,9 @@ class ShotCorrelator:
     def __init__(self, settings: Settings, bus: EventBus, session_id: str) -> None:
         self.settings = settings
         self.bus = bus
+        #: Set by the app once the pose worker exists. Optional, so the
+        #: correlator stays usable on its own in tests.
+        self.pose_pipeline: Any | None = None
         self.session_id = session_id
         #: Current club selection. Stamped onto every new shot, whichever
         #: source opens it, so a video-only shot is still labelled.
@@ -216,6 +219,7 @@ class ShotCorrelator:
 
         if complete:
             event = events.SHOT_COMPLETED
+            self._request_pose(shot)
         elif how == "created":
             event = events.SHOT_CREATED
         else:
@@ -236,6 +240,17 @@ class ShotCorrelator:
         await asyncio.to_thread(
             storage.write_metadata, shot.directory, shot.package.to_json()
         )
+
+    def _request_pose(self, shot: TrackedShot) -> None:
+        """Queue extraction once, when the shot closes and a clip exists."""
+        if self.pose_pipeline is None:
+            return
+        if not any(
+            shot.package.sources.get(source.value)
+            for source in (SourceName.BODY_SWING, SourceName.BODY_SWING_DTL)
+        ):
+            return
+        self.pose_pipeline.enqueue(shot.package.shot_id)
 
     def _publish(self, event_type: str, shot: TrackedShot) -> None:
         self.bus.publish(event_type, shot.package.to_json(), shot_id=shot.package.shot_id)
@@ -272,6 +287,7 @@ class ShotCorrelator:
         shot.closed_at = now
         await self._persist(shot)
         self._publish(events.SHOT_COMPLETED, shot)
+        self._request_pose(shot)
         log.info(
             "shot.completed %s (partial) missing=%s",
             shot.package.shot_id,
@@ -321,6 +337,42 @@ class ShotCorrelator:
 
             await asyncio.to_thread(storage.write_metadata, directory, metadata)
             self.bus.publish(events.SHOT_PATCHED, metadata, shot_id=shot_id)
+            return metadata
+
+    async def set_pose(self, shot_id: str, block: dict[str, Any]) -> dict[str, Any] | None:
+        """Merge a pose block into a shot, wherever it currently lives.
+
+        Routed through the correlator rather than written straight to disk: a
+        shot may still be tracked in memory and may still late-attach a
+        straggler, and that next write would clobber a pose block written
+        behind its back.
+        """
+        async with self._lock:
+            tracked = next(
+                (s for s in self._tracked if s.package.shot_id == shot_id), None
+            )
+            directory = tracked.directory if tracked else self._shot_dir(shot_id)
+            if directory is None:
+                return None
+
+            if tracked is not None:
+                metadata = tracked.package.to_json()
+            else:
+                metadata = storage.load_metadata(directory)
+                if metadata is None:
+                    return None
+
+            merged = {**(metadata.get("pose") or {}), **block}
+            metadata["pose"] = merged
+            # Pose counts as a present source only once it is actually
+            # readable -- a pending extraction is not data the UI can draw.
+            metadata["sources"]["pose"] = merged.get("status") == "ready"
+
+            if tracked is not None:
+                tracked.package = ShotPackage.model_validate(metadata)
+
+            await asyncio.to_thread(storage.write_metadata, directory, metadata)
+            self.bus.publish(events.SHOT_UPDATED, metadata, shot_id=shot_id)
             return metadata
 
     def _shot_dir(self, shot_id: str) -> Path | None:

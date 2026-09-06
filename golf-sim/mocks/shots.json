@@ -564,7 +564,8 @@
       "model": "mediapipe_pose_lite",
       "dimensions": "2d",
       "cameras": [
-        "body_swing"
+        "body_swing",
+        "body_swing_dtl"
       ],
       "frame_count": 120,
       "error": null,
@@ -574,7 +575,7 @@
         "shoulder_turn_deg": null,
         "pelvis_rotation_deg": null,
         "x_factor_deg": null,
-        "hand_speed_mph": 21.4
+        "hand_speed_mph": null
       }
     },
     "pressure": {
@@ -711,7 +712,8 @@
       "model": null,
       "dimensions": null,
       "cameras": [
-        "body_swing"
+        "body_swing",
+        "body_swing_dtl"
       ],
       "frame_count": null,
       "error": null,

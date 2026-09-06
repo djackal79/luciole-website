@@ -26,6 +26,7 @@ from .config import get_settings
 from .correlator import ShotCorrelator
 from .events import EventBus
 from .gspro import GSProListener
+from .pose.pipeline import PosePipeline
 from .routers import ingest, shots, system, ws
 from .routers.system import default_session_id
 from .watcher import KinoveaWatcher
@@ -46,6 +47,8 @@ async def lifespan(app: FastAPI):
     session_id = settings.session_id or default_session_id()
     correlator = ShotCorrelator(settings, bus, session_id)
     gspro = GSProListener(settings, correlator)
+    pose = PosePipeline(settings, correlator)
+    correlator.pose_pipeline = pose
     watcher = (
         KinoveaWatcher(settings, correlator, asyncio.get_running_loop())
         if settings.kinovea_watch_enabled
@@ -56,9 +59,11 @@ async def lifespan(app: FastAPI):
     app.state.bus = bus
     app.state.correlator = correlator
     app.state.gspro = gspro
+    app.state.pose = pose
     app.state.watcher = watcher
 
     await correlator.start()
+    await pose.start()
     if settings.gspro_enabled:
         # A failure to bind is expected when GSPro itself is running; the
         # service stays up and the listener can be started later.
@@ -78,6 +83,7 @@ async def lifespan(app: FastAPI):
         if watcher is not None:
             watcher.stop()
         await gspro.stop()
+        await pose.stop()
         # Close whatever is still open so nothing is silently lost.
         await correlator.stop(flush=True)
         log.info("ingest stopped")

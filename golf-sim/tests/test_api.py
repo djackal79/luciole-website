@@ -119,7 +119,9 @@ def test_dtl_absence_does_not_make_a_shot_partial(client):
 def test_health_reports_each_listener(client):
     body = client.get("/api/health").json()
     assert body["ok"] is True
-    assert set(body["listeners"]) == {"gspro_socket", "kinovea_hook", "phone_endpoint"}
+    assert set(body["listeners"]) == {
+        "gspro_socket", "kinovea_hook", "phone_endpoint", "pose_worker"
+    }
     assert body["listeners"]["gspro_socket"]["port"] == 921
     assert body["listeners"]["phone_endpoint"]["endpoint"] == "/api/ingest/impact"
     assert body["pairing"]["window_ms"] == 3000

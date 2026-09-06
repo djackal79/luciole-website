@@ -289,12 +289,14 @@ def build_scenarios(base: datetime | None = None) -> list[ShotPackage]:
                 model="mediapipe_pose_lite",
                 # 2D until the cameras are calibrated for triangulation.
                 dimensions="2d",
-                cameras=["body_swing"],
+                cameras=["body_swing", "body_swing_dtl"],
                 frame_count=120,
                 summary=PoseSummary(
                     swing_plane_deg=62.4,
                     spine_angle_deg=31.2,
-                    hand_speed_mph=21.4,
+                    # Needs a real-world scale, which 2D does not have. Comes
+                    # with calibration, alongside the three below.
+                    hand_speed_mph=None,
                     # Monocular estimation cannot recover these honestly.
                     shoulder_turn_deg=None,
                     pelvis_rotation_deg=None,
@@ -342,7 +344,7 @@ def build_scenarios(base: datetime | None = None) -> list[ShotPackage]:
             telemetry=_telemetry(ball, club, moment, _raw(ball, club)),
             pose=PoseBlock(
                 status=DataStatus.PENDING,
-                cameras=["body_swing"],
+                cameras=["body_swing", "body_swing_dtl"],
             ),
             pressure=PressureBlock(status=DataStatus.UNAVAILABLE),
             club_used="7I",
@@ -402,7 +404,15 @@ def write_packages(packages: list[ShotPackage], root: Path, *, media: bool) -> N
         if package.pose and package.pose.path:
             (directory / package.pose.path).write_text(
                 json.dumps(
-                    build_pose(impact_ms=BODY_SWING_IMPACT_MS), separators=(",", ":")
+                    build_pose(
+                        cameras={
+                            source: package.media[source].camera
+                            for source in ("body_swing", "body_swing_dtl")
+                            if source in package.media
+                        },
+                        impact_ms=BODY_SWING_IMPACT_MS,
+                    ),
+                    separators=(",", ":"),
                 )
                 + "\n",
                 encoding="utf-8",

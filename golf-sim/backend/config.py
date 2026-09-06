@@ -78,6 +78,18 @@ class Settings(BaseSettings):
     file_stable_interval_ms: int = 400
     file_stable_timeout_ms: int = 120_000
 
+    # ---- pose extraction ---------------------------------------------------
+    pose_enabled: bool = True
+    #: Not shipped with the repo -- fetch once with scripts/fetch_pose_model.py.
+    pose_model_path: Path = Path("./models/pose_landmarker_lite.task")
+    #: Caps the sampling rate. Pose at 30 Hz is already finer than any swing
+    #: metric needs, so a 60 fps DTL clip is halved for nothing lost.
+    pose_max_fps: float = 30.0
+    pose_min_confidence: float = 0.5
+    #: Shots waiting on extraction. Beyond this, pose is skipped rather than
+    #: allowed to back up behind a range session.
+    pose_queue_size: int = 8
+
     # ---- store-and-forward capture ----------------------------------------
     #: The stock-camera + watcher path reaches the PC seconds after the strike
     #: (Samsung processes the clip, then it uploads), so receipt time cannot
@@ -99,7 +111,7 @@ class Settings(BaseSettings):
     ffprobe_path: str = "ffprobe"
     probe_timeout_seconds: float = 10.0
 
-    @field_validator("data_root", "kinovea_export_dir")
+    @field_validator("data_root", "kinovea_export_dir", "pose_model_path")
     @classmethod
     def _expand(cls, value: Path) -> Path:
         return Path(value).expanduser()

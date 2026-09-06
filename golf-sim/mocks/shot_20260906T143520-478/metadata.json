@@ -112,7 +112,8 @@
     "model": null,
     "dimensions": null,
     "cameras": [
-      "body_swing"
+      "body_swing",
+      "body_swing_dtl"
     ],
     "frame_count": null,
     "error": null,

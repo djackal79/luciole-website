@@ -1,0 +1,13 @@
+# Optional: pose extraction for the 3D biomechanics panel.
+#
+# Kept out of requirements.txt because mediapipe and opencv are ~200 MB and
+# the backend runs fine without them -- shots simply carry no pose.
+#
+#   pip install -r requirements-pose.txt
+#   python scripts/fetch_pose_model.py
+#
+# On Linux the estimator also needs system graphics libraries that are not
+# pip-installable:  apt-get install libegl1 libgles2
+# On Windows, mediapipe ships its own and nothing extra is needed.
+mediapipe>=0.10
+opencv-python>=4.9

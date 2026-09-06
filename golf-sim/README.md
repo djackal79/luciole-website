@@ -208,6 +208,39 @@ Kinovea's video timing setting.
 
 ---
 
+## Pose extraction
+
+Optional, and off the ingest path entirely: a shot is written and announced
+first, pose is marked `pending`, computed on a worker, and folded in afterwards
+with a second `shot.updated`. A range session never waits on it.
+
+```bash
+pip install -r requirements-pose.txt
+python scripts/fetch_pose_model.py          # 5.8 MB, not committed
+```
+
+On Linux the estimator needs system graphics libraries that pip cannot
+provide: `apt-get install libegl1 libgles2`. Windows needs nothing extra.
+`GET /api/health` reports `pose_worker.reason` when it cannot run, and the
+check probes the *native library*, not just the import — a machine can import
+mediapipe cleanly and still fail when a landmarker is constructed.
+
+Landmarks go to `pose.json` beside the clips, keyed by camera. What the
+summary reports, and what it refuses to:
+
+| Metric | From | Why |
+|---|---|---|
+| `swing_plane_deg` | down-the-line | Fitted through the hand path from the top to impact — the segment a plane actually describes |
+| `spine_angle_deg` | down-the-line | Trunk vs vertical, averaged over the address frames |
+| `shoulder_turn_deg`, `pelvis_rotation_deg`, `x_factor_deg` | — | **Null.** These need depth; one camera cannot recover them |
+| `hand_speed_mph` | — | **Null.** Needs a real-world scale that normalised coordinates do not have |
+
+Angles are corrected for aspect ratio. Measuring on raw 0–1 coordinates from a
+16:9 frame turns a 62° swing plane into 73° — wrong, and plausible enough to
+go unnoticed.
+
+Everything null fills in once the cameras are calibrated and triangulated.
+
 ## API
 
 | Method | Path | Purpose |
