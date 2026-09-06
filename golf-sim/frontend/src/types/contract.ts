@@ -120,6 +120,20 @@ export interface DerivedData {
   face_to_path_deg: number | null;
 }
 
+export interface FlightData {
+  model: string;
+  carry_m: number | null;
+  total_m: number | null;
+  apex_m: number | null;
+  descent_angle_deg: number | null;
+  offline_m: number | null;
+  flight_time_s: number | null;
+  conditions: {
+    altitude_m: number;
+    temperature_c: number;
+  };
+}
+
 export interface DistanceData {
   carry_m: number | null;
   total_m: number | null;
@@ -132,6 +146,7 @@ export interface TelemetryBlock {
   club: ClubData;
   derived: DerivedData;
   distance: DistanceData;
+  flight?: FlightData | null;
   raw: Record<string, any>;
 }
 

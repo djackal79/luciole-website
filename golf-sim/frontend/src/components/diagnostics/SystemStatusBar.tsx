@@ -193,6 +193,14 @@ export const SystemStatusBar: React.FC = () => {
             )}
             <div>Shots: {health.listeners.gspro_socket.shots_received} | Heartbeats: {health.listeners.gspro_socket.heartbeats_received} | Ignored: {health.listeners.gspro_socket.frames_ignored}</div>
             {health.listeners.gspro_socket.last_error && <div className="text-red-400 mt-1">Error: {health.listeners.gspro_socket.last_error}</div>}
+            {health.listeners.gspro_socket.pass_through && (
+              <div className="mt-2 pt-2 border-t border-neutral-700/50">
+                <div className={`font-bold mb-1 ${isBoutique ? 'text-[#E5C07B]' : 'text-emerald-400'}`}>GSPro Pass-Through</div>
+                <div>Enabled: {health.listeners.gspro_socket.pass_through.enabled ? 'Yes' : 'No'} | Target: {health.listeners.gspro_socket.pass_through.target || 'None'}</div>
+                <div>Status: {health.listeners.gspro_socket.pass_through.active ? 'Active' : 'Idle'} | Forwarded: {health.listeners.gspro_socket.pass_through.frames_forwarded}</div>
+                {health.listeners.gspro_socket.pass_through.last_error && <div className="text-red-400 mt-1">Fault: {health.listeners.gspro_socket.pass_through.last_error}</div>}
+              </div>
+            )}
           </div>
           <div>
             <div className={`font-bold mb-1 ${isBoutique ? 'text-[#E5C07B]' : 'text-emerald-400'}`}>Pose Worker</div>

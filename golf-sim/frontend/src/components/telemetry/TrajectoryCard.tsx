@@ -10,7 +10,6 @@ interface TrajectoryCardProps {
 
 export const TrajectoryCard: React.FC<TrajectoryCardProps> = ({ telemetry, unit }) => {
   const [viewMode, setViewMode] = useState<'side' | 'top'>('side');
-  const [useBallisticsModel, setUseBallisticsModel] = useState<boolean>(false);
   const { currentTheme } = useThemeStore();
   const isBoutique = currentTheme === 'boutique';
 
@@ -28,67 +27,51 @@ export const TrajectoryCard: React.FC<TrajectoryCardProps> = ({ telemetry, unit 
     );
   }
 
-  const { ball, distance } = telemetry;
+  const { ball, distance, flight } = telemetry;
   const unitFactor = unit === 'meters' ? 1.0 : 1.09361;
   const unitLabel = unit === 'meters' ? 'm' : 'yds';
 
-  // Ballistics model projection when launch monitor does not measure distance (GSPro Open Connect)
-  const speed = ball.speed_mph ?? 100;
-  const vla = ball.launch_angle_deg ?? 15;
-  const estimatedCarryM = speed * 1.55 * Math.sin((vla * Math.PI) / 180) * 2.8;
-  const estimatedTotalM = estimatedCarryM * 1.06;
-
-  // Trap #3: carry_m and total_m will be null
   const hasRawCarry = distance.carry_m !== null;
+  const hasFlight = flight != null;
+
+  // Carry
   const carryDisplay = hasRawCarry 
     ? (distance.carry_m! * unitFactor).toFixed(1) 
-    : useBallisticsModel 
-    ? (estimatedCarryM * unitFactor).toFixed(1) + ' est'
+    : hasFlight && flight.carry_m !== null
+    ? (flight.carry_m! * unitFactor).toFixed(1) + ' est'
     : '—';
 
+  // Total
   const totalDisplay = distance.total_m !== null 
     ? (distance.total_m! * unitFactor).toFixed(1) 
-    : useBallisticsModel 
-    ? (estimatedTotalM * unitFactor).toFixed(1) + ' est'
+    : hasFlight && flight.total_m !== null
+    ? (flight.total_m! * unitFactor).toFixed(1) + ' est'
     : '—';
 
-  // Compute Apex Height: h = (v_fps * sin(vla))^2 / (2 * g)
-  const vFps = speed * 1.46667;
-  const vlaRad = (vla * Math.PI) / 180;
-  const rawApexFt = Math.round((Math.pow(vFps * Math.sin(vlaRad), 2) / (2 * 32.174)) * 0.72);
-  const apexDisplay = hasRawCarry 
-    ? (unit === 'meters' ? `${(rawApexFt * 0.3048).toFixed(1)} M` : `${rawApexFt} FT`)
-    : useBallisticsModel 
-    ? (unit === 'meters' ? `${(rawApexFt * 0.3048).toFixed(1)} M est` : `${rawApexFt} FT est`)
+  // Apex Height
+  const apexDisplay = hasFlight && flight.apex_m !== null
+    ? (unit === 'meters' ? `${flight.apex_m.toFixed(1)} M est` : `${(flight.apex_m * 3.28084).toFixed(1)} FT est`)
     : '—';
 
-  // Compute Descent Angle: typically 2.4x to 2.8x launch angle
-  const descentAngle = hasRawCarry || useBallisticsModel 
-    ? `${(vla * 2.65).toFixed(1)}°` 
+  // Descent Angle
+  const descentAngle = hasFlight && flight.descent_angle_deg !== null
+    ? `${flight.descent_angle_deg.toFixed(1)}° est`
     : '—';
 
-  // Compute Side Offline (lateral displacement in yards/meters)
-  // Positive HLA = Right push (+), Negative HLA = Left pull (-)
-  // Positive spin axis = Right tilt (Fade/Slice -> curves Right (+))
-  // Negative spin axis = Left tilt (Draw/Hook -> curves Left (-))
-  const hla = ball.launch_direction_deg ?? 0;
-  const spinAxis = ball.spin_axis_deg ?? 0;
-  const carryYds = (hasRawCarry ? distance.carry_m! : estimatedCarryM) * 1.09361;
-  const hlaRad = (hla * Math.PI) / 180;
-  const hlaDisplacementYds = carryYds * Math.tan(hlaRad);
-  const spinDisplacementYds = (spinAxis / 10.0) * (carryYds / 150) * 6.0;
-  const totalOfflineYds = +(hlaDisplacementYds + spinDisplacementYds).toFixed(1);
-  const offlineDir = totalOfflineYds > 0.2 ? 'R' : totalOfflineYds < -0.2 ? 'L' : 'C';
-  const offlineDistVal = unit === 'meters' ? (Math.abs(totalOfflineYds) * 0.9144).toFixed(1) : Math.abs(totalOfflineYds).toFixed(1);
-  
-  const offlineDisplay = hasRawCarry 
-    ? `${offlineDistVal} ${unitLabel.toUpperCase()} ${offlineDir}`
-    : useBallisticsModel 
-    ? `${offlineDistVal} ${unitLabel.toUpperCase()} ${offlineDir} est`
-    : '—';
+  // Side Offline
+  let offlineDisplay = '—';
+  let totalOfflineYds = 0;
+  if (hasFlight && flight.offline_m !== null) {
+    totalOfflineYds = flight.offline_m * 1.09361;
+    const offlineDir = flight.offline_m > 0.1 ? 'R' : flight.offline_m < -0.1 ? 'L' : 'C';
+    const offlineDistVal = (Math.abs(flight.offline_m) * unitFactor).toFixed(1);
+    offlineDisplay = `${offlineDistVal} ${unitLabel.toUpperCase()} ${offlineDir} est`;
+  }
 
   // Flight shape from spin axis and launch direction
   let shapeBadge = 'Straight';
+  const spinAxis = ball.spin_axis_deg ?? 0;
+  const hla = ball.launch_direction_deg ?? 0;
   if (spinAxis < -2.0) {
     shapeBadge = hla > 0 ? 'Push Draw' : 'Draw';
   } else if (spinAxis > 2.0) {
@@ -111,19 +94,7 @@ export const TrajectoryCard: React.FC<TrajectoryCardProps> = ({ telemetry, unit 
           <span className={`text-xs font-medium ${isBoutique ? 'font-serif text-[#8E928F]' : 'text-neutral-400'}`}>
             FLIGHT TRAJECTORY
           </span>
-          {!hasRawCarry && (
-            <button
-              onClick={() => setUseBallisticsModel(!useBallisticsModel)}
-              className={`text-[10px] px-2.5 py-0.5 transition-colors ${
-                isBoutique 
-                  ? 'rounded-full bg-stone-900/60 border border-[#C5A880]/20 text-[#C5A880] hover:text-[#D4AF37] font-serif' 
-                  : 'rounded bg-neutral-800 border border-neutral-700 text-cyan-400 hover:text-white font-mono'
-              }`}
-              title="Toggle client-side physics ballistic projection since Open Connect emits launch conditions only"
-            >
-              {useBallisticsModel ? 'Model: Ballistics ON' : 'Model: Em-Dash (—)'}
-            </button>
-          )}
+
         </div>
         <div className={`flex items-center gap-1 p-0.5 text-[10px] ${
           isBoutique ? 'rounded-full bg-stone-900/60 border border-[#C5A880]/20' : 'rounded bg-neutral-900 border border-neutral-800 font-mono'

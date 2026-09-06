@@ -7,6 +7,13 @@ export interface GSProListenerStatus {
   heartbeats_received: number;
   frames_ignored: number;
   last_error: string | null;
+  pass_through: {
+    enabled: boolean;
+    target: string | null;
+    active: boolean;
+    frames_forwarded: number;
+    last_error: string | null;
+  };
 }
 
 export interface KinoveaHookStatus {

@@ -16,7 +16,6 @@ export const TelemetryHUD: React.FC = () => {
   const distanceUnit = useShotStore((s) => s.distanceUnit);
   const toggleDistanceUnit = useShotStore((s) => s.toggleDistanceUnit);
 
-  const [useBallisticsEstimator, setUseBallisticsEstimator] = useState(false);
 
   if (!currentShot) {
     return (
@@ -46,27 +45,23 @@ export const TelemetryHUD: React.FC = () => {
     );
   }
 
-  const { ball, club, derived, distance } = telemetry;
+  const { ball, club, derived, distance, flight } = telemetry;
   const unitFactor = distanceUnit === 'meters' ? 1.0 : 1.09361; // Canonical distance is metres
   const unitLabel = distanceUnit === 'meters' ? 'M' : 'YDS';
 
-  // Distance computation or degradation to em-dash per GSPro contract (Trap #3)
   const hasRawCarry = distance.carry_m !== null;
-  const speed = ball.speed_mph ?? 100;
-  const vla = ball.launch_angle_deg ?? 15;
-  const estimatedCarryM = speed * 1.55 * Math.sin((vla * Math.PI) / 180) * 2.8;
-  const estimatedTotalM = estimatedCarryM * 1.06;
+  const hasFlight = flight != null;
 
   const carryDisplay = hasRawCarry 
     ? (distance.carry_m! * unitFactor).toFixed(1) 
-    : useBallisticsEstimator 
-    ? (estimatedCarryM * unitFactor).toFixed(1) 
+    : hasFlight && flight.carry_m !== null
+    ? (flight.carry_m! * unitFactor).toFixed(1) 
     : '—';
 
   const totalDisplay = distance.total_m !== null 
     ? (distance.total_m! * unitFactor).toFixed(1) 
-    : useBallisticsEstimator 
-    ? (estimatedTotalM * unitFactor).toFixed(1) 
+    : hasFlight && flight.total_m !== null
+    ? (flight.total_m! * unitFactor).toFixed(1)
     : '—';
 
   // Smash factor rating (null if club data absent per contract)
@@ -117,20 +112,7 @@ export const TelemetryHUD: React.FC = () => {
 
           {/* Unit Toggle & Ballistics Estimator Toggle */}
           <div className="flex items-center gap-2">
-            {!hasRawCarry && (
-              <button
-                onClick={() => setUseBallisticsEstimator(!useBallisticsEstimator)}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono border transition-colors ${
-                  useBallisticsEstimator 
-                    ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300' 
-                    : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-white'
-                }`}
-                title="Toggle client-side ballistics estimation for distance tiles"
-              >
-                <Calculator className="w-3 h-3" />
-                <span>{useBallisticsEstimator ? 'Est. Physics ON' : 'Distance: — (Contract)'}</span>
-              </button>
-            )}
+  
 
             <button
               onClick={toggleDistanceUnit}
@@ -151,9 +133,8 @@ export const TelemetryHUD: React.FC = () => {
               <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400">
                 Carry Distance
               </span>
-              {!hasRawCarry && !useBallisticsEstimator && (
-                <span className="text-[9px] font-mono text-neutral-500">LM unmeasured</span>
-              )}
+              {!hasRawCarry && hasFlight && (<span className="text-[9px] font-mono text-amber-500/70 border border-amber-500/30 px-1 rounded bg-amber-500/10">Est.</span>)}
+              {!hasRawCarry && !hasFlight && (<span className="text-[9px] font-mono text-neutral-500">LM unmeasured</span>)}
             </div>
             <div className="flex items-baseline gap-1 my-1">
               <span className="text-3xl sm:text-4xl font-black font-mono tracking-tight text-emerald-400 glow-green">
