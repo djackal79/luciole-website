@@ -1,8 +1,8 @@
 # Golf Studio — Single Source of Truth
 
 **Status date:** 2026-09-06 · **Branch:** `claude/golf-simulator-backend-9a46d5`
-**Schema v1.1 shipped** — two-camera routing, pose and pressure blocks, per-clip
-`impact_ms`. See [`CONTRACT.md`](CONTRACT.md) §v1.1.
+**Running on the sim PC.** Backend, frontend and pose pipeline all up; hardware
+bring-up in progress. See [`RUNBOOK.md`](RUNBOOK.md).
 
 Four agents are working on this (Claude Code, Claude chat, Gemini chat,
 Antigravity) across surfaces that cannot see each other. This document is the
@@ -32,7 +32,7 @@ will you in three weeks.
 | Ingest backend (FastAPI) | Claude Code | **Done**, 59 tests | `backend/` |
 | GSPro Open Connect listener | Claude Code | **Done** | `backend/gspro.py` |
 | Shot pairing correlator | Claude Code | **Done** | `backend/correlator.py` |
-| S23 impact watcher (Android) | Claude Code | **Written, untested on hardware** | `android/impact-watcher/` |
+| S23 impact watcher (Android) | Claude Code | Written, **not yet built or run** | `android/impact-watcher/` |
 | Mock fixtures (7 scenarios) | Claude Code | **Done** | `mocks/shots.json` |
 | Frontend (React/Vite) | Antigravity | **In the repo, builds clean** | `frontend/` |
 | Pose extraction (2D) | Claude Code | **Done** — MediaPipe, async, tested live | `backend/pose/` |
@@ -52,6 +52,22 @@ will you in three weeks.
 
 > The frontend brief says "Samsung S24 Ultra". It is an **S23 Plus**. Correct
 > this wherever it appears.
+
+### Hardware bring-up (as of tonight)
+
+| Link | State |
+|---|---|
+| Backend + frontend on the sim PC | **Working.** Mock shots render, pairing verified |
+| GSPro socket ← SQG-GSPRO-Connect | **Working.** Bridge connects, protocol confirmed |
+| Square LM → bridge (Bluetooth) | **Blocked.** Monitor not registering the ball — D12 |
+| Kinovea post-recording hooks | Configured; per capture screen, not Preferences |
+| Kinovea capture trigger | **Not found yet** — D13 |
+| Phone watcher | Not started |
+
+Two operational rules learned the hard way, both now in the runbook: the
+bridge does not auto-reconnect, so start the backend **first**; and the
+backend can only see the bridge half of the monitor chain, so `clients: 1`
+with no shots means the Bluetooth link, not the code.
 
 ---
 
@@ -93,6 +109,8 @@ are now answered; their decisions are recorded below and are binding.
 | D9 | Frontend owns the Supabase write path | Medium | **New** — see D6 |
 | D10 | `POST /session/end` cancelled the shot reaper | High | **Found and fixed** |
 | D11 | Root-level route aliases duplicate the contract paths | Low | Converge |
+| D12 | Square LM not registering the ball | **Blocking hardware** | Vendor-side |
+| D13 | Kinovea capture trigger not located | Medium | Research |
 
 ### D0 — The frontend is not in the repo
 
@@ -307,7 +325,11 @@ Not wanted: more theming, more animation, more panels. Both themes are done.
    lands and `shot.updated` fires. Swing plane and spine angle only; the
    depth-dependent metrics stay null.
 5. **Camera calibration** — checkerboard intrinsics and extrinsics, then
-   triangulated 3D. *Next, and blocked on a calibration capture from you.*
+   triangulated 3D. *Next, and blocked on a calibration capture.*
+5b. **Ball flight model** — GSPro Connect gives launch conditions only, so
+   carry, total, apex and descent have to be modelled. The frontend currently
+   uses rough heuristics; a physically grounded model belongs in the backend
+   as `telemetry.derived`, kept clearly separate from measured values.
 6. **Supabase sync** — backend-owned, offline-tolerant outbox (D6, D9).
 7. Deferred until the hardware exists: pressure ingest (D2).
 
