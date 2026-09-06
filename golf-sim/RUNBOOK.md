@@ -21,11 +21,28 @@ read clip duration and resolution when a camera does not supply them.
 
 ---
 
+## A note on shells
+
+Either **cmd** (`C:\>`) or **PowerShell** (`PS C:\>`) works, but they differ in
+two ways that will bite you:
+
+| | cmd | PowerShell |
+|---|---|---|
+| Activate the venv | `.venv\Scripts\activate.bat` | `.venv\Scripts\Activate.ps1` |
+| Chain commands on one line | `&&` | `;` |
+
+**Paste commands one line at a time.** A `;` pasted into cmd is not a
+separator — it becomes part of the argument, and you get "The system cannot
+find the path specified" or an argument error from a command that never ran.
+
+Only one step needs PowerShell specifically: the firewall rule in stage 5c,
+which also needs Administrator.
+
+---
+
 ## Stage 1 — Clone and install
 
-Open **PowerShell** (not the old cmd prompt):
-
-```powershell
+```
 cd C:\
 git clone https://github.com/djackal79/luciole-website.git
 cd luciole-website
@@ -33,16 +50,33 @@ git checkout claude/golf-simulator-backend-9a46d5
 cd golf-sim
 
 python -m venv .venv
+```
+
+Activate it — **cmd**:
+
+```
+.venv\Scripts\activate.bat
+```
+
+**PowerShell**:
+
+```powershell
 .venv\Scripts\Activate.ps1
+```
+
+Either way the prompt should now start with `(.venv)`. If PowerShell blocks
+the script, run once:
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+
+Then:
+
+```
 pip install -r requirements-dev.txt
 ```
 
-If `Activate.ps1` is blocked, run once:
-`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
-
 Then create your config:
 
-```powershell
+```
 copy .env.example .env
 notepad .env
 ```
@@ -65,7 +99,7 @@ GOLFSIM_LATE_ATTACH_MS=30000
 
 ## Stage 2 — Prove the backend
 
-```powershell
+```
 pytest -q
 ```
 
@@ -84,16 +118,16 @@ phone.
 
 **Terminal 1 — backend:**
 
-```powershell
+```
 cd C:\luciole-website\golf-sim
-.venv\Scripts\Activate.ps1
+.venv\Scripts\activate.bat
 python scripts\mock_provider.py --seed data\shots
 uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
 **Terminal 2 — frontend:**
 
-```powershell
+```
 cd C:\luciole-website\golf-sim\frontend
 npm install
 npm run dev
@@ -123,9 +157,9 @@ launch monitor measures launch conditions, not distance.
 
 With both terminals still running, open a third:
 
-```powershell
+```
 cd C:\luciole-website\golf-sim
-.venv\Scripts\Activate.ps1
+.venv\Scripts\activate.bat
 python scripts\simulate_session.py --shots 3 --dtl --check
 ```
 
@@ -191,7 +225,7 @@ scripts\kinovea_hook.bat C:\path\to\any.mp4
 
 ### 5c — Phone
 
-One-time firewall rule (**PowerShell as Administrator**):
+One-time firewall rule. **This one really does need PowerShell, as Administrator** — it will not run in cmd:
 
 ```powershell
 New-NetFirewallRule -DisplayName "Golf Studio" -Direction Inbound `
@@ -242,6 +276,8 @@ them, and a plausible guess would be worse than an honest blank.
 | Frontend blank, console shows proxy errors | Backend not on port 8000. |
 | `pose_worker.live: false` | Read `reason` in `/api/health`; usually the model was not downloaded. |
 | Shots stop completing after ending a session | Fixed — make sure you are on the latest commit. |
+| "The system cannot find the path specified" after pasting a line with `;` | You are in cmd, where `;` is not a separator. Paste one line at a time. |
+| `venv: error: unrecognized arguments` | Same cause — several commands ran as one. |
 
 Useful at any time:
 
