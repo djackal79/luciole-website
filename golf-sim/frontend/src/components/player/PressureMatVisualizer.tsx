@@ -7,7 +7,7 @@ import { usePressureData } from '../../hooks/usePressureData';
 
 export const PressureMatVisualizer: React.FC = () => {
   const currentShot = useShotStore((s) => s.getCurrentShot());
-  const { currentTime, duration } = usePlayerStore();
+  const { currentTime, duration, masterImpactTime } = usePlayerStore();
   const { currentTheme } = useThemeStore();
   const isBoutique = currentTheme === 'boutique';
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -33,7 +33,7 @@ export const PressureMatVisualizer: React.FC = () => {
       };
     }
     const impactTime = pressureData?.impact_ms ?? 2450;
-    const t_from_impact_sec = currentTime - 2.45; // master impact time
+    const t_from_impact_sec = currentTime - masterImpactTime; // master impact time
     const target_t_ms = impactTime + (t_from_impact_sec * 1000);
 
     let closest = samples[0];

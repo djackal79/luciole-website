@@ -99,6 +99,24 @@ export const SystemStatusBar: React.FC = () => {
           </span>
         </div>
 
+        
+        {/* 3D Calibration Status */}
+        <div 
+          onClick={openSetupWizard}
+          className={`flex items-center gap-1.5 px-2.5 py-0.5 cursor-pointer transition-colors border ${
+            isBoutique 
+              ? 'rounded-full bg-stone-900/60 hover:bg-stone-800/80 border-[#C5A880]/20' 
+              : 'rounded bg-neutral-900 hover:bg-neutral-800 border-neutral-800'
+          }`}
+          title={health?.listeners.pose_worker.calibration?.detail ?? "3D Rig Calibrated and Ready"}
+        >
+          <Wrench className={`w-3 h-3 ${health?.listeners.pose_worker.calibration?.ready ? (isBoutique ? 'text-[#D4AF37]' : 'text-blue-400') : (isBoutique ? 'text-amber-600' : 'text-amber-500')}`} />
+          <span className={isBoutique ? 'text-[#8E928F]' : 'text-neutral-400'}>3D RIG:</span>
+          <span className={health?.listeners.pose_worker.calibration?.ready ? (isBoutique ? 'text-[#E5C07B] font-bold' : 'text-blue-300 font-bold') : 'text-amber-500 font-bold max-w-[120px] truncate'}>
+            {health?.listeners.pose_worker.calibration?.ready ? 'READY' : (health?.listeners.pose_worker.calibration?.detail ?? 'UNCALIBRATED')}
+          </span>
+        </div>
+
         {/* Session Info */}
         <div 
           onClick={toggleSessionModal}

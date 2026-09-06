@@ -56,6 +56,7 @@ export interface PoseBlock {
   path: string;
   model: string;
   dimensions: '2d' | '3d';
+  depth_reason?: string | null;
   cameras: string[];
   frame_count: number;
   error: string | null;

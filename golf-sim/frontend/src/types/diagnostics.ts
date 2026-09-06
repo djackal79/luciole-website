@@ -28,11 +28,28 @@ export interface PhoneEndpointStatus {
   endpoint: string;
 }
 
+export interface CameraCalibration {
+  placed: boolean;
+  lens_rms_px?: number;
+  pose_rms_px?: number;
+  position_m?: [number, number, number];
+}
+
+export interface CalibrationStatus {
+  ready: boolean;
+  path: string;
+  calibrated_at: string;
+  board: any;
+  cameras: Record<string, CameraCalibration>;
+  detail: string | null;
+}
+
 export interface PoseWorkerStatus {
   live: boolean;
   enabled: boolean;
   model: string;
   reason: string;
+  calibration?: CalibrationStatus;
 }
 
 export interface HealthResponse {
@@ -70,6 +87,7 @@ export type WizardStepId =
   | 'launch-monitor'
   | 'kinovea-audio'
   | 'video-ingest'
+  | '3d-calibration'
   | 'supabase-cloud';
 
 export interface WizardStep {

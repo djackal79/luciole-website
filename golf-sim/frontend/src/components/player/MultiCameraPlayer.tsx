@@ -19,7 +19,7 @@ import {
   Compass
 } from 'lucide-react';
 
-import { usePoseData } from '../../hooks/usePoseData';
+import { usePoseData, POSE_CONNECTIONS_NAMED } from '../../hooks/usePoseData';
 
 export const MultiCameraPlayer: React.FC = () => {
   const currentShot = useShotStore((s) => s.getCurrentShot());
@@ -41,6 +41,7 @@ export const MultiCameraPlayer: React.FC = () => {
     setPrimaryCamera,
     cyclePrimaryCamera,
     toggleGuides,
+    masterImpactTime,
   } = usePlayerStore();
 
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -107,7 +108,7 @@ export const MultiCameraPlayer: React.FC = () => {
   const bodyMedia = currentShot?.media.body_swing;
   const impactMedia = currentShot?.media.impact_strike;
   const impactOffsetMs = currentShot?.sync.impact_offset_ms ?? 0;
-  const impactTime = 2.45;
+  const impactTime = masterImpactTime;
   const isAtImpact = Math.abs(currentTime - impactTime) < 0.08;
 
   const toggleFullscreen = () => {

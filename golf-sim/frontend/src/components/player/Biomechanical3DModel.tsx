@@ -9,7 +9,7 @@ import { Pose3DCanvas } from './Pose3DCanvas';
 export const Biomechanical3DModel: React.FC = () => {
   const currentShot = useShotStore((s) => s.getCurrentShot());
   const { currentTheme } = useThemeStore();
-  const { currentTime } = usePlayerStore();
+  const { currentTime, masterImpactTime } = usePlayerStore();
   const isBoutique = currentTheme === 'boutique';
   
   const pose = currentShot?.pose;
@@ -31,7 +31,7 @@ export const Biomechanical3DModel: React.FC = () => {
     { label: 'Hand Speed', key: 'hand_speed_mph', unit: ' mph' },
   ];
 
-  const t_from_impact_sec = currentTime - 2.45;
+  const t_from_impact_sec = currentTime - masterImpactTime;
 
   return (
     <div className={`p-3 sm:p-4 shadow-2xl flex flex-col gap-3 transition-colors duration-300 ${
@@ -83,21 +83,27 @@ export const Biomechanical3DModel: React.FC = () => {
         </div>
       </div>
 
-      {is3d && poseData ? (
+      {is3d && poseData && (
         <Pose3DCanvas poseData={poseData} t_from_impact_sec={t_from_impact_sec} />
-      ) : is2d && pose?.status === 'ready' ? (
+      )}
+      
+      {pose?.status === 'ready' && pose?.depth_reason && (
         <div className={`p-4 rounded-xl text-xs flex flex-col gap-1 items-center justify-center text-center border mb-3 ${
-          isBoutique ? 'bg-stone-900/60 border-[#C5A880]/30 text-[#8E928F]' : 'bg-neutral-900/50 border-amber-500/30 text-amber-500/70'
+          is3d ? (isBoutique ? 'bg-red-900/20 border-red-500/30 text-red-400' : 'bg-red-900/20 border-red-500/30 text-red-400')
+               : (isBoutique ? 'bg-stone-900/60 border-[#C5A880]/30 text-[#8E928F]' : 'bg-neutral-900/50 border-amber-500/30 text-amber-500/70')
         }`}>
           <AlertCircle className="w-5 h-5 mb-1" />
-          <span className="font-bold">3D Triangulation Disabled</span>
-          <span>Cameras uncalibrated or impact frame missing. Rendered in 2D.</span>
+          <span className="font-bold">
+            {is3d ? '3D Triangulation Warning' : '3D Triangulation Disabled'}
+          </span>
+          <span>{pose.depth_reason}</span>
         </div>
-      ) : null}
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {metrics.map(m => {
             const val = pose?.summary?.[m.key as keyof typeof pose.summary];
+            const hideValue = isPending || isUnavailable || pose?.depth_reason != null;
             return (
               <div key={m.key} className={`flex flex-col p-3 border ${
                 isBoutique 
@@ -112,7 +118,7 @@ export const Biomechanical3DModel: React.FC = () => {
                 <span className={`text-xl md:text-2xl font-bold tracking-tight ${
                   isBoutique ? 'font-sans text-[#F4F4F2]' : 'font-mono text-white'
                 }`}>
-                  {isPending || isUnavailable ? '—' : (val == null ? '—' : `${val.toFixed(1)}${m.unit}`)}
+                  {hideValue ? '—' : (val == null ? '—' : `${val.toFixed(1)}${m.unit}`)}
                 </span>
               </div>
             );

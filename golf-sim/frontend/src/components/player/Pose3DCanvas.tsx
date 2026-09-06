@@ -1,21 +1,10 @@
 import React, { useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Line } from '@react-three/drei';
-import type { PoseData } from '../../hooks/usePoseData';
+import { type PoseData, POSE_CONNECTIONS_NAMED } from '../../hooks/usePoseData';
 import { useThemeStore } from '../../store/themeStore';
 
-// MediaPipe Pose connections
-const POSE_CONNECTIONS = [
-  [0, 1], [1, 2], [2, 3], [3, 7], // Right eye / ear
-  [0, 4], [4, 5], [5, 6], [6, 8], // Left eye / ear
-  [9, 10], // Mouth
-  [11, 12], // Shoulders
-  [11, 13], [13, 15], [15, 17], [15, 19], [15, 21], [17, 19], // Right arm/hand
-  [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [18, 20], // Left arm/hand
-  [11, 23], [12, 24], [23, 24], // Torso
-  [23, 25], [25, 27], [27, 29], [27, 31], [29, 31], // Right leg/foot
-  [24, 26], [26, 28], [28, 30], [28, 32], [30, 32]  // Left leg/foot
-];
+
 
 interface Pose3DCanvasProps {
   poseData: PoseData | null;
@@ -27,28 +16,36 @@ const SkeletonRig = ({ poseData, t_from_impact_sec }: Pose3DCanvasProps) => {
   const { currentTheme } = useThemeStore();
   const isBoutique = currentTheme === 'boutique';
   
-  if (!world || !world.frames || world.frames.length === 0) return null;
-
   // Find closest frame. t_ms is ALREADY relative to impact. Do NOT subtract impact_ms.
   const target_t_ms = t_from_impact_sec * 1000;
   
-  let closestFrame = world.frames[0];
+  let closestFrame = world?.frames?.[0];
   let minDist = Infinity;
-  for (const frame of world.frames) {
-    const dist = Math.abs(frame.t_ms - target_t_ms);
-    if (dist < minDist) {
-      minDist = dist;
-      closestFrame = frame;
+  if (world?.frames && world.frames.length > 0) {
+    for (const frame of world.frames) {
+      const dist = Math.abs(frame.t_ms - target_t_ms);
+      if (dist < minDist) {
+        minDist = dist;
+        closestFrame = frame;
+      }
     }
   }
 
-  const pts = closestFrame.points;
-  if (!pts) return null;
+  // Cap distance limit: frame must be within 35ms of the playhead, otherwise skip
+  const isOutOfRange = minDist > 35;
+  const pts = (!isOutOfRange && closestFrame) ? closestFrame.points : null;
 
   // Prepare line segments
   const lines = useMemo(() => {
     const segments: [number, number, number][][] = [];
-    POSE_CONNECTIONS.forEach(([i, j]) => {
+    const lms = poseData?.landmarks;
+    if (!pts || !lms) return segments;
+    
+    POSE_CONNECTIONS_NAMED.forEach(([name1, name2]) => {
+      const i = lms.indexOf(name1);
+      const j = lms.indexOf(name2);
+      if (i < 0 || j < 0) return;
+      
       const p1 = pts[i];
       const p2 = pts[j];
       // If either point is null, draw a gap
@@ -61,7 +58,9 @@ const SkeletonRig = ({ poseData, t_from_impact_sec }: Pose3DCanvasProps) => {
       }
     });
     return segments;
-  }, [pts]);
+  }, [pts, poseData?.landmarks]);
+
+  if (!world || !world.frames || world.frames.length === 0 || !pts) return null;
 
   const lineColor = isBoutique ? '#D4AF37' : '#00f298';
   const jointColor = isBoutique ? '#E5C07B' : '#00d2ff';

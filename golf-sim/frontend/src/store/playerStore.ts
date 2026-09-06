@@ -9,6 +9,7 @@ interface PlayerStoreState {
   isPlaying: boolean;
   currentTime: number;
   duration: number;
+  masterImpactTime: number;
   playbackRate: PlaybackRate;
   isLooping: boolean;
   
@@ -39,6 +40,7 @@ interface PlayerStoreState {
   togglePlay: () => void;
   setCurrentTime: (time: number) => void;
   setDuration: (duration: number) => void;
+  setMasterImpactTime: (time: number) => void;
   setPlaybackRate: (rate: PlaybackRate) => void;
   toggleLoop: () => void;
   toggleMute: () => void;
@@ -52,6 +54,7 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
   isPlaying: false,
   currentTime: 0,
   duration: 4.0,
+  masterImpactTime: 2.45,
   playbackRate: 1.0,
   isLooping: true,
 
@@ -113,6 +116,7 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
 
   setCurrentTime: (time) => set({ currentTime: time }),
   setDuration: (duration) => set({ duration }),
+  setMasterImpactTime: (time) => set({ masterImpactTime: time }),
   setPlaybackRate: (rate) => set({ playbackRate: rate }),
   toggleLoop: () => set((s) => ({ isLooping: !s.isLooping })),
   toggleMute: () => set((s) => ({ isMuted: !s.isMuted })),
@@ -133,8 +137,8 @@ export const usePlayerStore = create<PlayerStoreState>((set, get) => ({
   },
 
   jumpToImpact: () => {
-    const { duration } = get();
-    const impactTime = Math.min(duration, 2.45);
+    const { duration, masterImpactTime } = get();
+    const impactTime = Math.min(duration, masterImpactTime);
     set({ currentTime: impactTime });
   }
 }));

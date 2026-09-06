@@ -11,6 +11,7 @@ import type { HealthResponse } from '../../types/diagnostics';
 import { 
   X, 
   CheckCircle2, 
+  Wrench, 
   AlertTriangle, 
   XCircle, 
   Activity, 
@@ -94,7 +95,8 @@ export const SetupWizardModal: React.FC = () => {
     { num: 2, title: 'Launch Monitor', icon: Radio },
     { num: 3, title: 'Kinovea Setup', icon: Video },
     { num: 4, title: 'Video Ingestion', icon: Sparkles },
-    { num: 5, title: 'Supabase Cloud', icon: Database },
+    { num: 5, title: '3D Calibration', icon: Wrench },
+    { num: 6, title: 'Supabase Cloud', icon: Database },
   ];
 
   return (
@@ -289,8 +291,64 @@ export const SetupWizardModal: React.FC = () => {
             </div>
           )}
 
-          {/* STEP 5: Supabase Cloud Sync */}
+          {/* STEP 5: 3D Calibration */}
           {activeStep === 5 && (
+            <div className="flex flex-col gap-4">
+              <div className="p-3 rounded-xl bg-neutral-900/80 border border-neutral-800 flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-white flex items-center gap-2">
+                    <Wrench className="w-4 h-4 text-blue-400" />
+                    <span>Pose Worker & 3D Calibration</span>
+                  </div>
+                  <div className="text-[11px] text-neutral-400 mt-1">
+                    State of the biomechanical 3D triangulator and camera rig geometry
+                  </div>
+                </div>
+                <span className={`px-2 py-1 rounded text-[10px] font-bold ${
+                  healthData?.listeners.pose_worker.calibration?.ready ? 'bg-blue-500/20 text-blue-400' : 'bg-amber-500/20 text-amber-400'
+                }`}>
+                  {healthData?.listeners.pose_worker.calibration?.ready ? 'READY' : 'UNCALIBRATED'}
+                </span>
+              </div>
+
+              <div className="p-4 rounded-xl bg-neutral-900/40 border border-neutral-800 flex flex-col gap-2.5">
+                <div className="font-bold text-white mb-1">Camera Positions</div>
+                {healthData?.listeners.pose_worker.calibration ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {Object.entries(healthData.listeners.pose_worker.calibration.cameras).map(([cam, data]) => (
+                      <div key={cam} className="bg-black/60 p-2.5 rounded-lg border border-neutral-800">
+                        <div className="text-xs font-bold text-white uppercase">{cam}</div>
+                        <div className="text-[11px] text-neutral-400 mt-1">
+                          {data.placed && data.position_m ? (
+                            <>
+                              <div>X: {data.position_m[0].toFixed(2)}m</div>
+                              <div>Y: {data.position_m[1].toFixed(2)}m</div>
+                              <div>Z: {data.position_m[2].toFixed(2)}m (Height)</div>
+                            </>
+                          ) : (
+                            <span className="text-amber-500">Not placed</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-neutral-500 italic">No calibration file found.</div>
+                )}
+                {healthData?.listeners.pose_worker.calibration?.detail && (
+                  <div className="mt-2 text-xs text-amber-400 bg-amber-500/10 p-2 rounded border border-amber-500/20">
+                    {healthData.listeners.pose_worker.calibration.detail}
+                  </div>
+                )}
+                <p className="text-[10px] text-neutral-500 mt-2">
+                  To calibrate: print a ChArUco board and use `scripts/calibrate_cameras.py`. The positions above can be checked with a real tape measure from the board's corner.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 6: Supabase Cloud Sync */}
+          {activeStep === 6 && (
             <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between p-3 rounded-xl bg-neutral-900/80 border border-neutral-800">
                 <div>

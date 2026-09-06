@@ -1,6 +1,23 @@
 import { useState, useEffect } from 'react';
 import { useShotStore } from '../store/shotStore';
 
+export const POSE_CONNECTIONS_NAMED = [
+  ['left_shoulder', 'right_shoulder'],
+  ['left_shoulder', 'left_elbow'],
+  ['left_elbow', 'left_wrist'],
+  ['right_shoulder', 'right_elbow'],
+  ['right_elbow', 'right_wrist'],
+  ['left_shoulder', 'left_hip'],
+  ['right_shoulder', 'right_hip'],
+  ['left_hip', 'right_hip'],
+  ['left_hip', 'left_knee'],
+  ['left_knee', 'left_ankle'],
+  ['right_hip', 'right_knee'],
+  ['right_knee', 'right_ankle'],
+  ['left_ankle', 'left_foot_index'],
+  ['right_ankle', 'right_foot_index']
+];
+
 export interface PoseFrame {
   t_ms: number;
   points: number[][];

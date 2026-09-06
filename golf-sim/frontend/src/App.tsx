@@ -37,6 +37,8 @@ export const AppContent: React.FC = () => {
     jumpToImpact,
     toggleLoop,
     toggleLayoutMode,
+    setDuration,
+    setMasterImpactTime
   } = usePlayerStore();
 
   // Active container_fps for frame stepping per Trap #1
@@ -49,6 +51,35 @@ export const AppContent: React.FC = () => {
     initWebSocket();
     loadShotsFromBackend();
   }, [loadShotsFromBackend]);
+
+  // Sync master timeline when shot changes
+  useEffect(() => {
+    if (!currentShot) return;
+    
+    let maxDuration = 4.0;
+    let maxImpactMs = 2450; // fallback from fixture
+    
+    const clips = [
+      currentShot.media.body_swing, 
+      currentShot.media.body_swing_dtl, 
+      currentShot.media.behind_swing, 
+      currentShot.media.impact_strike
+    ].filter(Boolean);
+    
+    if (clips.length > 0) {
+      const durations = clips.map(c => (c as any).duration_ms ? (c as any).duration_ms / 1000 : null).filter(v => v != null) as number[];
+      if (durations.length > 0) {
+        maxDuration = Math.max(...durations);
+      }
+      const impacts = clips.map(c => (c as any).impact_ms).filter(v => v != null) as number[];
+      if (impacts.length > 0) {
+        maxImpactMs = Math.max(...impacts);
+      }
+    }
+    
+    setDuration(maxDuration);
+    setMasterImpactTime(maxImpactMs / 1000);
+  }, [currentShot?.shot_id, currentShot?.media, setDuration, setMasterImpactTime]);
 
   // Global Keyboard Shortcuts
   useEffect(() => {
