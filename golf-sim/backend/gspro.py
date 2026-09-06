@@ -21,7 +21,13 @@ from typing import Any
 
 from .config import Settings
 from .correlator import ShotCorrelator
-from .models import is_heartbeat, is_shot, local_now, telemetry_from_gspro
+from .models import (
+    is_heartbeat,
+    is_shot,
+    local_now,
+    shot_rejection_reason,
+    telemetry_from_gspro,
+)
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +44,8 @@ class GSProListener:
         self._writers: set[asyncio.StreamWriter] = set()
         self.last_error: str | None = None
         self.shots_received = 0
+        self.heartbeats_received = 0
+        self.frames_ignored = 0
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -134,14 +142,23 @@ class GSProListener:
 
     async def _dispatch(self, payload: Any, writer: asyncio.StreamWriter) -> None:
         if not isinstance(payload, dict):
+            log.warning("gspro: ignoring non-object frame: %r", payload)
             return
 
+        if self.settings.gspro_log_frames:
+            log.info("gspro frame: %s", json.dumps(payload)[:4000])
+
         if is_heartbeat(payload):
+            self.heartbeats_received += 1
             await self._send(writer, self._ack(200, "Heartbeat received"))
             return
 
-        if not is_shot(payload):
-            # Status frames: monitor arming, ball placed, ball removed.
+        if (reason := shot_rejection_reason(payload)) is not None:
+            # Never silent. A monitor that is connected but producing nothing
+            # is the hardest thing to debug, so say exactly what arrived and
+            # why it was not treated as a strike.
+            self.frames_ignored += 1
+            log.info("gspro: ignoring frame -- %s", reason)
             await self._send(writer, self._ack(200, "Status received"))
             return
 

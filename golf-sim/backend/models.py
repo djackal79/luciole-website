@@ -396,7 +396,36 @@ def is_heartbeat(payload: dict[str, Any]) -> bool:
 
 
 def is_shot(payload: dict[str, Any]) -> bool:
+    """Is this frame a struck ball?
+
+    The spec says ``ContainsBallData`` announces ball data, and well-behaved
+    senders set it. Not all bridges do, so a frame carrying real BallData with
+    a non-zero ball speed is accepted regardless -- silently discarding a
+    genuine strike because a flag was missing is the worse failure. A zero
+    speed keeps status frames (ball placed, ball removed) from becoming shots.
+    """
+    return shot_rejection_reason(payload) is None
+
+
+def shot_rejection_reason(payload: dict[str, Any]) -> str | None:
+    """Why this frame is not a shot, for logging. ``None`` means it is one."""
     options = payload.get("ShotDataOptions") or {}
     if options.get("IsHeartBeat"):
-        return False
-    return bool(options.get("ContainsBallData")) and bool(payload.get("BallData"))
+        return "heartbeat"
+
+    ball = payload.get("BallData")
+    if not isinstance(ball, dict) or not ball:
+        return f"no BallData (top-level keys: {sorted(payload) or 'none'})"
+
+    if options.get("ContainsBallData"):
+        return None
+
+    speed = ball.get("Speed")
+    if isinstance(speed, bool) or not isinstance(speed, (int, float)):
+        return (
+            "ContainsBallData not set and BallData.Speed is "
+            f"{speed!r} (BallData keys: {sorted(ball)})"
+        )
+    if speed <= 0:
+        return f"ContainsBallData not set and BallData.Speed is {speed}"
+    return None

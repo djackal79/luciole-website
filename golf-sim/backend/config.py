@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     #: The listener can be stopped at runtime without killing the service.
     gspro_port: int = 921
     gspro_device_id: str = "GolfSimIngest"
+    #: Log every frame the monitor sends. For working out what a bridge
+    #: actually emits when shots are not registering.
+    gspro_log_frames: bool = False
 
     # ---- media defaults ---------------------------------------------------
     body_swing_camera: str = "face_on"

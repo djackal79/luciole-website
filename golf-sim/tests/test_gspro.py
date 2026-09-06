@@ -211,3 +211,76 @@ async def test_binding_a_taken_port_fails_without_killing_the_service(
     assert second.last_error is not None
     # The original listener is untouched.
     assert listener.live
+
+
+# ---------------------------------------------------------------------------
+# Frames that are not textbook shots
+# ---------------------------------------------------------------------------
+
+
+UNFLAGGED_SHOT = {
+    "DeviceID": "BridgeThatOmitsTheFlag",
+    "BallData": {"Speed": 132.4, "VLA": 17.2, "HLA": 1.4, "TotalSpin": 6200},
+    "ShotDataOptions": {"LaunchMonitorIsReady": True, "LaunchMonitorBallDetected": True},
+}
+
+
+async def test_a_real_strike_without_the_flag_is_still_a_shot(listener, settings):
+    """Not every bridge sets ContainsBallData. Discarding a genuine strike
+    because a flag was missing is worse than the alternative, and a non-zero
+    ball speed is unambiguous."""
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, UNFLAGGED_SHOT)
+        assert (await read_json(reader))["Code"] == 200
+        await asyncio.sleep(0.1)
+
+        assert listener.shots_received == 1
+        shot_dir = next(settings.shots_dir.iterdir())
+        metadata = json.loads((shot_dir / "metadata.json").read_text())
+        assert metadata["telemetry"]["ball"]["speed_mph"] == 132.4
+    finally:
+        writer.close()
+
+
+async def test_a_zero_speed_frame_is_not_a_shot(listener, settings):
+    """Ball placed / ball removed carry BallData with no speed."""
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, {**UNFLAGGED_SHOT, "BallData": {"Speed": 0}})
+        assert (await read_json(reader))["Code"] == 200
+        await asyncio.sleep(0.1)
+        assert listener.shots_received == 0
+        assert listener.frames_ignored == 1
+        assert list(settings.shots_dir.iterdir()) == []
+    finally:
+        writer.close()
+
+
+async def test_ignored_frames_say_why(listener, settings, caplog):
+    """A monitor that is connected and producing nothing is the hardest thing
+    to debug, so silence is not acceptable."""
+    reader, writer = await connect(settings)
+    try:
+        with caplog.at_level("INFO", logger="backend.gspro"):
+            await send(writer, {"DeviceID": "x", "ShotDataOptions": {"LaunchMonitorIsReady": True}})
+            await read_json(reader)
+            await asyncio.sleep(0.1)
+        messages = [record.getMessage() for record in caplog.records]
+        assert any("ignoring frame" in m for m in messages)
+        assert any("no BallData" in m for m in messages)
+    finally:
+        writer.close()
+
+
+async def test_counters_separate_shots_heartbeats_and_ignored(listener, settings):
+    reader, writer = await connect(settings)
+    try:
+        for payload in (HEARTBEAT, SHOT, {"ShotDataOptions": {"LaunchMonitorIsReady": True}}):
+            await send(writer, payload)
+            await read_json(reader)
+        await asyncio.sleep(0.1)
+        assert (listener.shots_received, listener.heartbeats_received,
+                listener.frames_ignored) == (1, 1, 1)
+    finally:
+        writer.close()

@@ -29,6 +29,8 @@ async def health(
                 "port": settings.gspro_port,
                 "clients": gspro.client_count,
                 "shots_received": gspro.shots_received,
+                "heartbeats_received": gspro.heartbeats_received,
+                "frames_ignored": gspro.frames_ignored,
                 "last_error": gspro.last_error,
             },
             "kinovea_hook": {
