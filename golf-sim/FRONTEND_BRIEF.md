@@ -141,4 +141,6 @@ than it looks.
 4. Landmark indices, the frame-distance cap, calibration state in the status
    bar.
 
-Still not wanted: more theming, more animation, more panels.
+That line about theming, animation and panels not being wanted is now
+withdrawn — see `DESIGN_BRIEF.md`, written the same day. Do the correctness
+work above first, then that.

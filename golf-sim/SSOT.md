@@ -414,7 +414,8 @@ cannot.
    - `PressureMatVisualizer` reads `pressure.json` and accurately maps CoP.
    - `TrajectoryCard` and `TelemetryHUD` now parse v1.2 backend `telemetry.flight` with proper `—` and `est` rendering behavior.
 
-**Next up:** `FRONTEND_BRIEF.md` in this directory — one crash to fix
+**Next up:** `FRONTEND_BRIEF.md` (correctness) then `DESIGN_BRIEF.md`
+(motion and visual polish, now in scope). `FRONTEND_BRIEF.md` — one crash to fix
 (`Pose3DCanvas` violates the Rules of Hooks and will take the panel down the
 first time a 3D shot loads), three places where a mock-fixture constant stands
 in for real data, and two new backend fields worth showing.
