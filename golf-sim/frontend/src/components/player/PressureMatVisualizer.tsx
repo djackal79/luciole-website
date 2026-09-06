@@ -2,7 +2,8 @@ import React, { useRef, useEffect } from 'react';
 import { useShotStore } from '../../store/shotStore';
 import { usePlayerStore } from '../../store/playerStore';
 import { useThemeStore } from '../../store/themeStore';
-import { Footprints, Activity, Gauge, Flame, Sparkles } from 'lucide-react';
+import { Footprints, Activity, Gauge, Flame, Sparkles, Clock, AlertCircle } from 'lucide-react';
+import { usePressureData } from '../../hooks/usePressureData';
 
 export const PressureMatVisualizer: React.FC = () => {
   const currentShot = useShotStore((s) => s.getCurrentShot());
@@ -11,38 +12,49 @@ export const PressureMatVisualizer: React.FC = () => {
   const isBoutique = currentTheme === 'boutique';
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Get interpolated sample from pressure data
-  const pressureData = currentShot?.pressure_data;
-  const samples = pressureData?.samples ?? [];
 
+  const pressureData = usePressureData();
+  const samples = pressureData?.samples ?? [];
+  const status = currentShot?.pressure?.status ?? 'unavailable';
+  
   // Find or interpolate sample at currentTime
   const currentSample = (() => {
     if (!samples.length) {
       return {
-        time_sec: currentTime,
+        t_ms: currentTime * 1000,
         lead_pct: 55,
         trail_pct: 45,
         lead_heel_pct: 30,
         lead_toe_pct: 25,
         trail_heel_pct: 27,
         trail_toe_pct: 18,
-        cop_x: 0.1,
-        cop_y: 0.0,
-        vertical_force_n: 800
+        cop: { x_mm: 0, y_mm: 0 },
+        grf_n: 800
       };
     }
-    // Find closest sample
+    const impactTime = pressureData?.impact_ms ?? 2450;
+    const t_from_impact_sec = currentTime - 2.45; // master impact time
+    const target_t_ms = impactTime + (t_from_impact_sec * 1000);
+
     let closest = samples[0];
-    let minDiff = Math.abs(closest.time_sec - currentTime);
+    let minDiff = Math.abs(closest.t_ms - target_t_ms);
     for (let i = 1; i < samples.length; i++) {
-      const diff = Math.abs(samples[i].time_sec - currentTime);
+      const diff = Math.abs(samples[i].t_ms - target_t_ms);
       if (diff < minDiff) {
         minDiff = diff;
         closest = samples[i];
       }
     }
-    return closest;
+    // ensure fallback fields
+    return {
+      ...closest,
+      lead_heel_pct: 25,
+      lead_toe_pct: closest.lead_pct - 25,
+      trail_heel_pct: 25,
+      trail_toe_pct: closest.trail_pct - 25,
+    };
   })();
+
 
   // Render Dual Foot Pressure Mat & CoP Trace on Canvas
   useEffect(() => {
@@ -165,18 +177,18 @@ export const PressureMatVisualizer: React.FC = () => {
 
       samples.forEach((s, idx) => {
         // Map cop_x (-1 to 1) and cop_y (-1 to 1) to screen
-        const sx = width / 2 + s.cop_x * (width * 0.32);
-        const sy = height / 2 - s.cop_y * (height * 0.32);
+        const sx = width / 2 + (s.cop.x_mm / 500) * (width * 0.32);
+        const sy = height / 2 - (s.cop.y_mm / 500) * (height * 0.32);
         if (idx === 0) ctx.moveTo(sx, sy);
         else ctx.lineTo(sx, sy);
       });
       ctx.stroke();
 
       // Mark Impact snapshot on the path
-      const impactSample = samples.find(s => Math.abs(s.time_sec - 2.45) < 0.05) || samples[Math.floor(samples.length * 0.6)];
+      const impactSample = samples.find(s => Math.abs(s.t_ms - (pressureData?.impact_ms ?? 2450)) < 0.05) || samples[Math.floor(samples.length * 0.6)];
       if (impactSample) {
-        const ix = width / 2 + impactSample.cop_x * (width * 0.32);
-        const iy = height / 2 - impactSample.cop_y * (height * 0.32);
+        const ix = width / 2 + (impactSample.cop.x_mm / 500) * (width * 0.32);
+        const iy = height / 2 - (impactSample.cop.y_mm / 500) * (height * 0.32);
         ctx.fillStyle = '#facc15';
         ctx.beginPath();
         ctx.arc(ix, iy, 4.5, 0, Math.PI * 2);
@@ -188,8 +200,8 @@ export const PressureMatVisualizer: React.FC = () => {
     }
 
     // Draw Current Active CoP Marker
-    const curX = width / 2 + currentSample.cop_x * (width * 0.32);
-    const curY = height / 2 - currentSample.cop_y * (height * 0.32);
+    const curX = width / 2 + (currentSample.cop.x_mm / 500) * (width * 0.32);
+    const curY = height / 2 - (currentSample.cop.y_mm / 500) * (height * 0.32);
 
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2;
@@ -238,7 +250,7 @@ export const PressureMatVisualizer: React.FC = () => {
                   ? 'rounded-full bg-[#D4AF37]/20 text-[#E5C07B] border-[#D4AF37]/40 font-serif' 
                   : 'rounded bg-amber-500/20 text-amber-300 border-amber-500/30 font-mono'
               }`}>
-                Awaiting hardware
+                {status === 'ready' ? 'Live Tracking' : 'Awaiting hardware'}
               </span>
             </div>
             <p className={`text-[10px] ${isBoutique ? 'font-serif text-[#8E928F]' : 'font-mono text-neutral-500'}`}>
@@ -268,7 +280,7 @@ export const PressureMatVisualizer: React.FC = () => {
           }`}>
             <Gauge className={`w-3.5 h-3.5 ${isBoutique ? 'text-[#D4AF37]' : 'text-cyan-400'}`} />
             <span className={`font-black ${isBoutique ? 'font-sans text-[#E5C07B]' : 'text-cyan-400'}`}>
-              {currentSample.vertical_force_n ?? 820} N
+              {currentSample.grf_n ?? 820} N
             </span>
           </div>
         </div>

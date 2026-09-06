@@ -24,6 +24,7 @@ export const SystemStatusBar: React.FC = () => {
   const isBoutique = currentTheme === 'boutique';
 
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -150,6 +151,19 @@ export const SystemStatusBar: React.FC = () => {
           <span>Simulate Strike</span>
         </button>
 
+
+        <button
+          onClick={() => setShowDetails(!showDetails)}
+          className={`flex items-center gap-1.5 px-2.5 py-0.5 transition-colors border ${
+            isBoutique 
+              ? 'rounded-full bg-stone-900/60 hover:bg-stone-800 border-[#C5A880]/30 text-[#F4F4F2]' 
+              : 'rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700'
+          }`}
+        >
+          <Activity className={`w-3 h-3 ${isBoutique ? 'text-[#D4AF37]' : 'text-blue-400'}`} />
+          <span>Diag</span>
+        </button>
+
         {/* Setup Wizard Button */}
         <button
           onClick={openSetupWizard}
@@ -163,6 +177,36 @@ export const SystemStatusBar: React.FC = () => {
           <span>Studio Setup</span>
         </button>
       </div>
+
+      {showDetails && health && (
+        <div className={`w-full mt-2 p-2 border rounded text-[10px] ${
+          isBoutique ? 'bg-stone-900/40 border-[#C5A880]/20' : 'bg-black/40 border-neutral-800'
+        } grid grid-cols-1 md:grid-cols-3 gap-4`}>
+          <div>
+            <div className={`font-bold mb-1 ${isBoutique ? 'text-[#E5C07B]' : 'text-emerald-400'}`}>LM Socket (GSPro)</div>
+            <div>Live: {health.listeners.gspro_socket.live ? 'Yes' : 'No'}</div>
+            <div>Clients: {health.listeners.gspro_socket.clients}</div>
+            {health.listeners.gspro_socket.clients > 0 && health.listeners.gspro_socket.shots_received === 0 && health.listeners.gspro_socket.heartbeats_received > 0 ? (
+               <div className="text-amber-400 font-bold mt-1 mb-1">Status: Connected but idle (not receiving strikes)</div>
+            ) : (
+               <div className="mb-1">Status: {health.listeners.gspro_socket.clients > 0 ? 'Receiving data' : 'Waiting for connection'}</div>
+            )}
+            <div>Shots: {health.listeners.gspro_socket.shots_received} | Heartbeats: {health.listeners.gspro_socket.heartbeats_received} | Ignored: {health.listeners.gspro_socket.frames_ignored}</div>
+            {health.listeners.gspro_socket.last_error && <div className="text-red-400 mt-1">Error: {health.listeners.gspro_socket.last_error}</div>}
+          </div>
+          <div>
+            <div className={`font-bold mb-1 ${isBoutique ? 'text-[#E5C07B]' : 'text-emerald-400'}`}>Pose Worker</div>
+            <div>Live: {health.listeners.pose_worker.live ? 'Yes' : 'No'} | Enabled: {health.listeners.pose_worker.enabled ? 'Yes' : 'No'}</div>
+            <div>Model: {health.listeners.pose_worker.model}</div>
+            <div>Reason: {health.listeners.pose_worker.reason}</div>
+          </div>
+          <div>
+            <div className={`font-bold mb-1 ${isBoutique ? 'text-[#E5C07B]' : 'text-emerald-400'}`}>Correlator (Pairing)</div>
+            <div>Window: {health.pairing.window_ms}ms | Late Attach: {health.pairing.late_attach_ms}ms</div>
+            <div>Open Shots: {health.pairing.open_shots}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
