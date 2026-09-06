@@ -184,7 +184,27 @@ working; you are only replacing simulated sources with real ones.
 
 GSPro must **not** be running: it binds the same port 921.
 
-Point the Square app at GSPro Open Connect on `127.0.0.1:921`. Then:
+Point the bridge at GSPro Open Connect on `127.0.0.1:921`. With
+SQG-GSPRO-Connect, leaving "Use custom IP/Port" unchecked is correct — the
+default is already that address.
+
+**Start the backend first, then the bridge.** The bridge connects once and
+does not retry, so every backend restart needs the bridge restarted after it.
+The backend prints `launch monitor connected from ...` when it happens; no
+line means no connection.
+
+Remember there are two links, and the backend can only see one:
+
+```
+Square LM ──(Bluetooth)──► bridge ──(TCP 921)──► backend
+               invisible here          visible in the log
+```
+
+`clients: 1` with no shots means the second link is fine and the first is not.
+The bridge's own window shows that half; the ball-ready sound is a quick test
+of it without touching any config.
+
+Then:
 
 ```powershell
 curl.exe http://127.0.0.1:8000/api/health
@@ -269,6 +289,8 @@ them, and a plausible guess would be worse than an honest blank.
 | Symptom | Cause |
 |---|---|
 | `gspro_socket.live: false`, `last_error` mentions address in use | GSPro is running. Close it. |
+| Monitor was connected, then stopped after a backend restart | The bridge does not auto-reconnect. Restart the bridge **after** the backend is listening. |
+| Bridge connected (`clients: 1`) but no shots | Two links in the chain. Check the bridge's own window for the launch monitor connection — the Bluetooth half is invisible to the backend. |
 | Every swing produces **two** shots | Both Kinovea hooks send the same `SOURCE`. |
 | Impact clips arrive but never join a shot | `GOLFSIM_IMPACT_TRUST_TRIGGER_TS` is not `true`. |
 | Phone says "unreachable" | Firewall rule missing, or wrong IP, or phone on the guest network. |
