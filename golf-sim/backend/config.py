@@ -103,8 +103,16 @@ class Settings(BaseSettings):
     pose_enabled: bool = True
     #: Not shipped with the repo -- fetch once with scripts/fetch_pose_model.py.
     pose_model_path: Path = Path("./models/pose_landmarker_lite.task")
-    #: Caps the sampling rate. Pose at 30 Hz is already finer than any swing
-    #: metric needs, so a 60 fps DTL clip is halved for nothing lost.
+    #: Caps the sampling rate, halving the work on a 60 fps clip.
+    #:
+    #: 30 Hz is enough for every metric computed today, because they are all
+    #: *positions* held at an instant -- shoulder turn and X-factor at the top
+    #: of the backswing, spine angle at address. It is NOT enough for anything
+    #: differentiated. A downswing lasts about 250 ms, which is 7 frames at
+    #: 30 Hz and 15 at 60; velocity from 7 samples is coarse and acceleration
+    #: is noise. So the day this rig computes a kinematic sequence -- peak
+    #: angular velocity of pelvis, then thorax, then arms -- raise this to at
+    #: least 60 and preferably match the camera.
     pose_max_fps: float = 30.0
     pose_min_confidence: float = 0.5
     #: Written by scripts/calibrate_cameras.py. Absent means pose stays 2D:

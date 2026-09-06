@@ -130,8 +130,10 @@ class PoseExtractor:
         """Landmarks for every sampled frame of ``video``.
 
         ``max_fps`` caps the sampling rate. A 60 fps down-the-line clip is
-        240 frames over four seconds, and pose at 30 Hz is already finer than
-        any swing metric needs -- so this halves the work for nothing lost.
+        240 frames over four seconds, and halving that costs nothing for the
+        metrics computed today, which are all positions at an instant. It
+        would cost a great deal for anything differentiated -- see the note on
+        ``pose_max_fps`` in the settings.
         """
         if (reason := self.available()) is not None:
             raise ExtractionError(reason)

@@ -396,6 +396,38 @@ cannot.
 
 ---
 
+## 3b. External advice, reviewed
+
+A multi-camera engineering brief came in from Gemini on 6 September. Much of it
+is good and some of it is acted on below. Three of its directives would undo
+decisions made here for measured reasons, so they are recorded as rejected
+rather than left to be rediscovered.
+
+| Directive | Verdict |
+|---|---|
+| Use `cv2.stereoCalibrate` for extrinsics | **Rejected.** It assumes a narrow baseline; at 90° one view is always near edge-on and it converges to nonsense. This is why each camera is placed independently against a shared board — see the `calibration.py` docstring. |
+| Make camera 1 the world origin | **Rejected.** The board on the floor is the origin precisely so the world is gravity-aligned. Anchored to a camera, every angle inherits that camera's tilt and "vertical" stops meaning vertical. |
+| Desync makes rays fail to intersect, producing an obvious ghost joint | **False, and dangerously so.** The opposite is true at 90°: face-on fixes one axis, down-the-line the other, so mistimed frames intersect *cleanly*. Measured in D15 — a 200 ms skew reprojects at 0.21 px while costing 82° of shoulder turn. Nothing announces itself. |
+| Three rays "drastically reduce" positional uncertainty via bundle adjustment | **Overstated, and the wrong algorithm.** Bundle adjustment jointly solves structure and camera parameters; triangulating against a known calibration is DLT plus optional point-only refinement. Measured gain from a third camera: 13%, not "drastic". |
+| Four cameras guarantee 100% joint visibility | **No.** 97.3% at 80% per-camera visibility, under an independence assumption that flatters it. |
+| Cubic spline interpolation of 2D coordinates | **Use with care.** Splines overshoot at sharp reversals, and a golf swing has two — the top and impact. A shape-preserving interpolant (PCHIP) is the safe upgrade; plain linear is what ships today. |
+
+What it gets right and is worth acting on: MediaPipe resizes to a fixed small
+tensor so resolution is largely wasted on pose (with a caveat — it crops to the
+subject first, so a golfer small in frame *does* benefit from more pixels);
+frame rate is the real constraint and 30 Hz cannot support derivatives; shutter
+speed matters more than either; and N-view DLT with per-ray confidence gating
+is exactly the right target, which is what `blocked_reason` and the occlusion
+work are building toward.
+
+Its sharpest point — that triangulating a *guessed* landmark against a real one
+produces a wildly wrong 3D point — is already defended: `MIN_VISIBILITY = 0.5`
+drops low-confidence landmarks rather than solving them, so the failure mode
+here is missing data, not wrong data. That is the whole reason the occlusion
+argument for a third camera is about *coverage*.
+
+---
+
 ## 4. Next steps
 
 ### Antigravity (Build 2)
