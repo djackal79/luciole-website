@@ -83,6 +83,30 @@ async def set_gspro_listener(request: Request, enabled: bool = True) -> dict[str
     return {"live": gspro.live, "started": False, "last_error": None}
 
 
+root_router = APIRouter(tags=["system-root"])
+
+@root_router.get("/health")
+async def root_health(request: Request, settings: SettingsDep, correlator: CorrelatorDep) -> dict[str, Any]:
+    return await health(request, settings, correlator)
+
+@root_router.post("/session/start")
+async def root_start_session(request: Request, correlator: CorrelatorDep, body: SessionRequest) -> dict[str, Any]:
+    return await start_session(request, correlator, body)
+
+@root_router.post("/session/end")
+async def root_end_session(request: Request, correlator: CorrelatorDep) -> dict[str, Any]:
+    """End the current session and flush open shots."""
+    old_session = correlator.session_id
+    await correlator.stop(flush=True)
+    new_id = default_session_id()
+    await correlator.reset_session(new_id)
+    return {"ended_session_id": old_session, "new_session_id": new_id, "ok": True}
+
+@root_router.post("/listener/toggle")
+async def root_toggle_listener(request: Request, enabled: bool = True) -> dict[str, Any]:
+    return await set_gspro_listener(request, enabled)
+
+
 def default_session_id() -> str:
     """``20260906-morning``."""
     now = local_now()
@@ -96,3 +120,4 @@ def default_session_id() -> str:
     else:
         part = "night"
     return f"{now.strftime('%Y%m%d')}-{part}"
+

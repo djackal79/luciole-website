@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛳</text></svg>" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Golf Sim // Replay & Launch Telemetry</title>
+    <!-- Google Fonts: Playfair Display & Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,800;0,900;1,400;1,600&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-[#07090e] text-neutral-200 antialiased overflow-x-hidden">
+    <div id="root">
+      <div style="min-height: 100vh; background-color: #07090e; color: #10b981; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: monospace; text-align: center; padding: 20px;">
+        <div style="font-size: 32px; margin-bottom: 12px;">⛳</div>
+        <div style="font-weight: bold; letter-spacing: 0.05em; font-size: 16px; margin-bottom: 8px;">GOLF_SIM // DASHBOARD</div>
+        <div style="color: #64748b; font-size: 13px;">Connecting and loading modules...</div>
+      </div>
+    </div>
+    <script>
+      window.addEventListener('error', function(event) {
+        var root = document.getElementById('root');
+        if (root && root.innerText && root.innerText.includes('Connecting and loading modules')) {
+          root.innerHTML = '<div style="min-height:100vh;background:#07090e;color:#f43f5e;font-family:monospace;padding:40px;text-align:center;"><h2 style="margin-bottom:12px;">App Failed to Mount</h2><p style="background:#1e1015;padding:16px;border-radius:8px;border:1px solid #881337;max-width:600px;margin:0 auto;text-align:left;white-space:pre-wrap;">' + (event.error ? (event.error.stack || event.error.message) : event.message) + '</p></div>';
+        }
+      });
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -101,6 +101,7 @@ app.add_middleware(
 app.include_router(ingest.router)
 app.include_router(shots.router)
 app.include_router(system.router)
+app.include_router(system.root_router)
 app.include_router(ws.router)
 
 
