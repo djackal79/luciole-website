@@ -151,6 +151,7 @@ export interface FlightData {
   descent_angle_deg: number | null;
   offline_m: number | null;
   flight_time_s: number | null;
+  path?: [number, number, number][];
   conditions: {
     altitude_m: number;
     temperature_c: number;
