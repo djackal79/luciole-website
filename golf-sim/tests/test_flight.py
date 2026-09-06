@@ -13,7 +13,7 @@ import pytest
 
 import backend.flight as flight
 from backend.flight import Conditions, Launch, simulate
-from backend.models import BallData, model_flight
+from backend.models import BallData, FlightBlock, model_flight
 
 M_TO_YARDS = flight.M_TO_YARDS
 
@@ -211,3 +211,59 @@ def test_modelling_can_be_switched_off():
         conditions=object(),  # sentinel: disabled
     )
     assert telemetry.flight is None
+
+
+# ---------------------------------------------------------------------------
+# The flown path
+# ---------------------------------------------------------------------------
+
+
+def test_the_path_starts_at_the_tee_and_ends_where_the_ball_landed():
+    flight = simulate(Launch(ball_speed_mph=167, launch_angle_deg=10.9, back_spin_rpm=2686))
+    path = flight.as_dict()["path"]
+
+    assert path[0] == [0.0, 0.0, 0.0]
+    assert path[-1][1] == pytest.approx(0.0, abs=0.01)
+    assert path[-1][0] == pytest.approx(flight.carry_m, abs=0.05)
+    assert 2 < len(path) <= 48
+
+
+def test_the_path_actually_flies():
+    """Rises, peaks at the reported apex, comes back down."""
+    flight = simulate(Launch(ball_speed_mph=140, launch_angle_deg=14.0, back_spin_rpm=5000))
+    heights = [point[1] for point in flight.as_dict()["path"]]
+
+    assert max(heights) == pytest.approx(flight.apex_m, rel=0.05)
+    peak = heights.index(max(heights))
+    assert heights[:peak] == sorted(heights[:peak])
+    assert heights[peak:] == sorted(heights[peak:], reverse=True)
+
+
+def test_downrange_never_goes_backwards():
+    flight = simulate(Launch(ball_speed_mph=150, launch_angle_deg=12.0, back_spin_rpm=4000))
+    downrange = [point[0] for point in flight.as_dict()["path"]]
+    assert downrange == sorted(downrange)
+
+
+def test_a_wedge_and_a_driver_are_different_shapes():
+    """The reason the path is published at all. A stock parabola cannot show
+    that a wedge climbs steeply and lands short while a driver runs flat and
+    far -- and the old trajectory card drew both with the same curve."""
+    driver = simulate(Launch(ball_speed_mph=167, launch_angle_deg=10.9, back_spin_rpm=2686))
+    wedge = simulate(Launch(ball_speed_mph=102, launch_angle_deg=24.2, back_spin_rpm=9304))
+
+    # Height relative to how far it went: the wedge's arc is far steeper.
+    driver_ratio = driver.apex_m / driver.carry_m
+    wedge_ratio = wedge.apex_m / wedge.carry_m
+    assert wedge_ratio > driver_ratio * 1.4, f"{wedge_ratio:.3f} vs {driver_ratio:.3f}"
+
+
+def test_a_shot_that_cannot_be_modelled_has_no_path():
+    assert simulate(Launch(ball_speed_mph=0, launch_angle_deg=12.0)) is None
+
+
+def test_the_path_reaches_the_shot_package():
+    flight = simulate(Launch(ball_speed_mph=150, launch_angle_deg=13.0, back_spin_rpm=3000))
+    block = FlightBlock(model="test", **flight.as_dict())
+    assert len(block.path) > 2
+    assert block.path[0] == [0.0, 0.0, 0.0]

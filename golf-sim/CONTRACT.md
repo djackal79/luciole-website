@@ -692,3 +692,49 @@ disk, oldest first, and marks any it cannot re-queue as `failed` with
 
 For the frontend this changes nothing structurally — but `pending` is now
 genuinely temporary, so it is safe to show a spinner and wait.
+
+---
+
+# Schema v1.5 — the flight path itself
+
+Additive. One new field on `telemetry.flight`.
+
+## `telemetry.flight.path`
+
+The trajectory the model actually flew, rather than six numbers describing it.
+
+```json
+"flight": {
+  "carry_m": 245.33, "apex_m": 31.21, "descent_angle_deg": 38.4,
+  "path": [[0.0, 0.0, 0.0], [5.79, 1.05, 0.0], ... , [245.33, 0.0, 0.0]]
+}
+```
+
+Each point is `[downrange_m, height_m, offline_m]`:
+
+- **downrange** — along the target line, always increasing.
+- **height** — above the tee. Starts and ends at 0.
+- **offline** — negative left, positive right, matching `offline_m`.
+
+At most 48 points, evenly spaced in time rather than distance so the descent
+is described as well as the launch. The first point is the tee and the last is
+exactly the landing point, so `path[-1][0]` agrees with `carry_m`. About 1 KB.
+
+The integrator has always computed this and thrown it away. It is published
+because **a wedge and a driver are different shapes**, and no amount of styling
+can get that out of three summary numbers: drawn from `carry`, `apex` and
+`descent` alone, every shot is the same parabola with different labels. A
+modelled 7-iron peaks at 21 m over 154 m; a pitching wedge peaks at 23 m over
+122 m. Same apex, entirely different flight.
+
+Draw it directly:
+
+- **Side view** — `x = downrange`, `y = height`.
+- **Top-down view** — `x = offline`, `y = downrange`. This is where draw and
+  fade are visible, and it cannot be faked from `offline_m` alone because the
+  curvature builds through the flight rather than being a straight line to the
+  landing point.
+
+Present it as a model, as with the other `flight` fields — it is not a
+measurement. `path` is absent (an empty list) whenever `flight` itself could
+not be modelled.

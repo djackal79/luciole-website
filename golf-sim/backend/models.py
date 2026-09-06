@@ -206,6 +206,11 @@ class FlightBlock(BaseModel):
     descent_angle_deg: float | None = None
     offline_m: float | None = None
     flight_time_s: float | None = None
+    #: The flown path: [downrange_m, height_m, offline_m] from tee to landing,
+    #: evenly spaced in time. Summary numbers describe a curve; this is the
+    #: curve. A wedge and a driver are different shapes, and drawing them from
+    #: three numbers cannot show that.
+    path: list[list[float]] = Field(default_factory=list)
     #: The air it was flown through, so a number can be reproduced later.
     conditions: dict[str, float] = Field(default_factory=dict)
 

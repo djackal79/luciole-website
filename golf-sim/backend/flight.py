@@ -17,7 +17,8 @@ that decays through the flight -- there is no honest closed form for that.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 #: Ball. R1.68in diameter, 45.93 g -- the conforming limits.
 BALL_MASS_KG = 0.04593
@@ -57,6 +58,11 @@ M_TO_FEET = 3.28084
 STEP_S = 0.001
 MAX_FLIGHT_S = 15.0
 
+#: Points kept in the published trajectory. The integrator takes thousands of
+#: 1 ms steps; a few dozen is plenty to draw a smooth curve, and keeps the shot
+#: package small enough that nobody has to think about it.
+PATH_POINTS = 48
+
 
 @dataclass(frozen=True)
 class Conditions:
@@ -95,8 +101,13 @@ class Flight:
     descent_angle_deg: float
     offline_m: float
     flight_time_s: float
+    #: The flown path itself: [downrange, height, offline] in metres, from the
+    #: tee to the landing point. Summary numbers describe a curve; this is the
+    #: curve, so a wedge and a driver can be drawn as the different shapes they
+    #: actually are instead of as one stock parabola with different labels.
+    path: list[tuple[float, float, float]] = field(default_factory=list)
 
-    def as_dict(self) -> dict[str, float]:
+    def as_dict(self) -> dict[str, Any]:
         return {
             "carry_m": round(self.carry_m, 2),
             "total_m": round(self.total_m, 2),
@@ -104,6 +115,7 @@ class Flight:
             "descent_angle_deg": round(self.descent_angle_deg, 1),
             "offline_m": round(self.offline_m, 2),
             "flight_time_s": round(self.flight_time_s, 2),
+            "path": [[round(v, 3) for v in point] for point in self.path],
         }
 
 
@@ -198,7 +210,7 @@ def simulate(launch: Launch, conditions: Conditions | None = None) -> Flight | N
 
     apex = 0.0
     elapsed = 0.0
-    previous = position
+    flown: list[tuple[float, float, float]] = [position]
 
     while elapsed < MAX_FLIGHT_S:
         decay = math.exp(-elapsed / SPIN_DECAY_TAU_S)
@@ -224,6 +236,7 @@ def simulate(launch: Launch, conditions: Conditions | None = None) -> Flight | N
 
         apex = max(apex, new_position[1])
         elapsed += STEP_S
+        flown.append(new_position)  # type: ignore[arg-type]
 
         if new_position[1] <= 0.0 and elapsed > STEP_S:
             # Interpolate to the exact ground crossing rather than overshooting.
@@ -237,6 +250,7 @@ def simulate(launch: Launch, conditions: Conditions | None = None) -> Flight | N
                 math.atan2(abs(new_velocity[1]), math.hypot(new_velocity[0], new_velocity[2]))
             )
             carry = math.hypot(landing[0], landing[2])
+            flown[-1] = landing  # type: ignore[assignment]
             return Flight(
                 carry_m=carry,
                 total_m=carry + _roll(carry, descent),
@@ -244,11 +258,27 @@ def simulate(launch: Launch, conditions: Conditions | None = None) -> Flight | N
                 descent_angle_deg=descent,
                 offline_m=landing[2],
                 flight_time_s=elapsed - STEP_S + STEP_S * fraction,
+                path=_downsample(flown),
             )
 
-        previous, position, velocity = position, new_position, new_velocity  # type: ignore[assignment]
+        position, velocity = new_position, new_velocity  # type: ignore[assignment]
 
     return None
+
+
+def _downsample(flown: list[tuple[float, float, float]]) -> list[tuple[float, float, float]]:
+    """Thin thousands of integration steps to a drawable handful.
+
+    Evenly spaced in time rather than in distance, which keeps the descent --
+    where the ball is moving slowest and the shape is most telling -- as well
+    described as the launch. The first and last points are always kept, so the
+    curve starts at the tee and ends exactly where the ball landed.
+    """
+    if len(flown) <= PATH_POINTS:
+        return flown
+    last = len(flown) - 1
+    indices = sorted({round(i * last / (PATH_POINTS - 1)) for i in range(PATH_POINTS)})
+    return [flown[i] for i in indices]
 
 
 def _roll(carry_m: float, descent_angle_deg: float) -> float:
