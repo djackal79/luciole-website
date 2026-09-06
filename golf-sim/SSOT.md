@@ -241,6 +241,19 @@ above needs nothing written so it is the one to try first.
 a different club-code scheme and are explicitly unsupported. Confirm which unit
 is in the bay before switching.
 
+**Treat any Square BLE decoder as impermanent.** A comparable project,
+`brentyates/squaregolf-connector`, has been taken down under DMCA, and
+`allsquare` is doing the same work in the same territory.
+
+That is survivable here only because this backend speaks GSPro Open Connect --
+a documented, widely implemented protocol -- rather than talking to the unit
+itself. The bridge is a swappable component behind that boundary, so if one
+disappears another takes its place with no change to this code. For the same
+reason, a Square BLE library should never be pulled *into* the backend,
+however appealing "one fewer moving part" sounds: that is exactly the
+dependency that gets removed. Keep a local copy of whichever bridge binary is
+in use.
+
 Its device notes also carry a finding relevant to the current
 ball-detection problem: a ball struck near the **front edge of the detection
 zone** comes back with zero spin, which flighthook discards as a failed read.
