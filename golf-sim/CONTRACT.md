@@ -1,6 +1,6 @@
 # Golf Sim App · Build 1 ↔ Build 2 Contract
 
-**Schema v1.1.** Additive over v1.0 — nothing was removed or renamed. See §v1.1 at the end.
+**Schema v1.2.** Additive over v1.0 — nothing has been removed or renamed. See §v1.1 and §v1.2 at the end.
 
 **The single source of truth for both builds.** Backend writes exactly this;
 frontend reads exactly this. Give this document to both agents verbatim —
@@ -460,3 +460,60 @@ PC by design.
 **The backend owns the write; the frontend reads.** The browser is the wrong
 writer: shots would only sync while someone has the app open, and nobody is
 watching a screen mid-swing.
+
+
+---
+
+# Schema v1.2 — modelled ball flight
+
+Carry and total are **still null** in `telemetry.distance`. That has not
+changed and will not: the monitor measures launch conditions, and `distance`
+means measured.
+
+What is new is `telemetry.flight`, which carries a **modelled** trajectory
+computed from those launch conditions. It is deliberately a separate block, so
+a model output can never be mistaken for a monitor reading.
+
+```json
+"flight": {
+  "model": "drag_magnus_rk4_v1",
+  "carry_m": 223.01,
+  "total_m": 242.57,
+  "apex_m": 29.75,
+  "descent_angle_deg": 38.5,
+  "offline_m": -9.01,
+  "flight_time_s": 6.4,
+  "conditions": { "altitude_m": 0.0, "temperature_c": 20.0 }
+}
+```
+
+`flight` is `null` when the monitor reported no ball speed or no launch angle,
+and when modelling is switched off (`GOLFSIM_FLIGHT_MODEL_ENABLED=false`).
+
+## What the model is
+
+The trajectory is integrated with RK4 at 1 ms: drag and Magnus lift both
+depend on instantaneous airspeed and on spin that decays through the flight,
+so there is no honest closed form. Coefficients were fitted against published
+carry distances for four clubs spanning driver to wedge — within 4% on each,
+2.9% RMS — and the resulting lift coefficients (0.165 at driver spin through
+0.22 at wedge spin) land where measured golf ball data puts them.
+
+`offline_m` is negative left, positive right. A negative `spin_axis_deg` is a
+draw for a right-hander and produces a negative `offline_m`.
+
+`conditions` records the air the number was produced in, so a figure can be
+reproduced later. Configure with `GOLFSIM_FLIGHT_ALTITUDE_M` and
+`GOLFSIM_FLIGHT_TEMPERATURE_C`.
+
+## For the frontend
+
+- **Label it as an estimate.** It is a model, not a measurement, and the user
+  should be able to tell.
+- **`total_m` is the least trustworthy number here.** Roll depends on turf,
+  moisture and slope, none of which a launch monitor knows. Carry, apex and
+  descent angle are on much firmer ground.
+- **Do not compute ballistics client-side any more.** One implementation, in
+  the backend, tested against known distances. If a number looks wrong, it is
+  wrong for every consumer at once, which is the point.
+- Units are canonical: metres. The frontend still owns the m/yds toggle.

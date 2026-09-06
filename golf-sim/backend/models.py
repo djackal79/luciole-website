@@ -16,9 +16,12 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-SCHEMA_VERSION = "1.1"
+SCHEMA_VERSION = "1.2"
 
 YARDS_TO_METRES = 0.9144
+
+#: Names the model in every package, so a number can be traced to what made it.
+FLIGHT_MODEL_NAME = "drag_magnus_rk4_v1"
 
 
 class SourceName(str, Enum):
@@ -187,6 +190,26 @@ class DistanceData(BaseModel):
     total_m: float | None = None
 
 
+class FlightBlock(BaseModel):
+    """Modelled trajectory, not measured.
+
+    Deliberately separate from ``distance``, which means *measured* and stays
+    null on this path. Merging them would make a model output indistinguishable
+    from a monitor reading, and the whole point of the null is that the reader
+    knows which is which.
+    """
+
+    model: str
+    carry_m: float | None = None
+    total_m: float | None = None
+    apex_m: float | None = None
+    descent_angle_deg: float | None = None
+    offline_m: float | None = None
+    flight_time_s: float | None = None
+    #: The air it was flown through, so a number can be reproduced later.
+    conditions: dict[str, float] = Field(default_factory=dict)
+
+
 class TelemetryBlock(BaseModel):
     source: str = "gspro_connect_v1"
     received_at: str
@@ -194,6 +217,9 @@ class TelemetryBlock(BaseModel):
     club: ClubData = Field(default_factory=ClubData)
     derived: DerivedData = Field(default_factory=DerivedData)
     distance: DistanceData = Field(default_factory=DistanceData)
+    #: Modelled trajectory. Present when the launch conditions support one;
+    #: never a substitute for `distance`.
+    flight: FlightBlock | None = None
     #: The unmodified provider payload. Always stored -- you will want a field
     #: you didn't map.
     raw: dict[str, Any] = Field(default_factory=dict)
@@ -324,7 +350,11 @@ def _number(source: dict[str, Any], key: str) -> float | None:
     return float(value)
 
 
-def telemetry_from_gspro(payload: dict[str, Any], received_at: datetime) -> TelemetryBlock:
+def telemetry_from_gspro(
+    payload: dict[str, Any],
+    received_at: datetime,
+    conditions: Any | None = None,
+) -> TelemetryBlock:
     """Map a GSPro Open Connect v1 shot onto the schema.
 
     ``ShotDataOptions.ContainsClubData`` decides whether club fields are real;
@@ -363,7 +393,43 @@ def telemetry_from_gspro(payload: dict[str, Any], received_at: datetime) -> Tele
         club=club,
         derived=derive(ball, club),
         distance=_distance_from_gspro(ball_raw, payload.get("Units")),
+        flight=model_flight(ball, conditions),
         raw=payload,
+    )
+
+
+def model_flight(ball: BallData, conditions: Any | None = None) -> FlightBlock | None:
+    """Run the trajectory model over the measured launch conditions."""
+    from .flight import Conditions, Launch, simulate
+
+    if conditions is not None and not isinstance(conditions, Conditions):
+        # Sentinel from the caller meaning modelling is switched off.
+        return None
+    if ball.speed_mph is None or ball.launch_angle_deg is None:
+        return None
+
+    conditions = conditions or Conditions()
+    result = simulate(
+        Launch(
+            ball_speed_mph=ball.speed_mph,
+            launch_angle_deg=ball.launch_angle_deg,
+            launch_direction_deg=ball.launch_direction_deg or 0.0,
+            back_spin_rpm=ball.back_spin_rpm or 0.0,
+            side_spin_rpm=ball.side_spin_rpm or 0.0,
+            spin_axis_deg=ball.spin_axis_deg,
+        ),
+        conditions,
+    )
+    if result is None:
+        return None
+
+    return FlightBlock(
+        model=FLIGHT_MODEL_NAME,
+        conditions={
+            "altitude_m": conditions.altitude_m,
+            "temperature_c": conditions.temperature_c,
+        },
+        **result.as_dict(),
     )
 
 

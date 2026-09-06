@@ -56,7 +56,7 @@ def test_top_level_keys_match_the_contract_exactly():
         "sources", "media", "sync", "telemetry", "pose", "pressure",
         "club_used", "tags", "notes",
     ]
-    assert package["schema_version"] == "1.1"
+    assert package["schema_version"] == "1.2"
     # Every source key is always emitted, so the frontend needs only a truth
     # check, never an existence check.
     assert list(package["sources"]) == [
@@ -65,8 +65,12 @@ def test_top_level_keys_match_the_contract_exactly():
     ]
     assert list(package["sync"]) == ["trigger_ts", "impact_offset_ms"]
     assert list(package["telemetry"]) == [
-        "source", "received_at", "ball", "club", "derived", "distance", "raw"
+        "source", "received_at", "ball", "club", "derived",
+        "distance", "flight", "raw",
     ]
+    # distance is measured and stays null; flight is modelled and separate.
+    assert package["telemetry"]["distance"] == {"carry_m": None, "total_m": None}
+    assert package["telemetry"]["flight"]["carry_m"] > 0
     assert list(package["media"]["impact_strike"]) == [
         "path", "camera", "capture_fps", "container_fps",
         "duration_ms", "width", "height", "impact_ms",

@@ -92,6 +92,13 @@ class Settings(BaseSettings):
     file_stable_interval_ms: int = 400
     file_stable_timeout_ms: int = 120_000
 
+    # ---- ball flight model -------------------------------------------------
+    #: The monitor measures launch conditions only, so carry and apex are
+    #: modelled. Results land in telemetry.flight, never in telemetry.distance.
+    flight_model_enabled: bool = True
+    flight_altitude_m: float = 0.0
+    flight_temperature_c: float = 20.0
+
     # ---- pose extraction ---------------------------------------------------
     pose_enabled: bool = True
     #: Not shipped with the repo -- fetch once with scripts/fetch_pose_model.py.

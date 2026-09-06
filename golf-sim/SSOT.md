@@ -387,10 +387,11 @@ Not wanted: more theming, more animation, more panels. Both themes are done.
    depth-dependent metrics stay null.
 5. **Camera calibration** — checkerboard intrinsics and extrinsics, then
    triangulated 3D. *Next, and blocked on a calibration capture.*
-5b. **Ball flight model** — GSPro Connect gives launch conditions only, so
-   carry, total, apex and descent have to be modelled. The frontend currently
-   uses rough heuristics; a physically grounded model belongs in the backend
-   as `telemetry.derived`, kept clearly separate from measured values.
+5b. ~~Ball flight model.~~ **Done.** `backend/flight.py`, schema v1.2,
+   `telemetry.flight`. RK4 with drag, Magnus and spin decay, fitted to within
+   4% of published carries from driver to wedge. `telemetry.distance` still
+   means measured and still stays null. **The frontend should stop computing
+   ballistics client-side** and read this instead.
 6. **Supabase sync** — backend-owned, offline-tolerant outbox (D6, D9).
 7. Deferred until the hardware exists: pressure ingest (D2).
 

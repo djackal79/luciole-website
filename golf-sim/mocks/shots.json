@@ -1,6 +1,6 @@
 [
   {
-    "schema_version": "1.1",
+    "schema_version": "1.2",
     "shot_id": "20260906T143052-478",
     "session_id": "20260906-morning",
     "created_at": "2026-09-06T14:30:52.478+00:00",
@@ -67,6 +67,19 @@
         "carry_m": null,
         "total_m": null
       },
+      "flight": {
+        "model": "drag_magnus_rk4_v1",
+        "carry_m": 181.02,
+        "total_m": 192.71,
+        "apex_m": 29.63,
+        "descent_angle_deg": 43.1,
+        "offline_m": -5.51,
+        "flight_time_s": 6.04,
+        "conditions": {
+          "altitude_m": 0.0,
+          "temperature_c": 20.0
+        }
+      },
       "raw": {
         "DeviceID": "MockMonitor",
         "Units": "Yards",
@@ -106,7 +119,7 @@
     "notes": "Baseline reference shot."
   },
   {
-    "schema_version": "1.1",
+    "schema_version": "1.2",
     "shot_id": "20260906T143134-478",
     "session_id": "20260906-morning",
     "created_at": "2026-09-06T14:31:34.478+00:00",
@@ -163,6 +176,19 @@
         "carry_m": null,
         "total_m": null
       },
+      "flight": {
+        "model": "drag_magnus_rk4_v1",
+        "carry_m": 155.87,
+        "total_m": 167.13,
+        "apex_m": 24.94,
+        "descent_angle_deg": 41.5,
+        "offline_m": -0.39,
+        "flight_time_s": 5.45,
+        "conditions": {
+          "altitude_m": 0.0,
+          "temperature_c": 20.0
+        }
+      },
       "raw": {
         "DeviceID": "MockMonitor",
         "Units": "Yards",
@@ -202,7 +228,7 @@
     "notes": ""
   },
   {
-    "schema_version": "1.1",
+    "schema_version": "1.2",
     "shot_id": "20260906T143227-478",
     "session_id": "20260906-morning",
     "created_at": "2026-09-06T14:32:27.478+00:00",
@@ -249,7 +275,7 @@
     "notes": "LM was unplugged; video only."
   },
   {
-    "schema_version": "1.1",
+    "schema_version": "1.2",
     "shot_id": "20260906T143310-478",
     "session_id": "20260906-morning",
     "created_at": "2026-09-06T14:33:10.478+00:00",
@@ -316,6 +342,19 @@
         "carry_m": null,
         "total_m": null
       },
+      "flight": {
+        "model": "drag_magnus_rk4_v1",
+        "carry_m": 167.16,
+        "total_m": 180.93,
+        "apex_m": 24.3,
+        "descent_angle_deg": 39.5,
+        "offline_m": -0.23,
+        "flight_time_s": 5.53,
+        "conditions": {
+          "altitude_m": 0.0,
+          "temperature_c": 20.0
+        }
+      },
       "raw": {
         "DeviceID": "MockMonitor",
         "Units": "Yards",
@@ -345,7 +384,7 @@
     "notes": "Monitor reported ball data only."
   },
   {
-    "schema_version": "1.1",
+    "schema_version": "1.2",
     "shot_id": "20260906T143353-478",
     "session_id": "20260906-morning",
     "created_at": "2026-09-06T14:33:53.478+00:00",
@@ -412,6 +451,19 @@
         "carry_m": null,
         "total_m": null
       },
+      "flight": {
+        "model": "drag_magnus_rk4_v1",
+        "carry_m": 155.95,
+        "total_m": 170.66,
+        "apex_m": 20.83,
+        "descent_angle_deg": 37.1,
+        "offline_m": -6.15,
+        "flight_time_s": 5.11,
+        "conditions": {
+          "altitude_m": 0.0,
+          "temperature_c": 20.0
+        }
+      },
       "raw": {
         "DeviceID": "MockMonitor",
         "Units": "Yards",
@@ -451,7 +503,7 @@
     "notes": "Face 6.0 deg closed to a 4.2 deg in-to-out path: heavy draw."
   },
   {
-    "schema_version": "1.1",
+    "schema_version": "1.2",
     "shot_id": "20260906T143436-478",
     "session_id": "20260906-morning",
     "created_at": "2026-09-06T14:34:36.478+00:00",
@@ -528,6 +580,19 @@
         "carry_m": null,
         "total_m": null
       },
+      "flight": {
+        "model": "drag_magnus_rk4_v1",
+        "carry_m": 174.93,
+        "total_m": 187.1,
+        "apex_m": 27.56,
+        "descent_angle_deg": 42.1,
+        "offline_m": -2.7,
+        "flight_time_s": 5.84,
+        "conditions": {
+          "altitude_m": 0.0,
+          "temperature_c": 20.0
+        }
+      },
       "raw": {
         "DeviceID": "MockMonitor",
         "Units": "Yards",
@@ -599,7 +664,7 @@
     "notes": "Both cameras, pose and pressure present."
   },
   {
-    "schema_version": "1.1",
+    "schema_version": "1.2",
     "shot_id": "20260906T143520-478",
     "session_id": "20260906-morning",
     "created_at": "2026-09-06T14:35:20.478+00:00",
@@ -675,6 +740,19 @@
       "distance": {
         "carry_m": null,
         "total_m": null
+      },
+      "flight": {
+        "model": "drag_magnus_rk4_v1",
+        "carry_m": 168.67,
+        "total_m": 179.81,
+        "apex_m": 27.63,
+        "descent_angle_deg": 42.8,
+        "offline_m": 0.2,
+        "flight_time_s": 5.78,
+        "conditions": {
+          "altitude_m": 0.0,
+          "temperature_c": 20.0
+        }
       },
       "raw": {
         "DeviceID": "MockMonitor",

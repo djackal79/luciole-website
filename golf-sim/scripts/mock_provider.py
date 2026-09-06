@@ -45,6 +45,7 @@ from backend.models import (  # noqa: E402
     TelemetryBlock,
     derive,
     iso,
+    model_flight,
     local_now,
     shot_id_for,
 )
@@ -105,6 +106,7 @@ def _telemetry(ball: BallData, club: ClubData, moment: datetime, raw: dict) -> T
         # Launch conditions only: carry and total are GSPro physics, not
         # measured by the monitor.
         distance=DistanceData(),
+        flight=model_flight(ball),
         raw=raw,
     )
 

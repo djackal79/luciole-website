@@ -209,6 +209,31 @@ Kinovea's video timing setting.
 
 ---
 
+## Ball flight
+
+GSPro Open Connect carries launch conditions only, so carry and total are not
+measured — `telemetry.distance` stays null, because that field means measured.
+The trajectory is modelled instead, into `telemetry.flight`:
+
+| Field | Confidence |
+|---|---|
+| `carry_m`, `apex_m`, `descent_angle_deg`, `offline_m` | Good — fitted to within 4% of published carries across driver to wedge |
+| `total_m` | **Weakest number here.** Roll depends on turf, moisture and slope, none of which the monitor knows |
+
+RK4 at 1 ms with drag, Magnus lift and spin decay. There is no honest closed
+form: both coefficients depend on instantaneous airspeed and on spin that
+decays through the flight.
+
+The coefficient fit is checked two ways — against known carry distances, and
+against whether the resulting lift coefficients (0.165 at driver spin through
+0.22 at wedge spin) land where measured golf ball data puts them. A fit that
+matched the distances with unphysical coefficients would be four numbers
+memorised rather than a model.
+
+Set the air your bay sits in with `GOLFSIM_FLIGHT_ALTITUDE_M` and
+`GOLFSIM_FLIGHT_TEMPERATURE_C`; the values used are recorded in each package
+so a number can be reproduced later.
+
 ## Pose extraction
 
 Optional, and off the ingest path entirely: a shot is written and announced

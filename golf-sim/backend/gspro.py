@@ -32,6 +32,9 @@ from .models import (
 
 log = logging.getLogger(__name__)
 
+#: Sentinel meaning "do not model the flight".
+_DISABLED = object()
+
 #: Monitors send JSON objects back to back, sometimes newline-delimited and
 #: sometimes not, so the buffer is drained with raw_decode rather than split().
 MAX_BUFFER_BYTES = 1024 * 1024
@@ -67,6 +70,17 @@ class GSProListener:
     @property
     def client_count(self) -> int:
         return len(self._writers)
+
+    def _conditions(self) -> Any | None:
+        """Air for the flight model, or None to skip modelling entirely."""
+        if not self.settings.flight_model_enabled:
+            return _DISABLED
+        from .flight import Conditions
+
+        return Conditions(
+            altitude_m=self.settings.flight_altitude_m,
+            temperature_c=self.settings.flight_temperature_c,
+        )
 
     @property
     def forwarding(self) -> bool:
@@ -215,7 +229,7 @@ class GSProListener:
                 await self._send(writer, self._ack(200, "Status received"))
             return
 
-        telemetry = telemetry_from_gspro(payload, local_now())
+        telemetry = telemetry_from_gspro(payload, local_now(), self._conditions())
         self.shots_received += 1
         if not relayed:
                 await self._send(writer, self._ack(200, "Shot received"))

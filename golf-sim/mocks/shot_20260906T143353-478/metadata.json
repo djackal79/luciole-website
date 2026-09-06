@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "shot_id": "20260906T143353-478",
   "session_id": "20260906-morning",
   "created_at": "2026-09-06T14:33:53.478+00:00",
@@ -65,6 +65,19 @@
     "distance": {
       "carry_m": null,
       "total_m": null
+    },
+    "flight": {
+      "model": "drag_magnus_rk4_v1",
+      "carry_m": 155.95,
+      "total_m": 170.66,
+      "apex_m": 20.83,
+      "descent_angle_deg": 37.1,
+      "offline_m": -6.15,
+      "flight_time_s": 5.11,
+      "conditions": {
+        "altitude_m": 0.0,
+        "temperature_c": 20.0
+      }
     },
     "raw": {
       "DeviceID": "MockMonitor",
