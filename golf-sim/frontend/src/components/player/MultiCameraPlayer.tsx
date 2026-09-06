@@ -19,6 +19,8 @@ import {
   Compass
 } from 'lucide-react';
 
+import { usePoseData } from '../../hooks/usePoseData';
+
 export const MultiCameraPlayer: React.FC = () => {
   const currentShot = useShotStore((s) => s.getCurrentShot());
   const { currentTheme } = useThemeStore();
@@ -42,7 +44,6 @@ export const MultiCameraPlayer: React.FC = () => {
   } = usePlayerStore();
 
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [simulationMode, setSimulationMode] = useState(true);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   // Canvases for simulated 3-camera playback
@@ -120,481 +121,126 @@ export const MultiCameraPlayer: React.FC = () => {
     }
   };
 
-  // 1. Render Face-On Canvas (Kinovea)
+
+
+  const poseData = usePoseData();
+
+  // Video sync & Skeleton Draw effect
   useEffect(() => {
-    if (!hasBodySource) return;
-    const canvas = canvasFaceOnRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const width = canvas.width;
-    const height = canvas.height;
-
-    ctx.fillStyle = '#0a0d14';
-    ctx.fillRect(0, 0, width, height);
-
-    // Floor lines
-    ctx.strokeStyle = '#182030';
-    ctx.lineWidth = 1;
-    for (let y = height * 0.7; y < height; y += 20) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
-      ctx.stroke();
-    }
-
-    // Target Line
-    ctx.strokeStyle = '#223048';
-    ctx.setLineDash([6, 6]);
-    ctx.beginPath();
-    ctx.moveTo(width * 0.2, height * 0.85);
-    ctx.lineTo(width * 0.85, height * 0.85);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    const t = currentTime;
-    const impactT = impactTime;
-
-    let stage = 'ADDRESS';
-    let armAngle = 0.45;
-    let shaftAngle = 0.45;
-
-    if (t < 0.7) {
-      stage = 'ADDRESS';
-    } else if (t < 1.6) {
-      stage = 'BACKSWING';
-      const progress = (t - 0.7) / (1.6 - 0.7);
-      armAngle = 0.45 - progress * 2.5;
-      shaftAngle = armAngle - progress * 1.2;
-    } else if (t < impactT) {
-      stage = 'DOWNSWING';
-      const progress = (t - 1.6) / (impactT - 1.6);
-      armAngle = -2.05 + progress * 2.5;
-      shaftAngle = armAngle + (1 - progress) * 1.5;
-    } else if (t <= impactT + 0.08) {
-      stage = '★ IMPACT ★';
-      armAngle = 0.45;
-      shaftAngle = 0.45;
-    } else {
-      stage = 'FINISH';
-      const progress = Math.min(1, (t - impactT) / (duration - impactT));
-      armAngle = 0.45 + progress * 2.4;
-      shaftAngle = armAngle + progress * 1.1;
-    }
-
-    const hipX = width * 0.46;
-    const hipY = height * 0.58;
-    const shoulderX = width * 0.43;
-    const shoulderY = height * 0.40;
-    const headX = width * 0.42;
-    const headY = height * 0.30;
-    const feetX = width * 0.45;
-    const feetY = height * 0.84;
-    const ballX = width * 0.58;
-    const ballY = height * 0.84;
-
-    // Body
-    ctx.strokeStyle = '#64748b';
-    ctx.lineWidth = 5;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    ctx.beginPath();
-    ctx.moveTo(hipX - 8, hipY);
-    ctx.lineTo(feetX - 18, feetY);
-    ctx.moveTo(hipX + 8, hipY);
-    ctx.lineTo(feetX + 10, feetY);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(hipX, hipY);
-    ctx.lineTo(shoulderX, shoulderY);
-    ctx.stroke();
-
-    ctx.fillStyle = '#94a3b8';
-    ctx.beginPath();
-    ctx.arc(headX, headY, 13, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Arms & Club
-    const armLength = 65;
-    const handX = shoulderX + Math.sin(armAngle) * armLength;
-    const handY = shoulderY + Math.cos(armAngle) * armLength;
-
-    ctx.strokeStyle = '#e2e8f0';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(shoulderX, shoulderY);
-    ctx.lineTo(handX, handY);
-    ctx.stroke();
-
-    const shaftLength = 90;
-    const clubHeadX = handX + Math.sin(shaftAngle) * shaftLength;
-    const clubHeadY = handY + Math.cos(shaftAngle) * shaftLength;
-
-    ctx.strokeStyle = '#38bdf8';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(handX, handY);
-    ctx.lineTo(clubHeadX, clubHeadY);
-    ctx.stroke();
-
-    ctx.fillStyle = '#f8fafc';
-    ctx.beginPath();
-    ctx.arc(clubHeadX, clubHeadY, 5, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Ball
-    if (t < impactT) {
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(ballX, ballY - 6, 6, 0, Math.PI * 2);
-      ctx.fill();
-    } else {
-      const flightT = t - impactT;
-      const flyX = ballX + flightT * 180;
-      const flyY = ballY - 6 - flightT * 140;
-
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(ballX, ballY - 6);
-      ctx.lineTo(flyX, flyY);
-      ctx.stroke();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(flyX, flyY, 5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    if (isAtImpact) {
-      ctx.strokeStyle = 'rgba(0, 242, 152, 0.8)';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(ballX, ballY - 6, 24, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    if (showGuides) {
-      ctx.strokeStyle = 'rgba(250, 204, 21, 0.6)';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath();
-      ctx.moveTo(ballX + 20, ballY + 10);
-      ctx.lineTo(shoulderX - 60, shoulderY - 80);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      ctx.strokeStyle = 'rgba(0, 210, 255, 0.7)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(headX, headY, 18, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    ctx.fillStyle = '#00f298';
-    ctx.font = 'bold 11px monospace';
-    ctx.fillText(`CAM 1 // FACE-ON (${bodyMedia?.capture_fps ?? 30} FPS)`, 12, 22);
-
-    ctx.fillStyle = isAtImpact ? '#facc15' : '#94a3b8';
-    ctx.fillText(`STAGE: ${stage}`, 12, 38);
-
-    const frameA = Math.floor(currentTime * (bodyMedia?.container_fps ?? 30));
-    ctx.fillStyle = '#64748b';
-    ctx.fillText(`FR #${frameA.toString().padStart(4, '0')}`, width - 90, 22);
-  }, [currentTime, duration, isAtImpact, showGuides, hasBodySource, bodyMedia]);
-
-  // 2. Render Down-The-Line / Behind Canvas
-  useEffect(() => {
-    if (!hasBehindSource) return;
-    const canvas = canvasBehindRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const width = canvas.width;
-    const height = canvas.height;
-
-    ctx.fillStyle = '#07090f';
-    ctx.fillRect(0, 0, width, height);
-
-    // Target Line down the fairway
-    ctx.strokeStyle = '#1e293b';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(width * 0.48, height * 0.88);
-    ctx.lineTo(width * 0.50, height * 0.35);
-    ctx.stroke();
-
-    const t = currentTime;
-    const impactT = impactTime;
-
-    // Posture from behind: golfer facing right into distance
-    const pelvisX = width * 0.44;
-    const pelvisY = height * 0.62;
-    const spineAngle = 0.38; // forward bend
-    const torsoLen = 65;
-    const chestX = pelvisX + Math.sin(spineAngle) * torsoLen;
-    const chestY = pelvisY - Math.cos(spineAngle) * torsoLen;
-
-    // Legs
-    ctx.strokeStyle = '#475569';
-    ctx.lineWidth = 6;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(pelvisX, pelvisY);
-    ctx.lineTo(pelvisX - 10, height * 0.88); // trail foot
-    ctx.moveTo(pelvisX + 15, pelvisY);
-    ctx.lineTo(pelvisX + 12, height * 0.88); // lead foot
-    ctx.stroke();
-
-    // Spine
-    ctx.strokeStyle = '#64748b';
-    ctx.lineWidth = 7;
-    ctx.beginPath();
-    ctx.moveTo(pelvisX, pelvisY);
-    ctx.lineTo(chestX, chestY);
-    ctx.stroke();
-
-    // Head
-    const headX = chestX + 6;
-    const headY = chestY - 14;
-    ctx.fillStyle = '#94a3b8';
-    ctx.beginPath();
-    ctx.arc(headX, headY, 12, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Arms & Shaft Plane from DTL angle
-    let dtlArmAngle = 0.6;
-    let dtlShaftAngle = 1.2;
-
-    if (t < 0.7) {
-      dtlArmAngle = 0.6;
-      dtlShaftAngle = 1.2;
-    } else if (t < 1.6) {
-      // Top of swing: hands high and deep
-      const p = (t - 0.7) / (1.6 - 0.7);
-      dtlArmAngle = 0.6 - p * 2.2;
-      dtlShaftAngle = 1.2 - p * 1.8;
-    } else if (t < impactT) {
-      // Downswing: dropping into slot
-      const p = (t - 1.6) / (impactT - 1.6);
-      dtlArmAngle = -1.6 + p * 2.2;
-      dtlShaftAngle = -0.6 + p * 1.8;
-    } else {
-      // Exit left through chest
-      const p = Math.min(1, (t - impactT) / (duration - impactT));
-      dtlArmAngle = 0.6 + p * 1.8;
-      dtlShaftAngle = 1.2 + p * 1.5;
-    }
-
-    const handX = chestX + Math.sin(dtlArmAngle) * 45;
-    const handY = chestY + Math.cos(dtlArmAngle) * 45;
-
-    ctx.strokeStyle = '#e2e8f0';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(chestX, chestY);
-    ctx.lineTo(handX, handY);
-    ctx.stroke();
-
-    const clubX = handX + Math.sin(dtlShaftAngle) * 80;
-    const clubY = handY + Math.cos(dtlShaftAngle) * 80;
-
-    ctx.strokeStyle = '#38bdf8';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(handX, handY);
-    ctx.lineTo(clubX, clubY);
-    ctx.stroke();
-
-    ctx.fillStyle = '#f8fafc';
-    ctx.beginPath();
-    ctx.arc(clubX, clubY, 4, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Ball on target line
-    const ballDTLX = width * 0.49;
-    const ballDTLY = height * 0.88;
-
-    if (t < impactT) {
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(ballDTLX, ballDTLY - 5, 5, 0, Math.PI * 2);
-      ctx.fill();
-    } else {
-      const flightT = t - impactT;
-      const flyX = ballDTLX + flightT * 12; // slight push/pull
-      const flyY = ballDTLY - 5 - flightT * 160;
-      const flySize = Math.max(2, 5 - flightT * 1.2);
-
-      ctx.fillStyle = '#00f298';
-      ctx.beginPath();
-      ctx.arc(flyX, flyY, flySize, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Guides: Shaft plane line from ball through hands/elbow
-    if (showGuides) {
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.5)';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath();
-      ctx.moveTo(ballDTLX, ballDTLY);
-      ctx.lineTo(chestX - 60, chestY - 90);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
-    ctx.fillStyle = '#38bdf8';
-    ctx.font = 'bold 11px monospace';
-    ctx.fillText(`CAM 2 // BEHIND DTL (${behindMedia?.capture_fps ?? 60} FPS)`, 12, 22);
-
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText('HAND PATH: ON-PLANE', 12, 38);
-
-    const frameB = Math.floor(currentTime * (behindMedia?.container_fps ?? 30));
-    ctx.fillStyle = '#64748b';
-    ctx.fillText(`FR #${frameB.toString().padStart(4, '0')}`, width - 90, 22);
-  }, [currentTime, duration, isAtImpact, showGuides, hasBehindSource, behindMedia]);
-
-  // 3. Render Samsung Slow-Mo Canvas Animation
-  useEffect(() => {
-    if (!hasImpactSource) return;
-    const canvas = canvasImpactRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const width = canvas.width;
-    const height = canvas.height;
-
-    ctx.fillStyle = '#06080d';
-    ctx.fillRect(0, 0, width, height);
-
-    // Trap #2: Align on impact, seek by sync.impact_offset_ms
-    const offsetSec = impactOffsetMs / 1000;
-    const timeC = Math.max(0, Math.min(duration, currentTime + offsetSec));
-    const dt = timeC - impactTime;
-
-    // Turf & tee
-    ctx.fillStyle = '#0d2215';
-    ctx.fillRect(0, height * 0.88, width, height * 0.12);
-    ctx.fillStyle = '#10b981';
-    for (let x = 10; x < width; x += 15) {
-      ctx.fillRect(x, height * 0.88 - 4, 2, 4);
-    }
-
-    ctx.fillStyle = '#cbd5e1';
-    ctx.fillRect(width * 0.52 - 3, height * 0.65, 6, height * 0.25);
-
-    if (showGuides) {
-      ctx.strokeStyle = '#151c2c';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(width / 2, 0);
-      ctx.lineTo(width / 2, height);
-      ctx.moveTo(0, height * 0.5);
-      ctx.lineTo(width, height * 0.5);
-      ctx.stroke();
-    }
-
-    const ballBaseX = width * 0.52;
-    const ballBaseY = height * 0.52;
-    const ballRadius = 34;
-    const approachSpeed = 380;
-    let clubFaceX = ballBaseX - ballRadius - 10 + dt * approachSpeed;
-    const clubFaceY = ballBaseY;
-
-    if (dt > 0) {
-      clubFaceX = ballBaseX - ballRadius + dt * (approachSpeed * 0.7);
-    }
-
-    ctx.save();
-    ctx.translate(clubFaceX, clubFaceY);
-    ctx.rotate((-18 * Math.PI) / 180);
-
-    ctx.fillStyle = '#1e293b';
-    ctx.strokeStyle = '#94a3b8';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.roundRect(-24, -55, 26, 110, [6, 0, 0, 6]);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.strokeStyle = '#38bdf8';
-    ctx.lineWidth = 2;
-    for (let g = -35; g <= 35; g += 10) {
-      ctx.beginPath();
-      ctx.moveTo(2, g);
-      ctx.lineTo(-4, g);
-      ctx.stroke();
-    }
-    ctx.restore();
-
-    let compression = 1.0;
-    let ballX = ballBaseX;
-    let ballY = ballBaseY;
-
-    if (Math.abs(dt) < 0.04) {
-      compression = 0.75 + (Math.abs(dt) / 0.04) * 0.25;
-    }
-
-    if (dt > 0) {
-      const smash = currentShot?.telemetry?.derived.smash_factor ?? 1.44;
-      const ballExitSpeed = approachSpeed * smash;
-      ballX = ballBaseX + dt * ballExitSpeed;
-      ballY = ballBaseY - dt * (ballExitSpeed * 0.35);
-    }
-
-    ctx.save();
-    ctx.translate(ballX, ballY);
-    const spinAngle = dt > 0 ? (dt * 50) % (Math.PI * 2) : 0;
-    ctx.rotate(-spinAngle);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.ellipse(0, 0, ballRadius * compression, ballRadius, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#cbd5e1';
-    for (let d = -20; d <= 20; d += 12) {
-      ctx.beginPath();
-      ctx.arc(d * compression, 0, 2.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    ctx.strokeStyle = '#ef4444';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(-16 * compression, 0);
-    ctx.lineTo(16 * compression, 0);
-    ctx.stroke();
-
-    ctx.restore();
-
-    if (Math.abs(dt) < 0.03) {
-      ctx.strokeStyle = '#00f298';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(ballBaseX - ballRadius * 0.8, ballBaseY, 40, -Math.PI / 3, Math.PI / 3);
-      ctx.stroke();
-    }
-
-    ctx.fillStyle = '#f59e0b';
-    ctx.font = 'bold 11px monospace';
-    ctx.fillText(`CAM 3 // SAMSUNG S23+ SUPER SLOW-MO (${impactMedia?.capture_fps ?? 240} FPS)`, 12, 22);
-
-    ctx.fillStyle = Math.abs(dt) < 0.04 ? '#00f298' : '#94a3b8';
-    ctx.fillText(`SHUTTER: 1/10000s | ${Math.abs(dt) < 0.04 ? 'COMPRESSION ACTIVE' : 'READY'}`, 12, 38);
-
-    const frameC = Math.floor(timeC * (impactMedia?.container_fps ?? 30));
-    ctx.fillStyle = '#64748b';
-    ctx.fillText(`FR #${frameC.toString().padStart(5, '0')}`, width - 100, 22);
-  }, [currentTime, duration, impactOffsetMs, currentShot, showGuides, hasImpactSource, impactMedia]);
-
+    let animId: number;
+    const loop = () => {
+      const t_from_impact_sec = currentTime - impactTime;
+      
+      const syncVideo = (videoElem: HTMLVideoElement | null, media: any, manualOffsetMs = 0) => {
+        if (!videoElem || !media) return;
+        const clipImpactSec = (media.impact_ms ?? 0) / 1000;
+        const offsetSec = manualOffsetMs / 1000;
+        const targetTime = clipImpactSec + offsetSec + t_from_impact_sec;
+        
+        // Fast seek / native play logic
+        if (isPlaying) {
+            // Keep roughly in sync if playing natively
+            if (Math.abs(videoElem.currentTime - targetTime) > 0.15) {
+                videoElem.currentTime = targetTime;
+            }
+            if (videoElem.paused) videoElem.play().catch(()=>{});
+        } else {
+            if (!videoElem.paused) videoElem.pause();
+            // Scrubbing
+            videoElem.currentTime = targetTime;
+        }
+      };
+
+      syncVideo(videoFaceOnRef.current, bodyMedia, 0);
+      syncVideo(videoBehindRef.current, behindMedia, 0);
+      syncVideo(videoImpactRef.current, impactMedia, impactOffsetMs);
+
+      // Draw skeleton overlays
+      const drawSkeleton = (canvasElem: HTMLCanvasElement | null, trackName: string) => {
+        if (!canvasElem || !poseData || !poseData.tracks || !showGuides) return;
+        const ctx = canvasElem.getContext('2d');
+        if (!ctx) return;
+        
+        const width = canvasElem.width;
+        const height = canvasElem.height;
+        ctx.clearRect(0, 0, width, height);
+
+        const track = (poseData.tracks as any)[trackName];
+        if (!track || !track.frames || track.frames.length === 0) return;
+
+        // Find frame closest to current video time
+        const target_t_ms = (t_from_impact_sec * 1000) + (track.impact_ms ?? 0);
+        let closestFrame = track.frames[0];
+        let minDist = Infinity;
+        for (const frame of track.frames) {
+           const dist = Math.abs(frame.t_ms - target_t_ms);
+           if (dist < minDist) {
+               minDist = dist;
+               closestFrame = frame;
+           }
+        }
+
+        const lms = poseData.landmarks;
+        const pts = closestFrame.points;
+        const getPt = (name: string) => {
+            const idx = lms.indexOf(name);
+            if (idx === -1 || !pts[idx]) return null;
+            const p = pts[idx];
+            if (p[2] < 0.5) return null; // visibility < 0.5
+            return { x: p[0] * width, y: p[1] * height };
+        };
+
+        const drawLine = (p1: any, p2: any) => {
+            if (!p1 || !p2) return;
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+        };
+
+        const connections = [
+            ['left_shoulder', 'right_shoulder'],
+            ['left_shoulder', 'left_elbow'],
+            ['left_elbow', 'left_wrist'],
+            ['right_shoulder', 'right_elbow'],
+            ['right_elbow', 'right_wrist'],
+            ['left_shoulder', 'left_hip'],
+            ['right_shoulder', 'right_hip'],
+            ['left_hip', 'right_hip'],
+            ['left_hip', 'left_knee'],
+            ['left_knee', 'left_ankle'],
+            ['right_hip', 'right_knee'],
+            ['right_knee', 'right_ankle'],
+            ['left_ankle', 'left_foot_index'],
+            ['right_ankle', 'right_foot_index']
+        ];
+
+        ctx.strokeStyle = '#00f298';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        
+        for (const [a, b] of connections) {
+            drawLine(getPt(a), getPt(b));
+        }
+        
+        ctx.fillStyle = '#facc15';
+        for (const pt of pts) {
+            if (pt[2] < 0.5) continue;
+            ctx.beginPath();
+            ctx.arc(pt[0] * width, pt[1] * height, 4, 0, Math.PI*2);
+            ctx.fill();
+        }
+      };
+
+      drawSkeleton(canvasFaceOnRef.current, 'body_swing');
+      drawSkeleton(canvasBehindRef.current, 'body_swing_dtl');
+
+      animId = requestAnimationFrame(loop);
+    };
+
+    animId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(animId);
+  }, [currentTime, isPlaying, poseData, bodyMedia, behindMedia, impactMedia, impactOffsetMs, showGuides]);
   const renderViewport = (camId: CameraViewId) => {
     if (camId === 'face_on') {
       if (currentShot?.status === 'pending' && !hasBodySource) {
@@ -618,7 +264,7 @@ export const MultiCameraPlayer: React.FC = () => {
       const videoSrc = `/shots/shot_${currentShot?.shot_id}/${bodyMedia?.path}`;
       return (
         <div className="relative w-full h-full bg-black rounded-xl overflow-hidden shadow-inner flex items-center justify-center">
-          {!simulationMode && !videoErrors['face_on'] ? (
+          {!videoErrors['face_on'] && (
             <video
               ref={videoFaceOnRef}
               src={videoSrc}
@@ -627,9 +273,8 @@ export const MultiCameraPlayer: React.FC = () => {
               onError={() => handleVideoError('face_on')}
               className="w-full h-full object-contain"
             />
-          ) : (
-            <canvas ref={canvasFaceOnRef} width={640} height={380} className="w-full h-full object-contain" />
           )}
+          <canvas ref={canvasFaceOnRef} width={1280} height={720} className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
           <div className={`absolute top-2.5 left-2.5 flex items-center gap-1.5 px-2.5 py-0.5 border backdrop-blur-md text-[10px] ${
             isBoutique 
               ? 'rounded-full bg-black/80 border-[#C5A880]/30 font-serif text-[#E5C07B]' 
@@ -668,7 +313,7 @@ export const MultiCameraPlayer: React.FC = () => {
       const videoSrc = `/shots/shot_${currentShot?.shot_id}/${behindMedia?.path}`;
       return (
         <div className="relative w-full h-full bg-black rounded-xl overflow-hidden shadow-inner flex items-center justify-center">
-          {!simulationMode && !videoErrors['behind'] ? (
+          {!videoErrors['behind'] && (
             <video
               ref={videoBehindRef}
               src={videoSrc}
@@ -677,9 +322,8 @@ export const MultiCameraPlayer: React.FC = () => {
               onError={() => handleVideoError('behind')}
               className="w-full h-full object-contain"
             />
-          ) : (
-            <canvas ref={canvasBehindRef} width={640} height={380} className="w-full h-full object-contain" />
           )}
+          <canvas ref={canvasBehindRef} width={1280} height={720} className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
           <div className={`absolute top-2.5 left-2.5 flex items-center gap-1.5 px-2.5 py-0.5 border backdrop-blur-md text-[10px] ${
             isBoutique 
               ? 'rounded-full bg-black/80 border-[#C5A880]/30 font-serif text-[#D4AF37]' 
@@ -719,7 +363,7 @@ export const MultiCameraPlayer: React.FC = () => {
       const videoSrc = `/shots/shot_${currentShot?.shot_id}/${impactMedia?.path}`;
       return (
         <div className="relative w-full h-full bg-black rounded-xl overflow-hidden shadow-inner flex items-center justify-center">
-          {!simulationMode && !videoErrors['impact'] ? (
+          {!videoErrors['impact'] && (
             <video
               ref={videoImpactRef}
               src={videoSrc}
@@ -728,9 +372,8 @@ export const MultiCameraPlayer: React.FC = () => {
               onError={() => handleVideoError('impact')}
               className="w-full h-full object-contain"
             />
-          ) : (
-            <canvas ref={canvasImpactRef} width={640} height={380} className="w-full h-full object-contain" />
           )}
+          <canvas ref={canvasImpactRef} width={1280} height={720} className="absolute inset-0 w-full h-full object-contain pointer-events-none" />
           <div className={`absolute top-2.5 left-2.5 flex items-center gap-1.5 px-2.5 py-0.5 border backdrop-blur-md text-[10px] ${
             isBoutique 
               ? 'rounded-full bg-black/80 border-[#C5A880]/30 font-serif text-[#E5C07B]' 
@@ -780,21 +423,7 @@ export const MultiCameraPlayer: React.FC = () => {
             <span>Guides</span>
           </button>
 
-          {/* Simulation Mode Toggle */}
-          <button
-            onClick={() => setSimulationMode(!simulationMode)}
-            className={`flex items-center gap-1.5 px-3 py-1 text-xs border transition-colors ${
-              isBoutique ? 'rounded-full font-serif' : 'rounded-lg font-mono'
-            } ${
-              simulationMode
-                ? (isBoutique ? 'bg-[#D4AF37]/20 border-[#D4AF37]/40 text-[#E5C07B]' : 'bg-amber-500/15 border-amber-500/30 text-amber-300')
-                : (isBoutique ? 'bg-[#C5A880]/20 border-[#C5A880]/40 text-[#C5A880]' : 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300')
-            }`}
-            title="Toggle between Canvas 3-Angle simulation and local MP4 streams"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>{simulationMode ? 'Render: 3-Angle Simulation' : 'Render: Native MP4s'}</span>
-          </button>
+
 
           {/* Layout Switcher */}
           <div className={`flex items-center border p-0.5 text-xs ${

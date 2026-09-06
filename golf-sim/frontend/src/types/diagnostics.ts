@@ -4,6 +4,8 @@ export interface GSProListenerStatus {
   port: number;
   clients: number;
   shots_received: number;
+  heartbeats_received: number;
+  frames_ignored: number;
   last_error: string | null;
 }
 
@@ -19,6 +21,13 @@ export interface PhoneEndpointStatus {
   endpoint: string;
 }
 
+export interface PoseWorkerStatus {
+  live: boolean;
+  enabled: boolean;
+  model: string;
+  reason: string;
+}
+
 export interface HealthResponse {
   ok: boolean;
   session_id: string;
@@ -26,6 +35,7 @@ export interface HealthResponse {
     gspro_socket: GSProListenerStatus;
     kinovea_hook: KinoveaHookStatus;
     phone_endpoint: PhoneEndpointStatus;
+    pose_worker: PoseWorkerStatus;
     [key: string]: any;
   };
   pairing: {
