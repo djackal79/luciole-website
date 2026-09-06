@@ -1,6 +1,7 @@
 # Golf Studio — Single Source of Truth
 
 **Status date:** 2026-09-06 · **Branch:** `claude/golf-simulator-backend-9a46d5`
+**Decisions D1, D2 and D6 answered** — see §3.
 
 Four agents are working on this (Claude Code, Claude chat, Gemini chat,
 Antigravity) across surfaces that cannot see each other. This document is the
@@ -44,8 +45,8 @@ will you in three weeks.
 | PC + Kinovea | Body swing (face-on) | Automation hook → `POST /api/ingest/body_swing` |
 | Samsung **S23 Plus** | Impact, Super Slow-mo | Impact Watcher app → `POST /api/ingest/impact` |
 | Square launch monitor | Ball/club telemetry | GSPro Open Connect socket, `127.0.0.1:921` |
-| Second Kinovea camera (DTL) | Down-the-line | **No path exists — see D1** |
-| Pressure plates | Weight transfer / CoP | **No path exists — see D2** |
+| Second Kinovea camera (DTL) | Down-the-line | **Set up in Kinovea; no ingest path yet — D1** |
+| Pressure plates | Weight transfer / CoP | **Parts on hand, unbuilt (~Christmas) — D2** |
 
 > The frontend brief says "Samsung S24 Ultra". It is an **S23 Plus**. Correct
 > this wherever it appears.
@@ -73,19 +74,21 @@ gap now is data, not design.
 
 ## 3. Divergence register
 
-Things the frontend assumes that the backend does not provide. Each needs a
-decision before more code is written on either side.
+Things the frontend assumes that the backend does not provide. D1, D2 and D6
+are now answered; their decisions are recorded below and are binding.
 
 | # | Divergence | Severity | Status |
 |---|---|---|---|
-| D0 | Frontend exists only on Antigravity's machine | **Blocking** | Push it |
-| D1 | UI shows 3 cameras; contract has 2 video sources | **Blocking** | Decide |
-| D2 | Pressure mat UI has no backend, no schema, no hardware path | High | Decide |
-| D3 | 3D biomech UI has no pose data source | High | Decide |
+| D0 | Frontend exists only on Antigravity's machine | **Blocking** | Open |
+| D1 | UI shows 3 cameras; contract has 2 video sources | High | **Resolved** — add `body_swing_dtl` |
+| D2 | Pressure mat UI has no backend or schema | Medium | **Resolved** — reserve schema, defer ingest |
+| D3 | 3D biomech UI has no pose data source | High | Scoped — triangulation, needs calibration |
 | D4 | Media URL shape may not match the backend route | High | Verify |
 | D5 | Master timeline is ambiguous with clips of differing fps/duration | Medium | Decide |
-| D6 | Supabase sync is outside the contract entirely | Medium | Decide |
+| D6 | Supabase sync is outside the contract entirely | Medium | **Resolved** — backend writes metrics |
 | D7 | "Side Offline 8.3 YDS R" equals the spin axis magnitude | Medium | Verify |
+| D8 | Two Kinovea cameras collide on one ingest endpoint | High | **New** — see D1 |
+| D9 | Frontend owns the Supabase write path | Medium | **New** — see D6 |
 
 ### D0 — The frontend is not in the repo
 
@@ -96,60 +99,75 @@ unrunnable on the sim PC, and one disk failure from gone.
 **Everything else in this document is blocked on fixing this.** Nothing can be
 reconciled against code nobody else can read.
 
-### D1 — Three cameras versus two video sources
+### D1 — Three cameras versus two video sources — RESOLVED
 
-The UI renders Face-On (30 fps), Behind/DTL (60 fps) and Impact Strike
-(240 fps). The contract defines exactly two video sources, `body_swing` and
-`impact_strike`. There is no DTL slot in `sources`, in `media`, or in the
-backend's ingest endpoints.
+**Two Kinovea cameras are set up.** The DTL pane is real, not aspirational.
 
-**Recommendation:** add `body_swing_dtl` as an **optional** fourth source.
-Additive, so every existing shot simply carries `body_swing_dtl: false`, and
-Build 1's `GOLFSIM_EXPECTED_SOURCES` is already configurable — so whether a
-missing DTL clip makes a shot `partial` becomes a config choice, not a code
-change. Rejected the alternative of generalising `media` into a list of camera
-roles: it breaks every existing consumer to buy flexibility nobody has asked
-for.
+**Decision:** add `body_swing_dtl` as a fourth source key. Additive, so every
+existing shot carries `body_swing_dtl: false`, and Build 1's
+`GOLFSIM_EXPECTED_SOURCES` is already configurable — whether a missing DTL clip
+makes a shot `partial` becomes a config choice, not a code change. Rejected
+generalising `media` into a list of camera roles: it breaks every existing
+consumer to buy flexibility nobody asked for.
 
-**Question for you:** do you actually have a second camera for DTL, or is that
-pane aspirational? This matters more than it looks — see D3.
+### D8 — Two Kinovea cameras collide on one ingest endpoint — NEW
 
-### D2 — Pressure mat
+Falls out of D1 and is not obvious. Both cameras finish recording at roughly
+the same instant, and both Automation hooks post to
+`POST /api/ingest/body_swing`. The correlator's duplicate-source rule then does
+exactly what it was built to do — treats the second clip as a *second swing*
+and opens a second shot. Two cameras would silently double every shot.
 
-The UI shows trail/lead weight split, a CoP trace, and 750 N of ground force,
-labelled "Sensor Ready" and "Compatible with BodiTrak / Smart2Move". None of
-that exists: no source key, no ingest endpoint, no data shape.
+**Fix (Claude Code):** route on camera role. The endpoint already accepts a
+`camera` form field, so `face_on` maps to `body_swing` and `dtl` maps to
+`body_swing_dtl`. `scripts/kinovea_hook.bat` grows a role argument so each
+camera's Automation entry passes its own.
 
-**Recommendation:** a new optional `pressure` source. The time series does not
-belong inline — a 100 Hz capture over 4 s is 400 samples and would swamp
-`metadata.json`. Mirror the media pattern instead: a sibling `pressure.json`
-in the shot folder, referenced from metadata, with only summary figures inline
-for the HUD (peak GRF, weight split at impact, CoP excursion).
+Also worth knowing: the two cameras run at different rates (30 and 60 fps in
+the UI) and are not frame-synchronised with each other. That is fine for
+side-by-side review and matters a great deal for D3.
 
-**Question for you:** do you own a plate, or is this a future purchase?
-Building an ingest path against hardware you do not have is speculative work,
-and the protocol will be whatever the vendor's SDK dictates.
+### D2 — Pressure mat — RESOLVED (deferred)
 
-### D3 — 3D biomechanics
+**The parts are on hand but unbuilt — a Christmas-holidays job.**
 
-The placeholder says it is "ready to receive 3D quaternion or joint vectors
-from MediaPipe / OpenPose". Nothing produces them.
+**Decision:** reserve the schema slot now, ship mock fixtures so the panel can
+be built against a real shape, and **defer the ingest endpoint** until the
+hardware exists and can say what it actually emits.
 
-**Recommendation:** treat pose as **derived, not captured** — computed from
-the body-swing video after the shot closes, written to `pose.json`, with a
-`status` field so the UI can show "computing" and then swap in real data.
+The shape: a `pressure` source with its time series in a sibling
+`pressure.json` (a 100 Hz capture over 4 s is 400 samples and has no business
+inside `metadata.json`), and only summary figures inline for the HUD — peak
+GRF, weight split at impact, CoP excursion.
 
-**The honest constraint:** MediaPipe Pose from a *single* camera gives 2D
-landmarks plus a weak monocular depth estimate. Pelvis rotation, shoulder turn
-and X-factor — the numbers the panel actually displays — are not reliably
-recoverable from one view. Two calibrated cameras can triangulate them
-properly.
+One correction to the UI: "Compatible with BodiTrak / Smart2Move" is a claim we
+cannot support. Self-built plates will emit whatever your microcontroller sends
+— almost certainly serial or a small HTTP post, not a vendor SDK. Better to say
+nothing until the protocol exists than to name products the code has never
+spoken to.
 
-**So D1 and D3 are the same decision.** The DTL camera is not just another
-angle; it is what makes 3D pose genuinely 3D. If you want real biomechanics,
-the second camera earns its place. If you do not want a second camera, the
-panel should be scoped down to 2D swing-plane analysis from face-on, and
-labelled as such rather than implying quaternions.
+### D3 — 3D biomechanics — SCOPED
+
+With two cameras roughly 90° apart, triangulating real 3D joint positions is
+genuinely achievable. Monocular MediaPipe could never have given you reliable
+pelvis rotation or shoulder turn; two views can.
+
+**It is not free.** Triangulation needs:
+
+1. **Intrinsic calibration** per camera — focal length and lens distortion,
+   from a printed checkerboard. Once per camera, reusable until you change the
+   lens or resolution.
+2. **Extrinsic calibration** — the relative position and rotation of the two
+   cameras, from a target visible in both. Redo whenever a camera moves.
+3. **Temporal alignment** — 30 fps and 60 fps clips, started independently.
+   Impact is the natural shared event to align on, which is what
+   `impact_ms` and the calibration slider are already for.
+
+**Staged plan.** Ship 2D first: MediaPipe per camera gives swing plane and
+hand path from DTL, spine angle and sway from face-on. That is genuinely
+useful and needs no calibration at all. Add triangulated 3D once the
+calibration step exists. The panel should say which mode it is showing rather
+than implying quaternions it does not have.
 
 ### D4 — Media URL
 
@@ -180,11 +198,28 @@ Samsung's Super Slow-mo auto-trigger decides its own pre-roll and does not tell
 us. That is exactly the gap `sync.impact_offset_ms` and the calibration slider
 exist to close, and why the slider must stay.
 
-### D6 — Supabase
+### D6 — Supabase — RESOLVED
 
-Cloud sync is not in the contract. Media cannot go there — the clips are large
-and live on the sim PC by design. Metadata sync for cross-device history is
-plausible, but it needs a stated purpose before it is wired in.
+**Scope: everything GSPro sends plus anything the app derives. Not media.**
+Clips are large and stay on the sim PC by design; what syncs is shot metadata,
+telemetry and derived analytics — the things you would want to query across
+sessions and devices.
+
+### D9 — The Supabase write path is on the wrong side — NEW
+
+The frontend has a `supabase.ts`. That makes the browser the writer, which
+means **shots only sync while someone has the app open** — and nobody is
+looking at a screen mid-swing.
+
+**Recommendation: the backend owns the write, the frontend reads.** The
+backend is already running whenever shots happen, it is the single writer so
+there is nothing to reconcile, and it is where the data is authoritative. The
+existing `supabase.ts` is not wasted — it becomes the read path for history
+and analytics.
+
+Sync must also be offline-tolerant. The sim PC shows `CLOUD: LOCAL OFFLINE`,
+and a shot must never be lost because the internet was down — the same outbox
+pattern the Android watcher uses for uploads.
 
 ### D7 — Side offline
 
@@ -210,48 +245,49 @@ In this order. Do not skip to 5.
 
 1. **Push the frontend to `claude/golf-simulator-backend-9a46d5` under
    `golf-sim/frontend/`.** Nothing else can proceed. Include `package.json`,
-   lockfile and source; exclude `node_modules` and `dist`.
+   the lockfile and source; exclude `node_modules` and `dist`.
 2. **Run against the real backend**, not internal mocks:
    ```bash
    cd golf-sim
    python scripts/mock_provider.py --seed data/shots
    uvicorn backend.main:app --port 8000
    ```
-   Then point the app at `http://127.0.0.1:8000` and load all five fixtures
-   from `GET /api/shots`. Internal mock dispatchers are useful, but they cannot
+   Point the app at `http://127.0.0.1:8000` and load all five fixtures from
+   `GET /api/shots`. Internal mock dispatchers are useful, but they cannot
    catch D4 — only a real HTTP round trip can.
 3. **Fix or confirm the media URL** (D4) and **the side-offline calculation**
    (D7).
-4. **Correct S24 Ultra → S23 Plus** wherever it appears.
-5. **Hold on the third camera, pressure mat and biomechanics.** They are
-   waiting on schema decisions above. Leave the panels as they are; do not
-   invent data shapes for them, because whatever you invent will not match
-   what the backend ends up sending.
+4. **Correct S24 Ultra → S23 Plus**, and drop the "Compatible with BodiTrak /
+   Smart2Move" claim (D2).
+5. **Move Supabase to read-only** (D9). Keep the client, drop the writes.
+6. **Hold** on the DTL camera, pressure and biomechanics panels until contract
+   v1.1 lands. The shapes are decided but not yet published; anything invented
+   in the meantime will not match.
 
-Not wanted right now: more theming, more animation, more panels. Both themes
-are finished.
+Not wanted: more theming, more animation, more panels. Both themes are done.
 
 ### Claude Code (Build 1)
 
-1. **Contract v1.1 — schema first, implementation second.** Add the optional
-   `body_swing_dtl`, `pressure` and `pose` source keys, and per-clip
-   `impact_ms`. Publishing the shapes before building the pipelines is what
-   lets both agents work in parallel instead of blocking on each other.
-2. **Extend `mocks/shots.json`** with fixtures carrying pose and pressure data,
-   so Antigravity can build those panels against real shapes before the
-   hardware or the pipeline exists.
-3. **Pose extraction pipeline** — MediaPipe over the body-swing clip, async
-   after the shot closes, written to `pose.json`. Scope depends on D1/D3.
-4. **Pressure ingest** — only once D2 is answered.
-5. Nice-to-have, not urgent: a startup reconciliation pass so shots left
-   `pending` by a crash get closed.
+1. **Contract v1.1 — schema first, pipelines second.** Publish
+   `body_swing_dtl`, `pressure`, `pose` and per-clip `impact_ms` so both agents
+   can work in parallel instead of blocking on each other.
+2. **Camera-role routing** (D8) before the second camera can be used at all,
+   plus a role argument in `kinovea_hook.bat`.
+3. **Extend `mocks/shots.json`** with pose and pressure fixtures, so those
+   panels can be built long before the hardware or the pipeline exists.
+4. **Pose extraction** — MediaPipe per camera, async after the shot closes,
+   2D first (D3).
+5. **Camera calibration** — checkerboard intrinsics and extrinsics, then
+   triangulated 3D.
+6. **Supabase sync** — backend-owned, offline-tolerant outbox (D6, D9).
+7. Deferred until the hardware exists: pressure ingest (D2).
 
 ### You
 
-Three answers unblock everything: **D1** (is there a second camera?),
-**D2** (do you own a pressure plate?), and **D6** (what is Supabase for?).
-
----
+- Nothing blocking. The three open questions are answered.
+- Worth doing before the pose work lands: **print a checkerboard and take a
+  calibration capture** with both cameras seeing it at once. Without that,
+  3D stays 2D.
 
 ## 5. Context for the chat surfaces
 
