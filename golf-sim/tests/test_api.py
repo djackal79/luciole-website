@@ -429,3 +429,22 @@ def test_an_unparseable_trigger_ts_falls_back_to_receipt(trusting_client):
 def test_a_missing_trigger_ts_falls_back_to_receipt(trusting_client):
     _, shot_b, joined = _two_swings_then_a_late_clip(trusting_client, "")
     assert joined == shot_b
+
+
+def test_clips_carry_their_own_impact_position(client):
+    """The capture trigger's pre-roll decides where impact sits in the clip.
+    Without this the player can only align on file start, which is wrong for
+    clips of different lengths."""
+    swing = upload_body_swing(client, impact_ms=3000).json()["shot_id"]
+    upload_impact(client, impact_ms=750)
+
+    media = client.get(f"/api/shots/{swing}").json()["media"]
+    assert media["body_swing"]["impact_ms"] == 3000
+    assert media["impact_strike"]["impact_ms"] == 750
+
+
+def test_impact_position_is_optional(client):
+    """Unknown is honest: the phone's auto-trigger picks its own pre-roll and
+    does not report it. The calibration slider covers that."""
+    shot_id = upload_body_swing(client).json()["shot_id"]
+    assert client.get(f"/api/shots/{shot_id}").json()["media"]["body_swing"]["impact_ms"] is None

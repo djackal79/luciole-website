@@ -54,6 +54,9 @@ class MediaArrival:
     duration_ms: int | None = None
     width: int | None = None
     height: int | None = None
+    #: Where impact sits inside this clip, in file playback milliseconds.
+    #: Follows from the capture trigger's pre-roll buffer.
+    impact_ms: int | None = None
     #: True for a file the backend does not own (a Kinovea recording the user
     #: may still want where Kinovea left it).
     copy: bool = False
@@ -211,6 +214,7 @@ class ShotCorrelator:
             duration_ms=arrival.duration_ms or probe.get("duration_ms"),
             width=arrival.width or probe.get("width"),
             height=arrival.height or probe.get("height"),
+            impact_ms=arrival.impact_ms,
         )
 
     async def _commit(

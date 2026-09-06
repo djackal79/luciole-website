@@ -14,6 +14,18 @@ REM
 REM Pass the recorded file path as the argument. Check the dialog for the
 REM variable Kinovea offers for it, and wrap it in quotes.
 REM
+REM This runs AFTER Kinovea has recorded and saved. What starts the recording
+REM is Kinovea's own capture trigger (audio level), configured separately on
+REM the capture screen. Set its delay buffer so the clip starts before the
+REM takeaway -- a trigger firing on impact with no buffer records only the
+REM follow-through.
+REM
+REM IMPACT_MS is where the strike lands inside the clip, which follows from
+REM that buffer: buffer 3 seconds before the trigger and impact sits ~3000ms
+REM in. The player aligns both cameras on this rather than on file start, so
+REM it is worth measuring once. Leave it blank if you do not know yet; the
+REM calibration slider in the UI covers the gap.
+REM
 REM Every run appends to data\kinovea_hook.log -- Kinovea closes the console
 REM instantly, so that file is the only way to see what happened.
 
@@ -24,6 +36,7 @@ set SOURCE=body_swing
 set CAPTURE_FPS=30
 set CONTAINER_FPS=30
 set CAMERA=face_on
+set IMPACT_MS=
 
 set LOG=%~dp0..\data\kinovea_hook.log
 if not exist "%~dp0..\data" mkdir "%~dp0..\data"
@@ -42,12 +55,15 @@ if not exist "%~1" (
   exit /b 1
 )
 
+set IMPACT_ARG=
+if not "%IMPACT_MS%"=="" set IMPACT_ARG=-F "impact_ms=%IMPACT_MS%"
+
 curl.exe -sS -X POST "%BACKEND%/api/ingest/body_swing" ^
   -F "path=%~f1" ^
   -F "source=%SOURCE%" ^
   -F "capture_fps=%CAPTURE_FPS%" ^
   -F "container_fps=%CONTAINER_FPS%" ^
-  -F "camera=%CAMERA%" >> "%LOG%" 2>&1
+  -F "camera=%CAMERA%" %IMPACT_ARG% >> "%LOG%" 2>&1
 
 if errorlevel 1 (
   echo   FAILED: POST error -- is the backend running? >> "%LOG%"

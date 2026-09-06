@@ -117,6 +117,10 @@ async def ingest_impact(
     duration_ms: Annotated[int | None, Form()] = None,
     width: Annotated[int | None, Form()] = None,
     height: Annotated[int | None, Form()] = None,
+    impact_ms: Annotated[
+        int | None,
+        Form(description="Where impact sits inside this clip, in playback ms"),
+    ] = None,
 ) -> dict:
     """Receive the phone's high-speed clip.
 
@@ -134,6 +138,7 @@ async def ingest_impact(
             duration_ms=duration_ms,
             width=width,
             height=height,
+            impact_ms=impact_ms,
             trigger_hint=trigger_ts,
         ),
         received_at=_pairing_timestamp(settings, trigger_ts),
@@ -168,6 +173,10 @@ async def ingest_body_swing(
     duration_ms: Annotated[int | None, Form()] = None,
     width: Annotated[int | None, Form()] = None,
     height: Annotated[int | None, Form()] = None,
+    impact_ms: Annotated[
+        int | None,
+        Form(description="Where impact sits inside this clip, in playback ms"),
+    ] = None,
 ) -> dict:
     """Receive a Kinovea body-swing clip, by upload or by local path.
 
@@ -214,6 +223,7 @@ async def ingest_body_swing(
             duration_ms=duration_ms,
             width=width,
             height=height,
+            impact_ms=impact_ms,
             copy=copy,
             trigger_hint=trigger_ts,
         )
