@@ -72,6 +72,7 @@ def post_hook(
     base_url: str,
     clip: Path,
     *,
+    source: str = "body_swing",
     capture_fps: float,
     container_fps: float,
     camera: str,
@@ -86,6 +87,8 @@ def post_hook(
         f"{base_url}/api/ingest/body_swing",
         data={
             "path": str(clip.resolve()),
+            # Routing key: face-on and down-the-line must not share a source.
+            "source": source,
             "capture_fps": capture_fps,
             "container_fps": container_fps,
             "camera": camera,
@@ -110,6 +113,8 @@ def main() -> None:
     parser.add_argument("--capture-fps", type=float, default=30.0)
     parser.add_argument("--container-fps", type=float, default=30.0)
     parser.add_argument("--camera", default="face_on")
+    parser.add_argument("--source", default="body_swing",
+                        choices=["body_swing", "body_swing_dtl"])
     parser.add_argument("--watcher", action="store_true",
                         help="drop the file only, for the fallback watcher")
     parser.add_argument("--temp-name", action="store_true",
@@ -130,6 +135,7 @@ def main() -> None:
             result = post_hook(
                 args.base_url,
                 clip,
+                source=args.source,
                 capture_fps=args.capture_fps,
                 container_fps=args.container_fps,
                 camera=args.camera,

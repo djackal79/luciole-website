@@ -47,6 +47,10 @@ class SessionSimulator:
         )
         self.monitor: MockMonitor | None = None
         self.expected = 0
+        #: Shot ids this run created. The report judges only these: seeded
+        #: fixtures carry the contract's 14:30 example timestamp, which is in
+        #: the future for most of the day, so no time filter can exclude them.
+        self.produced: set[str] = set()
 
     async def run(self) -> int:
         async with httpx.AsyncClient(base_url=self.args.base_url, timeout=60.0) as client:
@@ -63,7 +67,7 @@ class SessionSimulator:
             print(f"\nwaiting {settle}s for the pairing window to close...")
             await asyncio.sleep(settle)
             shots = (await client.get("/api/shots", params={"limit": 500})).json()
-            return self._report(shots)
+            return self._report([s for s in shots if s["shot_id"] in self.produced])
 
     async def _preflight(self, client: httpx.AsyncClient) -> dict | None:
         health = (await client.get("/api/health")).json()
@@ -126,24 +130,42 @@ class SessionSimulator:
             width=480,
             height=360,
         )
+        self.produced.add(result["shot_id"])
         print(f"    impact      +{time.time() - impact_at:5.2f}s  -> {result['shot_id']}")
 
     async def _send_body_swing(self, client: httpx.AsyncClient, impact_at: float) -> None:
+        """Kinovea's Automation hooks, one per camera.
+
+        Both fire within milliseconds of each other, which is exactly the case
+        that needs distinct sources: without them the correlator reads the
+        second clip as a second swing and doubles the shot.
+        """
+        cameras = [("body_swing", "face_on", 30.0)]
+        if self.args.dtl:
+            cameras.append(("body_swing_dtl", "dtl", 60.0))
+
         await asyncio.sleep(self.rng.uniform(*self.args.swing_delay))
-        clip = await asyncio.to_thread(
-            export_clip, self.args.export_dir, write_seconds=self.args.swing_write_seconds
-        )
-        result = await asyncio.to_thread(
-            post_hook, self.args.base_url, clip,
-            capture_fps=30.0, container_fps=30.0, camera="face_on",
-            duration_ms=4000, width=640, height=480,
-        )
-        print(f"    body_swing  +{time.time() - impact_at:5.2f}s  -> {result['shot_id']}")
+        for source, camera, fps in cameras:
+            clip = await asyncio.to_thread(
+                export_clip,
+                self.args.export_dir,
+                write_seconds=self.args.swing_write_seconds,
+                container_fps=int(fps),
+            )
+            result = await asyncio.to_thread(
+                post_hook, self.args.base_url, clip,
+                source=source, capture_fps=fps, container_fps=fps, camera=camera,
+                duration_ms=4000, width=640, height=480,
+            )
+            self.produced.add(result["shot_id"])
+            print(f"    {source:<11} +{time.time() - impact_at:5.2f}s  -> {result['shot_id']}")
 
     def _report(self, shots: list[dict]) -> int:
-        expected_sources = {"body_swing", "impact_strike", "telemetry"}
+        expected_sources = {"body_swing", "body_swing_dtl", "impact_strike", "telemetry"}
         if self.monitor is None:
             expected_sources.discard("telemetry")
+        if not self.args.dtl:
+            expected_sources.discard("body_swing_dtl")
 
         print(f"\n{'=' * 80}\nPAIRING REPORT -- {len(shots)} shot package(s)\n{'=' * 80}")
         print(f"{'shot_id':<24} {'status':<9} {'club':<6} sources")
@@ -203,6 +225,8 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--allow-no-telemetry", action="store_true",
                         help="run video-only when the GSPro socket is unavailable")
+    parser.add_argument("--dtl", action="store_true",
+                        help="also drive the second Kinovea camera (down-the-line)")
     parser.add_argument("--check", action="store_true",
                         help="exit non-zero unless every shot paired cleanly")
     args = parser.parse_args()
