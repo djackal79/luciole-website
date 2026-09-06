@@ -20,6 +20,7 @@ interface ThemeState {
   currentTheme: AppTheme;
   setTheme: (theme: AppTheme) => void;
   toggleTheme: () => void;
+  getMotionDuration: (baseMs: number) => number;
 }
 
 export const useThemeStore = create<ThemeState>((set, get) => {
@@ -46,6 +47,10 @@ export const useThemeStore = create<ThemeState>((set, get) => {
     toggleTheme: () => {
       const next = get().currentTheme === 'cyber' ? 'boutique' : 'cyber';
       get().setTheme(next);
+    },
+    getMotionDuration: (baseMs: number) => {
+      const multiplier = get().currentTheme === 'boutique' ? 3.33 : 1.0;
+      return Math.round(baseMs * multiplier);
     }
   };
 });

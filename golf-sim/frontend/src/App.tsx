@@ -128,7 +128,7 @@ export const AppContent: React.FC = () => {
   return (
     <div className={`min-h-screen relative font-sans transition-colors duration-300 ${
       isBoutique 
-        ? "bg-[url('https://images.unsplash.com/photo-1587329310686-91414b8e3cb7')] bg-cover bg-center bg-fixed text-[#F4F4F2] selection:bg-[#C5A880] selection:text-stone-900" 
+        ? "bg-[url('/boutique-bg.jpg')] bg-cover bg-center bg-fixed text-[#F4F4F2] selection:bg-[#C5A880] selection:text-stone-900" 
         : "bg-[#07090e] text-neutral-200 selection:bg-emerald-500 selection:text-black"
     }`}>
       {/* Ambient golf course background overlay for Boutique Studio */}

@@ -42,10 +42,11 @@ export const PlaybackControls: React.FC = () => {
     toggleLayoutMode,
     toggleMute,
     jumpToImpact,
+    masterImpactTime,
   } = usePlayerStore();
 
   const speedOptions: PlaybackRate[] = [0.1, 0.25, 0.5, 1.0];
-  const impactTime = 2.45; // Nominal impact timestamp
+  const impactTime = masterImpactTime;
   const progressPercent = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
   const impactPercent = duration > 0 ? Math.min(100, (impactTime / duration) * 100) : 61.25;
 
@@ -160,7 +161,7 @@ export const PlaybackControls: React.FC = () => {
             isBoutique ? 'bg-stone-950/80 border border-[#C5A880]/20' : 'bg-neutral-800'
           }`}>
             <div 
-              className={`h-full transition-all duration-75 ${
+              className={`h-full transition-all ${Math.abs(currentTime - impactTime) < 0.05 ? 'duration-300 ease-out' : 'duration-75 linear'} ${
                 isBoutique 
                   ? 'bg-gradient-to-r from-[#C5A880] to-[#D4AF37]' 
                   : 'bg-gradient-to-r from-emerald-500 to-cyan-400'
