@@ -258,14 +258,64 @@ summary reports, and what it refuses to:
 |---|---|---|
 | `swing_plane_deg` | down-the-line | Fitted through the hand path from the top to impact — the segment a plane actually describes |
 | `spine_angle_deg` | down-the-line | Trunk vs vertical, averaged over the address frames |
-| `shoulder_turn_deg`, `pelvis_rotation_deg`, `x_factor_deg` | — | **Null.** These need depth; one camera cannot recover them |
+| `shoulder_turn_deg`, `pelvis_rotation_deg`, `x_factor_deg` | both cameras, calibrated | Need depth. Null until the rig is calibrated — see below |
 | `hand_speed_mph` | — | **Null.** Needs a real-world scale that normalised coordinates do not have |
 
 Angles are corrected for aspect ratio. Measuring on raw 0–1 coordinates from a
 16:9 frame turns a 62° swing plane into 73° — wrong, and plausible enough to
 go unnoticed.
 
-Everything null fills in once the cameras are calibrated and triangulated.
+## Calibrating the two cameras — 3D biomechanics
+
+Shoulder turn, pelvis rotation and X-factor are the three metrics a single
+camera cannot measure at all. They need the two views tied to metres, which is
+a one-off job:
+
+```bash
+python scripts/calibrate_cameras.py board --out board.png     # print this
+python scripts/calibrate_cameras.py intrinsics body_swing     lens/*.png
+python scripts/calibrate_cameras.py intrinsics body_swing_dtl lens_dtl/*.png
+python scripts/calibrate_cameras.py place body_swing     floor_face_on.png
+python scripts/calibrate_cameras.py place body_swing_dtl floor_dtl.png
+python scripts/calibrate_cameras.py status
+```
+
+Three things decide whether this works.
+
+**Print the board the script gives you, big.** It is a ChArUco board — a
+chessboard with a coded marker in every white square — and the markers are not
+decoration. A plain chessboard has no origin: the corner ordering comes from
+how the detector walked the image, so two cameras 90° apart can describe the
+same board in world frames 180° apart, each fitting its own view perfectly
+while triangulation between them returns nonsense. The default print is
+1.5 × 1.05 m, which is a print shop rather than an office printer, and the size
+is not optional: a board on the floor seen from a camera at chest height
+several metres away is foreshortened hard and a small one is simply not found.
+Mount it on something stiff — a curled print calibrates the curl into the lens.
+
+**Measure a square with a ruler and pass the real number to `--square-mm`.**
+That one figure sets the scale of the entire world, and "fit to page" quietly
+rescales the print. `status` reports how far apart the two cameras solved to;
+check it against a tape measure before trusting anything downstream.
+
+**Set `IMPACT_MS` in both Kinovea hooks.** The two capture screens start
+recording independently, so impact is the only clock the clips share. Without
+it on both, the backend will not triangulate — and that is deliberate. A 50 ms
+error in the alignment turns a real 90° shoulder turn into 61° at 0.4 px of
+reprojection error, so the geometry cannot catch it and neither could you.
+
+Once `status` says the rig is ready, the next shot picks it up — no restart.
+`pose.dimensions` reads `3d`, the three angles arrive, and `pose.json` grows a
+`world` block of landmarks in metres alongside the per-camera 2D tracks.
+
+The two steps are different jobs. **Intrinsics** solve what the lens does: hold
+the board up and grab a dozen frames at varied angles and distances. Varied is
+the part people get wrong — a dozen views parallel to the sensor cannot
+separate focal length from distance and the fit comes out confidently wrong.
+**Placement** solves where the camera sits: board flat on the floor where the
+golfer stands, one frame from each camera, and it must not move in between.
+Flat on the floor is also what makes the world gravity-aligned, so "vertical"
+in the metrics means vertical in the room.
 
 ## API
 

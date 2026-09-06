@@ -107,6 +107,10 @@ class Settings(BaseSettings):
     #: metric needs, so a 60 fps DTL clip is halved for nothing lost.
     pose_max_fps: float = 30.0
     pose_min_confidence: float = 0.5
+    #: Written by scripts/calibrate_cameras.py. Absent means pose stays 2D:
+    #: shoulder turn, pelvis rotation and X-factor need two placed cameras.
+    #: Re-read per shot, so calibrating does not need a backend restart.
+    pose_calibration_path: Path = Path("./models/calibration.json")
     #: Shots waiting on extraction. Beyond this, pose is skipped rather than
     #: allowed to back up behind a range session.
     pose_queue_size: int = 8
@@ -132,7 +136,9 @@ class Settings(BaseSettings):
     ffprobe_path: str = "ffprobe"
     probe_timeout_seconds: float = 10.0
 
-    @field_validator("data_root", "kinovea_export_dir", "pose_model_path")
+    @field_validator(
+        "data_root", "kinovea_export_dir", "pose_model_path", "pose_calibration_path"
+    )
     @classmethod
     def _expand(cls, value: Path) -> Path:
         return Path(value).expanduser()

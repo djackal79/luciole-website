@@ -517,3 +517,91 @@ reproduced later. Configure with `GOLFSIM_FLIGHT_ALTITUDE_M` and
   the backend, tested against known distances. If a number looks wrong, it is
   wrong for every consumer at once, which is the point.
 - Units are canonical: metres. The frontend still owns the m/yds toggle.
+
+---
+
+# Schema v1.3 — calibrated cameras and 3D pose
+
+Supersedes v1.2 where they disagree. Nothing here removes or renames a v1.2
+field; the 3D block is strictly additive and the 2D path is unchanged.
+
+`pose.json` becomes `schema_version` **1.2**. `metadata.json` keeps its shape.
+
+## What changes for a consumer
+
+Two things, both optional to adopt:
+
+1. `pose.dimensions` reads `"3d"` instead of `"2d"` when the shot was
+   triangulated, and `pose.summary.shoulder_turn_deg`,
+   `pelvis_rotation_deg` and `x_factor_deg` carry numbers instead of `null`.
+2. `pose.json` grows a sibling `world` block next to `tracks`.
+
+`tracks` is untouched — still per-camera, still normalised image coordinates,
+because a skeleton drawn over the video needs image coordinates. `world` is a
+separate, additional track in metres.
+
+```json
+{
+  "schema_version": "1.2",
+  "dimensions": "3d",
+  "tracks": { "body_swing": { ... }, "body_swing_dtl": { ... } },
+  "world": {
+    "coordinate_space": "world_metres",
+    "origin": "calibration board's first inner corner, Z up",
+    "point_format": ["x", "y", "z", "reprojection_px"],
+    "t_ms_origin": "impact",
+    "frame_count": 96,
+    "frames": [
+      { "t_ms": -1483.33, "points": [[0.121, -0.048, 1.352, 0.31], null, ...] }
+    ]
+  }
+}
+```
+
+### Reading `world`
+
+- **Times are already relative to impact.** Unlike `tracks`, which time from
+  capture start and carry their own `impact_ms`, `world.frames[].t_ms` is
+  `t_from_impact` directly. Negative is backswing. Do not subtract anything.
+- **`points[i]` is `null` where the landmark could not be solved.** Either only
+  one camera saw it, or the two disagreed. Draw a gap, not a guess — the array
+  is always full length and index-aligned to `landmarks`.
+- **The fourth number is the reprojection error in pixels**, i.e. how far apart
+  the two cameras placed that point. Anything above 25 px is dropped rather
+  than emitted, so what arrives is under that; a point at 15 px is still
+  weaker than one at 1 px and can be drawn fainter if it helps.
+- Z is up. The origin is a corner of the calibration board on the floor, so
+  Z is roughly height above the mat.
+
+## When 3D does *not* appear
+
+`dimensions` stays `"2d"` and the three angles stay `null` whenever any of
+these hold. All are normal, none are errors, and the 2D pose is unaffected:
+
+- the rig has not been calibrated, or only one camera has been placed;
+- only one body-swing clip reached the shot;
+- **either clip is missing `media.*.impact_ms`.** Two capture screens start
+  recording independently, so impact is the only clock the clips share.
+  Guessing the offset produces a body angle tens of degrees wrong at a
+  reprojection error under half a pixel — the geometry cannot detect it, so
+  the backend refuses instead;
+- the triangulated skeleton is not anatomically possible, which means the
+  calibration scale or the time alignment is wrong.
+
+So `impact_ms` is promoted from a nicety to **the gate on 3D**. It stays
+optional in the schema and often `null` for the phone's impact clip, but the
+two body-swing clips need it for the depth metrics.
+
+## `calibration.json`
+
+Not part of the shot package and never served to the frontend. It lives at
+`GOLFSIM_POSE_CALIBRATION_PATH` (default `models/calibration.json`), is written
+by `scripts/calibrate_cameras.py`, and is re-read per shot so calibrating does
+not need a backend restart.
+
+The board is a **ChArUco** board, not a plain chessboard. A plain chessboard's
+corner ordering comes from how the detector walked the image and is unique only
+up to the pattern's symmetry, so two cameras 90° apart can describe the same
+board in world frames 180° apart — each fitting its own view perfectly while
+triangulation between them returns nonsense. ArUco markers carry their own
+identity, so every view agrees on the origin by construction.

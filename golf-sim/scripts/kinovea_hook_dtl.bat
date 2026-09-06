@@ -23,9 +23,15 @@ REM follow-through.
 REM
 REM IMPACT_MS is where the strike lands inside the clip, which follows from
 REM that buffer: buffer 3 seconds before the trigger and impact sits ~3000ms
-REM in. The player aligns both cameras on this rather than on file start, so
-REM it is worth measuring once. Leave it blank if you do not know yet; the
-REM calibration slider in the UI covers the gap.
+REM in. The player aligns both cameras on this rather than on file start.
+REM
+REM REQUIRED FOR 3D. Two capture screens start recording independently, so
+REM impact is the only clock the two clips share. Without it on BOTH cameras
+REM the backend will not triangulate -- shoulder turn, pelvis rotation and
+REM X-factor stay blank however well the rig is calibrated, because guessing
+REM the offset produces a clean-looking answer that is tens of degrees wrong.
+REM Leave it blank and 2D still works exactly as before; the calibration
+REM slider in the UI covers the gap for playback alignment.
 REM
 REM Every run appends to data\kinovea_hook.log -- Kinovea closes the console
 REM instantly, so that file is the only way to see what happened.

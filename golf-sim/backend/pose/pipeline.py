@@ -8,6 +8,12 @@ All metadata writes go back through the correlator rather than straight to
 disk. The correlator may still be holding the shot in memory and may still
 late-attach a straggler to it -- writing behind its back would have that next
 write clobber the pose block.
+
+When the cameras have been calibrated the 2D tracks are also triangulated into
+a world-frame track, which is what makes shoulder turn, pelvis rotation and
+X-factor recoverable. That step is strictly additive: if calibration is absent,
+incomplete, or the solve is refused, the shot still gets its 2D pose and its
+plane and spine angles exactly as before.
 """
 
 from __future__ import annotations
@@ -20,14 +26,16 @@ from typing import Any
 
 from ..config import Settings
 from ..models import DataStatus, SourceName
+from .calibration import Calibration
 from .extractor import ExtractionError, PoseExtractor, PoseTrack
 from .landmarks import MEDIAPIPE_LANDMARKS
 from .metrics import summarise
+from .triangulate import Frame3D, summarise_3d, triangulate_tracks
 
 log = logging.getLogger(__name__)
 
 POSE_FILENAME = "pose.json"
-SIDECAR_SCHEMA_VERSION = "1.1"
+SIDECAR_SCHEMA_VERSION = "1.2"
 
 #: Media sources pose can be estimated from, in preference order.
 POSE_INPUTS = (SourceName.BODY_SWING, SourceName.BODY_SWING_DTL)
@@ -156,7 +164,14 @@ class PosePipeline:
             )
             return
 
-        await asyncio.to_thread(_write_sidecar, directory, tracks)
+        summary = summarise(tracks)
+        world = await asyncio.to_thread(self._triangulate, tracks)
+        if world is not None:
+            # 3D only ever fills in what 2D left null; it never overwrites the
+            # plane and spine angles, which are measured better in the image.
+            summary.update(summarise_3d(world))
+
+        await asyncio.to_thread(_write_sidecar, directory, tracks, world)
 
         total_frames = sum(len(track.frames) for track in tracks.values())
         await self.correlator.set_pose(
@@ -165,14 +180,50 @@ class PosePipeline:
                 "status": DataStatus.READY.value,
                 "path": POSE_FILENAME,
                 "model": self.settings.pose_model_path.stem,
-                "dimensions": "2d",
+                "dimensions": "3d" if world else "2d",
                 "cameras": list(tracks),
                 "frame_count": total_frames,
                 "error": None,
-                "summary": summarise(tracks),
+                "summary": summary,
             },
         )
-        log.info("pose ready for %s (%d frames)", shot_id, total_frames)
+        log.info(
+            "pose ready for %s (%d frames%s)",
+            shot_id, total_frames,
+            f", {len(world)} triangulated" if world else "",
+        )
+
+    def _triangulate(self, tracks: dict[str, PoseTrack]) -> list[Frame3D] | None:
+        """World-frame track, when the rig has been calibrated.
+
+        The calibration file is read per shot rather than cached at startup, so
+        running the calibration script takes effect on the next swing instead
+        of needing the backend restarted mid-session.
+
+        Never raises: 3D is a bonus on top of a shot that is already complete,
+        and losing it must not cost the 2D pose that came with it.
+        """
+        try:
+            calibration = Calibration.load(self.settings.pose_calibration_path)
+            if calibration is None:
+                log.debug(
+                    "no calibration at %s; pose stays 2D",
+                    self.settings.pose_calibration_path,
+                )
+                return None
+            if not calibration.ready:
+                log.info(
+                    "calibration has %d placed camera(s), need 2; pose stays 2D",
+                    len(calibration.triangulable),
+                )
+                return None
+            world = triangulate_tracks(
+                {name: track.as_dict() for name, track in tracks.items()}, calibration
+            )
+        except Exception:
+            log.exception("triangulation failed; falling back to 2D pose")
+            return None
+        return world or None
 
     def _extract_all(
         self, clips: list[tuple[str, Path, dict[str, Any]]]
@@ -203,17 +254,36 @@ def _pose_inputs(
     return found
 
 
-def _write_sidecar(directory: Path, tracks: dict[str, PoseTrack]) -> None:
+def _write_sidecar(
+    directory: Path,
+    tracks: dict[str, PoseTrack],
+    world: list[Frame3D] | None = None,
+) -> None:
     """Atomic, like metadata.json -- a reader must never see half a file."""
-    payload = {
+    payload: dict[str, Any] = {
         "schema_version": SIDECAR_SCHEMA_VERSION,
         "model": "mediapipe_pose",
-        "dimensions": "2d",
+        "dimensions": "3d" if world else "2d",
         "coordinate_space": "normalised_image",
         "point_format": ["x", "y", "visibility"],
         "landmarks": MEDIAPIPE_LANDMARKS,
         "tracks": {name: track.as_dict() for name, track in tracks.items()},
     }
+    if world:
+        # The 2D tracks stay exactly as they were: a viewer that overlays a
+        # skeleton on the video still reads "tracks" and needs image
+        # coordinates. The world track is a separate block alongside them.
+        payload["world"] = {
+            "coordinate_space": "world_metres",
+            "origin": "calibration board's first inner corner, Z up",
+            "point_format": ["x", "y", "z", "reprojection_px"],
+            "t_ms_origin": "impact",
+            "frame_count": len(world),
+            "frames": [
+                {"t_ms": round(frame.t_ms, 2), "points": frame.points}
+                for frame in world
+            ],
+        }
     tmp = directory / f".{POSE_FILENAME}.tmp"
     tmp.write_text(json.dumps(payload, separators=(",", ":")) + "\n", encoding="utf-8")
     tmp.replace(directory / POSE_FILENAME)

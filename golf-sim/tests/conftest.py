@@ -25,6 +25,9 @@ def settings(tmp_path: Path) -> Settings:
         reaper_interval_ms=50,
         gspro_enabled=False,
         kinovea_watch_enabled=False,
+        # Hermetic: never pick up a real rig calibration from ./models and
+        # start triangulating in tests that are about something else.
+        pose_calibration_path=tmp_path / "calibration.json",
         _env_file=None,
     )
 
