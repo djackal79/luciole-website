@@ -4,6 +4,12 @@ Local backend that consolidates three independent capture streams into one
 shot package per swing. Build 2 (the dual-video player + telemetry HUD) reads
 those packages and nothing else.
 
+| Document | For |
+|---|---|
+| [`CONTRACT.md`](CONTRACT.md) | The Build 1 ↔ Build 2 schema contract. The authority for both builds. |
+| [`DEPLOY.md`](DEPLOY.md) | Getting this onto the golf sim PC, LAN access, remote access |
+| [`HANDOVER.md`](HANDOVER.md) | Build 2 brief: scope, traps, fixtures, definition of done |
+
 This implements the **Build 1 ↔ Build 2 Contract** verbatim. Where the
 original Build 1 prompt disagreed with the contract, the contract won:
 
