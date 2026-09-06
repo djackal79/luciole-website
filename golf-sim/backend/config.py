@@ -53,6 +53,17 @@ class Settings(BaseSettings):
     #: actually emits when shots are not registering.
     gspro_log_frames: bool = False
 
+    # ---- GSPro pass-through -----------------------------------------------
+    #: Relay every frame on to the real GSPro, so the course plays while this
+    #: app records. Only one process can bind a port, so run the listener on
+    #: 922 and point the launch monitor bridge there; GSPro keeps 921.
+    #:
+    #:     bridge --> GOLFSIM_GSPRO_PORT (922) --> GSPro (921)
+    gspro_forward_enabled: bool = False
+    gspro_forward_host: str = "127.0.0.1"
+    gspro_forward_port: int = 921
+    gspro_forward_timeout_s: float = 3.0
+
     # ---- media defaults ---------------------------------------------------
     body_swing_camera: str = "face_on"
     body_swing_capture_fps: float = 30.0

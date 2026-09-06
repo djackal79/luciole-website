@@ -213,7 +213,26 @@ curl.exe http://127.0.0.1:8000/api/health
 **Checkpoint:** `gspro_socket.clients` is `1`. Hit a ball — a shot appears with
 telemetry and no video.
 
-To hand port 921 back to GSPro for course play, without stopping anything:
+**To play GSPro at the same time**, sit in the middle rather than taking
+turns. In `.env`:
+
+```ini
+GOLFSIM_GSPRO_PORT=922
+GOLFSIM_GSPRO_FORWARD_ENABLED=true
+GOLFSIM_GSPRO_FORWARD_PORT=921
+```
+
+Restart the backend, tick **"Use custom IP/Port"** in SQG-GSPRO-Connect and
+set it to `127.0.0.1` port `922`, then start GSPro as normal. Every shot plays
+the hole *and* gets recorded here. `/api/health` shows
+`gspro_socket.pass_through.frames_forwarded` climbing.
+
+Order still matters: GSPro first, then this backend, then the bridge.
+
+If GSPro is not running the app records anyway and answers the monitor itself,
+so you can leave the setting on permanently.
+
+Alternatively, to hand port 921 back without pass-through:
 
 ```powershell
 curl.exe -X POST "http://127.0.0.1:8000/api/listeners/gspro?enabled=false"

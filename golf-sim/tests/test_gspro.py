@@ -284,3 +284,177 @@ async def test_counters_separate_shots_heartbeats_and_ignored(listener, settings
                 listener.frames_ignored) == (1, 1, 1)
     finally:
         writer.close()
+
+
+# ---------------------------------------------------------------------------
+# Pass-through to the real GSPro
+# ---------------------------------------------------------------------------
+
+
+class FakeGSPro:
+    """Stands in for GSPro: records what arrives, replies like GSPro would."""
+
+    def __init__(self) -> None:
+        self.received: list[dict] = []
+        self.raw: list[str] = []
+        self._server: asyncio.AbstractServer | None = None
+        self.port = 0
+
+    async def start(self) -> int:
+        self._server = await asyncio.start_server(self._handle, "127.0.0.1", 0)
+        self.port = self._server.sockets[0].getsockname()[1]
+        return self.port
+
+    async def stop(self) -> None:
+        if self._server:
+            self._server.close()
+            await self._server.wait_closed()
+
+    async def _handle(self, reader, writer):
+        buffer = ""
+        decoder = json.JSONDecoder()
+        try:
+            while True:
+                chunk = await reader.read(65536)
+                if not chunk:
+                    return
+                buffer += chunk.decode()
+                while True:
+                    stripped = buffer.lstrip()
+                    if not stripped:
+                        buffer = ""
+                        break
+                    try:
+                        payload, end = decoder.raw_decode(stripped)
+                    except json.JSONDecodeError:
+                        buffer = stripped
+                        break
+                    self.raw.append(stripped[:end])
+                    self.received.append(payload)
+                    buffer = stripped[end:]
+                    writer.write(
+                        (json.dumps({"Code": 200, "Message": "GSPro here"}) + "\r\n").encode()
+                    )
+                    await writer.drain()
+        except Exception:
+            return
+
+
+@pytest.fixture
+async def gspro_upstream():
+    fake = FakeGSPro()
+    await fake.start()
+    try:
+        yield fake
+    finally:
+        await fake.stop()
+
+
+@pytest.fixture
+async def relaying_listener(settings, correlator, gspro_upstream):
+    settings.gspro_host = "127.0.0.1"
+    settings.gspro_port = 0
+    settings.gspro_forward_enabled = True
+    settings.gspro_forward_host = "127.0.0.1"
+    settings.gspro_forward_port = gspro_upstream.port
+    served = GSProListener(settings, correlator)
+    assert await served.start()
+    settings.gspro_port = served._server.sockets[0].getsockname()[1]
+    try:
+        yield served
+    finally:
+        await served.stop()
+
+
+async def test_frames_reach_gspro_verbatim(relaying_listener, settings, gspro_upstream):
+    """Relayed byte-for-byte, not re-serialised: nothing downstream should
+    depend on our key order or float formatting."""
+    reader, writer = await connect(settings)
+    try:
+        raw = json.dumps(SHOT)
+        writer.write((raw + "\r\n").encode())
+        await writer.drain()
+        await asyncio.sleep(0.2)
+
+        assert gspro_upstream.received == [SHOT]
+        assert gspro_upstream.raw == [raw]
+    finally:
+        writer.close()
+
+
+async def test_gspro_answers_the_monitor_not_us(
+    relaying_listener, settings, gspro_upstream
+):
+    """Exactly one reply reaches the monitor, and it is GSPro's. Two replies
+    to one frame is a protocol fault from the monitor's point of view."""
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, SHOT)
+        first = await read_json(reader)
+        assert first["Message"] == "GSPro here"
+
+        # Nothing else follows: we stayed quiet.
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(reader.readline(), timeout=0.5)
+    finally:
+        writer.close()
+
+
+async def test_the_shot_is_still_recorded_while_relaying(
+    relaying_listener, settings, gspro_upstream
+):
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, SHOT)
+        await read_json(reader)
+        await asyncio.sleep(0.2)
+
+        assert relaying_listener.shots_received == 1
+        assert relaying_listener.frames_forwarded == 1
+        shot_dir = next(settings.shots_dir.iterdir())
+        metadata = json.loads((shot_dir / "metadata.json").read_text())
+        assert metadata["telemetry"]["ball"]["speed_mph"] == 132.4
+    finally:
+        writer.close()
+
+
+async def test_recording_continues_when_gspro_is_down(settings, correlator):
+    """The course being closed must not stop the app recording."""
+    settings.gspro_host = "127.0.0.1"
+    settings.gspro_port = 0
+    settings.gspro_forward_enabled = True
+    settings.gspro_forward_host = "127.0.0.1"
+    settings.gspro_forward_port = 9  # discard: nothing listening
+    settings.gspro_forward_timeout_s = 0.5
+
+    served = GSProListener(settings, correlator)
+    assert await served.start()
+    settings.gspro_port = served._server.sockets[0].getsockname()[1]
+    try:
+        reader, writer = await connect(settings)
+        try:
+            await send(writer, SHOT)
+            # We answer, because GSPro is not there to.
+            assert (await read_json(reader))["Message"] == "Shot received"
+            await asyncio.sleep(0.2)
+            assert served.shots_received == 1
+            assert served.frames_forwarded == 0
+            assert served.forward_error is not None
+        finally:
+            writer.close()
+    finally:
+        await served.stop()
+
+
+async def test_relaying_to_our_own_port_is_refused(settings, correlator):
+    """Would loop every frame back into ourselves forever."""
+    settings.gspro_host = "127.0.0.1"
+    settings.gspro_port = 9921
+    settings.gspro_forward_enabled = True
+    settings.gspro_forward_host = "127.0.0.1"
+    settings.gspro_forward_port = 9921
+
+    served = GSProListener(settings, correlator)
+    assert await served.start() is False
+    assert served.live is False
+    assert "own address" in served.last_error

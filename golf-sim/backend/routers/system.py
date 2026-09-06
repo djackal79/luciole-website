@@ -32,6 +32,17 @@ async def health(
                 "heartbeats_received": gspro.heartbeats_received,
                 "frames_ignored": gspro.frames_ignored,
                 "last_error": gspro.last_error,
+                "pass_through": {
+                    "enabled": settings.gspro_forward_enabled,
+                    "target": (
+                        f"{settings.gspro_forward_host}:{settings.gspro_forward_port}"
+                        if settings.gspro_forward_enabled else None
+                    ),
+                    # Per monitor session, so false between shots is normal.
+                    "active": gspro.forward_active,
+                    "frames_forwarded": gspro.frames_forwarded,
+                    "last_error": gspro.forward_error,
+                },
             },
             "kinovea_hook": {
                 "live": True,
