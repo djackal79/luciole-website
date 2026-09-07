@@ -511,6 +511,49 @@ one shot per club is marked the reference, and every new shot plays against it
 in sync. Better than the generic comparison in `DESIGN_BRIEF.md` §6, and it
 needs the same missing piece.
 
+### brentyates/golf-cam and brentyates/swing-cam — the phone question
+
+Same author as the Square connector. Two capture rigs, neither adopted, but
+one changes how the unbuilt Android app should be judged.
+
+**golf-cam** is a Raspberry Pi 5 with a Global Shutter camera (IMX296),
+120 fps and configurable higher, triggered from a web page or a GPIO button.
+Hardware this bay does not have. Its transferable point is global versus
+rolling shutter: a phone reads its sensor line by line, so a clubhead at
+impact is *sheared* rather than blurred. That would matter if anything were
+measured from the impact clip — but pose runs on the two Kinovea cameras and
+the impact clip is viewed, never measured. So it is a cosmetic artifact here,
+not an error, and not a reason to buy a Pi.
+
+**swing-cam** is the interesting one: a Kotlin Android app that runs an HTTP
+server on the phone and records on `POST /api/record`. That is the opposite
+architecture to `android/impact-watcher/` in this repo, which watches
+MediaStore and uploads whatever the stock camera produced.
+
+| | swing-cam | impact-watcher (here) |
+|---|---|---|
+| Direction | PC commands the phone | Phone records, app observes |
+| Workflow | Arm, then swing | Swing whenever; it is caught |
+| Complexity | Much lower — no MediaStore, no dedupe | ~1000 lines, never built or run |
+| Slow motion | Delegates to the device's own mode | Stock camera, so Super Slow-mo |
+| Knows when recording began | **No** — see below | Via `trigger_ts` |
+
+The obvious hope was that commanding the phone would finally pin down
+`impact_ms` for the impact clip. It does not: swing-cam's record response is
+`{"success": true, "message": "Recording started", "duration": 5}` with no
+timestamp, so the caller knows when it *asked*, not when the camera actually
+began. App latency and camera warm-up sit in between. On that specific axis
+the design already in this repo is the better one, because `trigger_ts` plus
+`GOLFSIM_IMPACT_TRUST_TRIGGER_TS` at least carries a capture-time hint.
+
+It is still worth knowing about, for one reason: **it is a working app and
+ours is a thousand untested lines.** If the phone path is wanted quickly, an
+arm-then-swing workflow driven from a dashboard button is far less risk than
+finishing and debugging the watcher. The cost is the workflow change, and one
+real caveat — swing-cam targets a Pixel 9 and leans on that device's
+slow-motion mode. CameraX high-speed support is device-specific, so it may not
+behave the same on an S23+.
+
 ### Both converge on club tagging
 
 Dispersion, gapping, per-club standard swings, and wrong-club detection all
