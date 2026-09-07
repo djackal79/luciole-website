@@ -68,6 +68,8 @@ class GSProListener:
         self._unready_since: float | None = None
         #: Which candidate arm message the device actually responded to.
         self.armed_by: str | None = None
+        self._ignored_reason: str | None = None
+        self._ignored_repeats = 0
         #: One pending re-arm per monitor. Cancelled the moment it reports
         #: ready, and on disconnect.
         self._arm_tasks: dict[asyncio.StreamWriter, asyncio.Task[None]] = {}
@@ -282,6 +284,24 @@ class GSProListener:
             self._unready_since = now
             log.info("gspro: monitor reports NOT READY -- no ball on the mat")
 
+    def _log_ignored(self, reason: str) -> None:
+        """Say why a frame was not a strike -- once, then count.
+
+        A resting Square sends one of these every two seconds forever. Logged
+        in full each time it buries the lines that matter under hundreds that
+        do not, and the log is the only instrument this bay has.
+        """
+        if reason == self._ignored_reason:
+            self._ignored_repeats += 1
+            return
+        if self._ignored_repeats:
+            log.info(
+                "gspro: ... and %d more like that", self._ignored_repeats,
+            )
+        self._ignored_reason = reason
+        self._ignored_repeats = 0
+        log.info("gspro: ignoring frame -- %s", reason)
+
     def _schedule_rearm(self, writer: asyncio.StreamWriter) -> None:
         """Arm once, after the settle. A second club frame restarts the clock."""
         self._cancel_rearm(writer)
@@ -374,7 +394,7 @@ class GSProListener:
             # is the hardest thing to debug, so say exactly what arrived and
             # why it was not treated as a strike.
             self.frames_ignored += 1
-            log.info("gspro: ignoring frame -- %s", reason)
+            self._log_ignored(reason)
             if not relayed:
                 await self._send(writer, self._ack(200, "Status received"))
             return

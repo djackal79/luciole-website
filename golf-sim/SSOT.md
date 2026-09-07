@@ -59,7 +59,7 @@ will you in three weeks.
 |---|---|
 | Backend + frontend on the sim PC | **Working.** Mock shots render, pairing verified |
 | GSPro socket ← SQG-GSPRO-Connect | **Working.** Bridge connects, protocol confirmed |
-| Square LM (original, **not Omni**) → SQG-GSPRO-Connect | **Working 7 Sep.** 94.9 mph ball, spin and club data recorded — D17/D18 |
+| Square LM (original, **not Omni**) → SQG-GSPRO-Connect | **Working 8 Sep.** Arms on connect and re-arms itself, ball after ball — D25 |
 | Kinovea post-recording hooks | Configured; per capture screen, not Preferences |
 | Kinovea capture trigger | **Not found yet** — D13 |
 | Phone watcher | Not started |
@@ -119,6 +119,7 @@ are now answered; their decisions are recorded below and are binding.
 | D22 | A frozen Square stays frozen until it is power-cycled | Medium | **Open** — no software recovery found |
 | D23 | The reference profile was validated on a *different* connector | **High** | **Found** — local evidence wins on framing and 201 shape |
 | D24 | One hypothesis per bay session is unaffordable | **High** | **Fixed** — the backend probes and reports the winner |
+| D25 | **The Square arms and re-arms continuously** | — | **SOLVED 8 Sep** — connect-time 201, CRLF, with DistanceToTarget + Surface |
 | D20 | The bay logs never contain the failure being debugged | High | **Closed** — the physical symptom was the missing data; see D21 |
 | D13 | Kinovea capture trigger not located | Medium | Research |
 | D14 | flighthook could replace the LM bridge | — | **Ruled out** — Omni only, bay has the original Square |
@@ -585,6 +586,49 @@ Square and restart the connector, which is now in the runbook.
 This matters for interpreting any future test: **a session that starts against
 an already-frozen device will fail however correct the code is.** Power-cycle
 first, then judge.
+
+### D25 — SOLVED: the Square arms and re-arms continuously — 8 September
+
+```
+07:51:14  sent player info on connect (club DR) -- this arms the first strike
+07:51:38  monitor reports READY after 12.4s -- ball seen, armed for the next strike
+07:51:46  monitor reports NOT READY -- no ball on the mat
+07:51:54  monitor reports READY after 8.8s -- ball seen
+07:51:58  monitor reports NOT READY
+07:52:07  monitor reports READY after 8.9s -- ball seen
+```
+
+Ball on, ball off, ball on -- the device detecting and re-detecting without a
+single re-arm being sent. **The connect-time 201 puts it into continuous
+detection.** Nothing has to be done per shot.
+
+What fixed it was D23: restoring the CRLF framing and the `DistanceToTarget` +
+`Surface` fields, both of which had been removed to match GolfForge, whose
+Square profile was validated against a different connector than this bay runs.
+Every session here that ever detected a ball had used them. The lesson is
+cheap to state and was expensive to learn: **when a reference and the hardware
+in front of you disagree, the hardware is right.**
+
+Standing corrections to the entries above:
+
+- **D18 is overstated.** The Square does not need re-arming after every shot;
+  it re-arms itself. The connect-time arm is what it was ever waiting for.
+- **D21's settle timer is unproven on this connector.** No shot was taken in
+  the 8 September log, so the post-shot path has not run against a working
+  device. It is kept because it is harmless — one message, three seconds after
+  club data — and because it may still matter for the reported once-a-round
+  stall. If a session ever shows a shot followed by a clean re-arm without it,
+  delete it.
+- **D19 (club change) and the D24 probe never fired.** The connect-time arm
+  was already enough. The probe stays for the once-a-round stall, unarmed by
+  default now that `full` is known to work.
+
+Two log defects the same session exposed, both fixed. A resting Square sends a
+non-shot frame every two seconds forever, and logging each one buried the lines
+that matter; repeats are now counted, not printed. And its resting frame sets
+`ContainsBallData` with `Speed: 0.0`, which the rejection message described as
+"ContainsBallData not set" — sending a reader hunting a flag that was there all
+along. It now reads `ball on the mat, not yet struck`.
 
 ### D23 — The reference profile was validated against a different connector
 

@@ -534,17 +534,23 @@ def shot_rejection_reason(
     if options.get("ContainsBallData") and _has_speed(payload):
         return None
 
+    # Reaching here means either the flag is unset or the speed is unusable,
+    # and saying which is the whole point of the message. The Square sends
+    # ContainsBallData true with Speed 0.0 while it watches a ball sitting on
+    # the mat, and reporting that as "ContainsBallData not set" sent a reader
+    # looking for a missing flag that was there all along.
+    flag = "set" if options.get("ContainsBallData") else "not set"
     speed = ball.get("Speed")
     if isinstance(speed, bool) or not isinstance(speed, (int, float)):
         if beat:
             return "heartbeat"
         return (
-            "ContainsBallData not set and BallData.Speed is "
-            f"{speed!r} (BallData keys: {sorted(ball)})"
+            f"BallData.Speed is {speed!r}, ContainsBallData {flag} "
+            f"(BallData keys: {sorted(ball)})"
         )
     if speed <= 0:
         if beat:
             return "heartbeat"
-        return f"ContainsBallData not set and BallData.Speed is {speed}"
+        return f"ball on the mat, not yet struck (Speed {speed}, ContainsBallData {flag})"
     return None
 

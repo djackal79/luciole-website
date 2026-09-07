@@ -220,25 +220,18 @@ fixes it.** Power-cycle the Square, restart the connector, then start a fresh
 session. Judge nothing until you have done that — a frozen device fails every
 test regardless of what the backend does.
 
-### Finding the arm message (one session, then never again)
+### The arm message is known — leave it alone
 
-The backend does not yet know which message re-arms *this* connector, so it
-tries them in turn and tells you which one worked. Leave
-`GOLFSIM_GSPRO_ARM_VARIANT` unset, and set `GOLFSIM_GSPRO_LOG_FRAMES=true`.
+`GOLFSIM_GSPRO_ARM_VARIANT` unset uses `full`, which is what works: a Code 201
+on connect carrying `Handed`, `Club`, `DistanceToTarget` and `Surface`, framed
+CRLF. The device then arms itself and stays armed, ball after ball, with
+nothing sent per shot.
 
-1. **Power-cycle the Square** and restart the connector. Non-negotiable — a
-   frozen device fails this test no matter what.
-2. Start the backend, connect, hit one ball.
-3. **Immediately tee up another and leave it there.** The device only reports
-   ready when it can actually see a ball, so without one on the mat the probe
-   cannot tell a working message from a failing one.
-4. Watch for `gspro: ARMED by '<variant>'`. That is the answer.
-5. Put it in `.env` — `GOLFSIM_GSPRO_ARM_VARIANT=full` (or whichever) — and
-   restart. The probing stops; one message per shot from then on.
-
-If it reaches `no candidate armed the device`, keep the whole log: that is five
-distinct messages refused, which is a genuinely new fact and narrows the search
-a long way.
+Only if it ever stalls mid-session (reported as roughly once a round) is there
+anything to do: set `GOLFSIM_GSPRO_ARM_VARIANT=` (empty) and
+`GOLFSIM_GSPRO_LOG_FRAMES=true`, then after the stall tee up a ball and leave
+it there. The backend tries each candidate arm message in turn and logs
+`ARMED by '<variant>'` when one takes. Pin that value and the probing stops.
 
 The same answer without tailing the log — `monitor_ready` is `true`, `false`,
 or `null` for "it has never said", which is a different fault from "it said

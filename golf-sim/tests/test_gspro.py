@@ -857,3 +857,38 @@ async def test_the_connect_arm_is_the_shape_that_detected_the_first_ball(
         assert frame["Player"]["Surface"] == "tee"
     finally:
         writer.close()
+
+
+async def test_a_resting_square_does_not_flood_the_log(listener, settings, caplog):
+    """A Square with a ball sitting on it sends one non-shot frame every two
+    seconds, forever. Logged in full, that buries the lines that matter under
+    hundreds that do not -- and in this bay the log is the only instrument."""
+    reader, writer = await connect(settings)
+    resting = {
+        "DeviceID": "SquareGolf", "ShotNumber": 2,
+        "BallData": {"Speed": 0.0},
+        "ShotDataOptions": {
+            "ContainsBallData": True, "LaunchMonitorBallDetected": True,
+            "LaunchMonitorIsReady": True, "IsHeartBeat": False,
+        },
+    }
+    try:
+        with caplog.at_level("INFO", logger="backend.gspro"):
+            for _ in range(8):
+                await send(writer, resting)
+                await read_json(reader)
+            await asyncio.sleep(0.2)
+
+        ignored = [r for r in caplog.records if "ignoring frame" in r.getMessage()]
+        assert len(ignored) == 1, f"{len(ignored)} lines for one repeated state"
+        assert listener.frames_ignored == 8, "the counter still sees every frame"
+
+        # And the reason names what is actually true of the frame. The Square
+        # sets ContainsBallData while it watches a ball it has not been hit --
+        # calling that "ContainsBallData not set" sent a reader hunting a flag
+        # that was there all along.
+        message = ignored[0].getMessage()
+        assert "ContainsBallData set" in message
+        assert "not yet struck" in message
+    finally:
+        writer.close()
