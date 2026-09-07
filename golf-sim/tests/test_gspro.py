@@ -526,3 +526,87 @@ async def test_a_ready_monitor_is_not_pestered(listener, settings):
             await asyncio.wait_for(reader.readline(), timeout=0.4)
     finally:
         writer.close()
+
+
+# ---------------------------------------------------------------------------
+# The Square's real frames, captured in the bay 7 September
+# ---------------------------------------------------------------------------
+
+SQUARE_BALL = {
+    "DeviceID": "SquareGolf", "Units": "Yards", "ShotNumber": 3, "APIversion": "1",
+    "BallData": {"Speed": 94.89098, "SpinAxis": -6.91, "TotalSpin": 5232.0,
+                 "BackSpin": 5194.0, "SideSpin": -629.0, "HLA": -3.77,
+                 "VLA": 17.19, "CarryDistance": 0.0},
+    "ClubData": {"Speed": 0.0, "AngleOfAttack": 0.0, "FaceToTarget": 0.0,
+                 "Lie": 0.0, "Loft": 0.0, "Path": 0.0, "SpeedAtImpact": 0.0},
+    "ShotDataOptions": {"ContainsBallData": True, "ContainsClubData": False,
+                        "LaunchMonitorIsReady": True,
+                        "LaunchMonitorBallDetected": True, "IsHeartBeat": True},
+}
+SQUARE_CLUB = {
+    **SQUARE_BALL,
+    "ClubData": {"Speed": 0.0, "AngleOfAttack": -3.05, "FaceToTarget": -4.3,
+                 "Lie": 0.0, "Loft": 23.71, "Path": -0.49, "SpeedAtImpact": 0.0},
+    "ShotDataOptions": {"ContainsBallData": False, "ContainsClubData": True,
+                        "LaunchMonitorIsReady": False,
+                        "LaunchMonitorBallDetected": False, "IsHeartBeat": True},
+}
+
+
+async def test_a_square_strike_flagged_as_a_heartbeat_is_still_a_shot(
+    listener, settings, correlator
+):
+    """The Square marks every frame IsHeartBeat, real strikes included.
+    Trusting the flag threw away a 94.9 mph shot in the bay."""
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, SQUARE_BALL)
+        assert (await read_json(reader))["Message"] == "Shot received"
+        await asyncio.sleep(0.1)
+        assert listener.shots_received == 1
+        shot = correlator._tracked[-1].package
+        assert shot.telemetry.ball.speed_mph == pytest.approx(94.89, abs=0.01)
+        assert shot.telemetry.ball.back_spin_rpm == 5194
+    finally:
+        writer.close()
+
+
+async def test_one_swing_in_two_frames_is_one_shot(listener, settings, correlator):
+    """Ball data, then club data ~700 ms later, same ShotNumber. Both are
+    genuine strikes by every content test, so without coalescing the swing
+    appears twice."""
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, SQUARE_BALL)
+        await read_json(reader)
+        await asyncio.sleep(0.1)
+        await send(writer, SQUARE_CLUB)
+        await read_json(reader)
+        await asyncio.sleep(0.2)
+
+        assert listener.shots_received == 1, "the swing was recorded twice"
+        assert len(correlator._tracked) == 1
+        telemetry = correlator._tracked[0].package.telemetry
+        # Ball from the first frame, club from the second, in one record.
+        assert telemetry.ball.speed_mph == pytest.approx(94.89, abs=0.01)
+        assert telemetry.club.loft_deg == pytest.approx(23.71, abs=0.01)
+        assert telemetry.club.face_to_target_deg == pytest.approx(-4.3, abs=0.01)
+        assert telemetry.club.angle_of_attack_deg == pytest.approx(-3.05, abs=0.01)
+    finally:
+        writer.close()
+
+
+async def test_a_different_shot_number_is_a_different_swing(
+    listener, settings, correlator
+):
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, SQUARE_BALL)
+        await read_json(reader)
+        await asyncio.sleep(0.1)
+        await send(writer, {**SQUARE_BALL, "ShotNumber": 4})
+        await read_json(reader)
+        await asyncio.sleep(0.2)
+        assert listener.shots_received == 2
+    finally:
+        writer.close()

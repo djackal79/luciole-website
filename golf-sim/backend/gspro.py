@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -37,6 +38,11 @@ _DISABLED = object()
 
 #: Monitors send JSON objects back to back, sometimes newline-delimited and
 #: sometimes not, so the buffer is drained with raw_decode rather than split().
+#: A second frame with the same ShotNumber inside this window is the same
+#: swing, not a new one. Observed gap between the Square's ball and club
+#: frames is about 0.8 s.
+SHOT_COALESCE_S = 4.0
+
 MAX_BUFFER_BYTES = 1024 * 1024
 
 
@@ -55,6 +61,9 @@ class GSProListener:
         self._server: asyncio.AbstractServer | None = None
         self._writers: set[asyncio.StreamWriter] = set()
         self.player_info_sent = 0
+        self._last_shot_number: Any = None
+        self._last_shot_id: str | None = None
+        self._last_shot_at: float = 0.0
         self.last_error: str | None = None
         self.shots_received = 0
         self.heartbeats_received = 0
@@ -241,10 +250,39 @@ class GSProListener:
             return
 
         telemetry = telemetry_from_gspro(payload, local_now(), self._conditions())
-        self.shots_received += 1
         if not relayed:
-                await self._send(writer, self._ack(200, "Shot received"))
-        await self.correlator.submit_telemetry(telemetry)
+            await self._send(writer, self._ack(200, "Shot received"))
+
+        # One swing, two frames. The Square reports ball data first and club
+        # data about 700 ms later, both carrying the same ShotNumber, and both
+        # are genuine strikes by every content test. Submitting each would put
+        # two shots on screen for one swing, so the second is merged into the
+        # first instead.
+        number = payload.get("ShotNumber")
+        now = time.monotonic()
+        if (
+            number is not None
+            and number == self._last_shot_number
+            and self._last_shot_id is not None
+            and now - self._last_shot_at <= SHOT_COALESCE_S
+        ):
+            merged = await self.correlator.merge_telemetry(
+                self._last_shot_id, telemetry
+            )
+            if merged is not None:
+                log.info(
+                    "gspro: shot %s frame merged into %s (club data arrives "
+                    "separately)", number, self._last_shot_id,
+                )
+                self._last_shot_at = now
+                return
+            # The shot has gone; fall through and record this as its own.
+
+        self.shots_received += 1
+        package = await self.correlator.submit_telemetry(telemetry)
+        self._last_shot_number = number
+        self._last_shot_id = package.shot_id
+        self._last_shot_at = now
 
     # -- pass-through ------------------------------------------------------
 

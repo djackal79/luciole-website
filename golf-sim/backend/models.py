@@ -470,7 +470,26 @@ def _distance_from_gspro(ball_raw: dict[str, Any], units: Any) -> DistanceData:
 
 
 def is_heartbeat(payload: dict[str, Any]) -> bool:
-    return bool((payload.get("ShotDataOptions") or {}).get("IsHeartBeat"))
+    """A keep-alive, and nothing more.
+
+    The flag alone is not enough. A live Square sets ``IsHeartBeat`` on *every*
+    frame it sends, real strikes included -- observed in the bay with a ball
+    speed of 94.9 mph and ``LaunchMonitorBallDetected: true`` on a frame also
+    flagged as a heartbeat. Trusting the flag threw that shot away. So a frame
+    that carries a strike is a strike, whatever else it claims to be.
+    """
+    options = payload.get("ShotDataOptions") or {}
+    if not options.get("IsHeartBeat"):
+        return False
+    return shot_rejection_reason(payload, ignore_heartbeat=True) is not None
+
+
+def _has_speed(payload: dict[str, Any]) -> bool:
+    ball = payload.get("BallData")
+    if not isinstance(ball, dict):
+        return False
+    speed = ball.get("Speed")
+    return not isinstance(speed, bool) and isinstance(speed, (int, float)) and speed > 0
 
 
 def is_shot(payload: dict[str, Any]) -> bool:
@@ -485,25 +504,47 @@ def is_shot(payload: dict[str, Any]) -> bool:
     return shot_rejection_reason(payload) is None
 
 
-def shot_rejection_reason(payload: dict[str, Any]) -> str | None:
-    """Why this frame is not a shot, for logging. ``None`` means it is one."""
+def shot_rejection_reason(
+    payload: dict[str, Any], *, ignore_heartbeat: bool = False
+) -> str | None:
+    """Why this frame is not a shot, for logging. ``None`` means it is one.
+
+    Content decides, not flags. A live Square marks every frame
+    ``IsHeartBeat``, real strikes included, so rejecting on the flag first
+    discarded genuine shots. The flag now only changes the *wording* of a
+    rejection that the content had already earned.
+
+    ``ignore_heartbeat`` asks "is there a strike in here?" regardless of the
+    flag, which is how ``is_heartbeat`` avoids swallowing a shot.
+    """
     options = payload.get("ShotDataOptions") or {}
-    if options.get("IsHeartBeat"):
-        return "heartbeat"
+    beat = bool(options.get("IsHeartBeat")) and not ignore_heartbeat
 
     ball = payload.get("BallData")
     if not isinstance(ball, dict) or not ball:
+        if beat:
+            return "heartbeat"
         return f"no BallData (top-level keys: {sorted(payload) or 'none'})"
 
-    if options.get("ContainsBallData"):
+    # The monitor's own account of whether it saw a ball. Believed only when
+    # it is not simultaneously reporting a speed.
+    if options.get("LaunchMonitorBallDetected") is False and not _has_speed(payload):
+        return "heartbeat" if beat else "no ball detected by the monitor"
+
+    if options.get("ContainsBallData") and _has_speed(payload):
         return None
 
     speed = ball.get("Speed")
     if isinstance(speed, bool) or not isinstance(speed, (int, float)):
+        if beat:
+            return "heartbeat"
         return (
             "ContainsBallData not set and BallData.Speed is "
             f"{speed!r} (BallData keys: {sorted(ball)})"
         )
     if speed <= 0:
+        if beat:
+            return "heartbeat"
         return f"ContainsBallData not set and BallData.Speed is {speed}"
     return None
+

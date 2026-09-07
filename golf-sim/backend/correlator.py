@@ -351,6 +351,58 @@ class ShotCorrelator:
             self.bus.publish(events.SHOT_PATCHED, metadata, shot_id=shot_id)
             return metadata
 
+    async def merge_telemetry(
+        self, shot_id: str, telemetry: TelemetryBlock
+    ) -> dict[str, Any] | None:
+        """Fold a second telemetry frame into a shot already recorded.
+
+        Some monitors split one strike across frames -- the Square sends ball
+        data, then club data about 700 ms later, both with the same
+        ShotNumber. Each is a genuine strike on its own, so without this the
+        swing appears twice.
+
+        Only fields the existing block is missing are taken, so the first
+        frame's measurements are never overwritten by a later frame's zeros.
+        Returns ``None`` when the shot has gone, so the caller can record the
+        frame as a shot of its own rather than lose it.
+        """
+        async with self._lock:
+            tracked = next(
+                (s for s in self._tracked if s.package.shot_id == shot_id), None
+            )
+            directory = tracked.directory if tracked else self._shot_dir(shot_id)
+            if directory is None:
+                return None
+
+            if tracked is not None:
+                metadata = tracked.package.to_json()
+            else:
+                metadata = storage.load_metadata(directory)
+                if metadata is None:
+                    return None
+
+            existing = metadata.get("telemetry") or {}
+            incoming = telemetry.model_dump(mode="json")
+            for section in ("ball", "club", "derived", "distance"):
+                target = existing.setdefault(section, {})
+                for key, value in (incoming.get(section) or {}).items():
+                    if value in (None, 0, 0.0) or target.get(key) not in (None, 0, 0.0):
+                        continue
+                    target[key] = value
+            # A flight modelled from richer launch data supersedes one that
+            # was not modelled at all.
+            if existing.get("flight") is None and incoming.get("flight") is not None:
+                existing["flight"] = incoming["flight"]
+            existing.setdefault("raw_frames", []).append(incoming.get("raw") or {})
+            metadata["telemetry"] = existing
+
+            if tracked is not None:
+                tracked.package = ShotPackage.model_validate(metadata)
+                metadata = tracked.package.to_json()
+            storage.write_metadata(directory, metadata)
+            await self.bus.publish("shot.updated", metadata)
+            return metadata
+
     async def set_pose(self, shot_id: str, block: dict[str, Any]) -> dict[str, Any] | None:
         """Merge a pose block into a shot, wherever it currently lives.
 
