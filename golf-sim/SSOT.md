@@ -554,6 +554,54 @@ real caveat — swing-cam targets a Pixel 9 and leans on that device's
 slow-motion mode. CameraX high-speed support is device-specific, so it may not
 behave the same on an S23+.
 
+### Reading HackMotion and Blast Motion off a screen — tested, viable
+
+Neither device exposes an API, but both display their numbers on a tablet.
+Capturing that display and reading the numbers is a real option, and it was
+worth measuring rather than assuming. Six values on a synthetic readout, with
+RapidOCR (pip-only, ONNX, no system dependencies, runs offline in ~200 ms):
+
+| Input | Result |
+|---|---|
+| Clean screen capture | 5/6 correct, 6th **rejected** rather than guessed |
+| Camera + glare + 9° skew + blur | 5/6 correct, 6th rejected |
+| Camera, 16° skew + heavy blur | nothing read — fails loudly, not quietly |
+
+Three findings that decide the design.
+
+**Do not crop fixed regions.** The obvious approach — define a box per field
+and OCR each — scored *worse* (3/6) than reading the whole image, because
+slightly wrong boxes clip digits: "3.1" read as "3", "82" as "32", "0.24" as
+"24". Read the whole frame, then bind each number to its nearest label using
+the OCR bounding boxes. No hand-tuned boxes to drift.
+
+**Confidence scores are worthless here.** Every one of those clipped misreads
+came back at 0.94–1.00 confidence. A confidently wrong number is precisely the
+failure this build exists to avoid, and OCR confidence will not catch it.
+
+**Plausibility ranges are what work.** A per-field range — tempo 1.5–5.0, club
+speed 40–140 mph, time to impact 0.10–0.45 s — caught the one bad pairing in
+every run and turned it into a missing value instead of a false one. Same
+principle as `_implausible` for the skeleton and `shot_rejection_reason` for
+GSPro frames, and it should be built the same way.
+
+**Capture the screen, do not photograph it.** For an Android tablet `scrcpy`
+mirrors over USB and gives a pixel-perfect frame — no glare, no moiré, no
+perspective, no auto-brightness. For an iPad, HDMI out into a capture card.
+A camera works, as the table shows, but it is the harder path for no gain.
+
+Correlation is the easy part: the tablet updates seconds after the swing, so
+this is just another late-arriving source and the existing pairing window plus
+late-attach grace already handle it. Watch for the displayed values to change,
+stamp that moment, submit.
+
+One thing to build in from the start: **keep the cropped image beside the
+number.** It costs a few KB and makes any suspicious reading auditable by eye,
+which no confidence score can offer.
+
+Not started. Needs a real screenshot of each app's readout before the label
+list and ranges can be written against the actual UI rather than a guess.
+
 ### Both converge on club tagging
 
 Dispersion, gapping, per-club standard swings, and wrong-club detection all
