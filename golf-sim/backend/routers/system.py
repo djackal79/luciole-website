@@ -85,6 +85,7 @@ async def health(
                 "player_info_sent": gspro.player_info_sent,
                 "rearm_attempts": gspro.rearm_attempts,
                 "rearm_pending": gspro.rearm_pending,
+                "armed_by": gspro.armed_by,
                 "shots_received": gspro.shots_received,
                 "heartbeats_received": gspro.heartbeats_received,
                 "frames_ignored": gspro.frames_ignored,

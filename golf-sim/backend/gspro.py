@@ -66,6 +66,8 @@ class GSProListener:
         self._last_shot_at: float = 0.0
         self._rearm_attempts = 0
         self._unready_since: float | None = None
+        #: Which candidate arm message the device actually responded to.
+        self.armed_by: str | None = None
         #: One pending re-arm per monitor. Cancelled the moment it reports
         #: ready, and on disconnect.
         self._arm_tasks: dict[asyncio.StreamWriter, asyncio.Task[None]] = {}
@@ -296,23 +298,67 @@ class GSProListener:
             task.cancel()
 
     async def _rearm_later(self, writer: asyncio.StreamWriter) -> None:
-        """Wait out the connector's reset, then send exactly one 201.
+        """Wait out the connector's reset, then arm it.
 
-        Exactly one. There is no retry here and there must not be: a repeat is
-        the documented way to freeze the loop, and it cost this bay an evening.
-        If the device does not come back, that is a fault to report -- selecting
-        a club in the app sends one more by hand.
+        With ``gspro_arm_variant`` set this sends that one message and stops --
+        which is the whole protocol, and what a device with a known answer
+        should do.
+
+        Unset, it *probes*: each candidate in turn, waiting after each to see
+        whether the device reports a ball. That trades the freeze risk for an
+        answer in one session instead of one hypothesis per session, and the
+        trade is worth taking because a device that has not armed is already in
+        the failed state -- there is nothing left to protect.
+
+        The success signal needs the golfer: ``LaunchMonitorIsReady`` is the
+        connector's *ball-ready* flag, so it can only go true once a ball is
+        physically on the mat. Tee one up straight after the shot and leave it.
         """
         await asyncio.sleep(self.settings.gspro_rearm_delay_s)
-        if writer not in self._writers:
-            return
-        self._rearm_attempts += 1
-        log.info(
-            "gspro: re-arm sent (club %s) %.1fs after the shot -- the face "
-            "should light; nothing more will be sent",
-            self._club(), self.settings.gspro_rearm_delay_s,
+
+        pinned = self.settings.gspro_arm_variant.strip()
+        variants = (pinned,) if pinned else self.ARM_VARIANTS
+        window = self.settings.gspro_arm_probe_window_s
+
+        for variant in variants:
+            if writer not in self._writers:
+                return
+            if self._monitor_ready:
+                return
+            self._rearm_attempts += 1
+            self.player_info_sent += 1
+            log.info(
+                "gspro: arming with %r -- %s. PUT A BALL ON THE MAT NOW; the "
+                "device only reports ready once it can see one",
+                variant,
+                "the setting says so" if pinned else
+                f"probe {self._rearm_attempts} of {len(variants)}",
+            )
+            if not await self._send(writer, self._arm_message(variant)):
+                return
+            if pinned:
+                return
+
+            deadline = time.monotonic() + window
+            while time.monotonic() < deadline:
+                await asyncio.sleep(0.25)
+                if self._monitor_ready:
+                    self.armed_by = variant
+                    log.warning(
+                        "gspro: ARMED by %r. This is the answer -- put "
+                        "GOLFSIM_GSPRO_ARM_VARIANT=%s in .env and the probing "
+                        "stops", variant, variant,
+                    )
+                    return
+                if writer not in self._writers:
+                    return
+
+        log.warning(
+            "gspro: no candidate armed the device (tried %s). If the face never "
+            "lit at all, it was already frozen -- power-cycle the Square, "
+            "restart the connector, and try once more. Keep this log either way",
+            ", ".join(variants),
         )
-        await self._announce_player(writer)
 
     async def _handle(
         self, payload: dict[str, Any], writer: asyncio.StreamWriter, relayed: bool
@@ -485,6 +531,49 @@ class GSProListener:
     def _club(self) -> str:
         return self.current_club or self.settings.gspro_default_club
 
+    #: Candidate arm messages, most likely first. Real GSPro on a course sends
+    #: a fresh 201 after every shot because the situation has changed -- new
+    #: lie, new distance -- and the official connector re-arms from it. On a
+    #: driving range nothing changes, which is where users report the failure
+    #: and reach for K (club up). That shape is what these probe.
+    ARM_VARIANTS: tuple[str, ...] = (
+        "full",             # what GSPro sends on a course
+        "distance_change",  # ... with the situation genuinely different
+        "club_change",      # the K-key equivalent
+        "minimal",          # GolfForge's two-field form
+        "ready",            # the other message this connector family arms on
+    )
+
+    def _arm_message(self, variant: str) -> dict[str, Any]:
+        """One candidate arm message. See ARM_VARIANTS for why each is here."""
+        if variant == "ready":
+            # brentyates' connector arms on a message whose text is "GSPro
+            # ready" as readily as on player info, and it is undocumented, so
+            # nothing says what Code real GSPro puts on it.
+            return {"Code": 201, "Message": "GSPro ready"}
+
+        club = self._club()
+        distance = self.settings.gspro_distance_to_target
+        if variant == "club_change":
+            club = "DR" if club.upper() != "DR" else "7I"
+        elif variant == "distance_change":
+            # Never the same twice: if the *change* is the signal, a repeat of
+            # the previous number is not one.
+            distance = 60 + (self._rearm_attempts * 17) % 140
+
+        player: dict[str, Any] = {
+            "Handed": self.settings.gspro_player_handed,
+            "Club": club,
+        }
+        if variant != "minimal":
+            player["DistanceToTarget"] = distance
+            player["Surface"] = "tee"
+        return {
+            "Code": 201,
+            "Message": "GSPro Player Information",
+            "Player": player,
+        }
+
     def _player_info(self) -> dict[str, Any]:
         """The message GSPro pushes to tell a connector which club is in play.
 
@@ -497,14 +586,7 @@ class GSProListener:
         Kept to the two fields a validated server sends. Anything more is a
         variable this bay cannot afford.
         """
-        return {
-            "Code": 201,
-            "Message": "GSPro Player Information",
-            "Player": {
-                "Handed": self.settings.gspro_player_handed,
-                "Club": self._club(),
-            },
-        }
+        return self._arm_message(self.settings.gspro_arm_variant or "full")
 
     async def _announce_player(self, writer: asyncio.StreamWriter) -> bool:
         """Send the club, if we are the one answering the monitor."""
@@ -514,9 +596,15 @@ class GSProListener:
         return await self._send(writer, self._player_info())
 
     def _ack(self, code: int, message: str) -> dict[str, Any]:
-        # No Player block. The reference acks with Code and Message alone;
-        # a Player payload inside a 200 is a deviation with nothing to gain.
-        return {"Code": code, "Message": message}
+        return {
+            "Code": code,
+            "Message": message,
+            "Player": {
+                "Handed": "RH",
+                "Club": self.current_club or "DR",
+                "DistanceToTarget": 0,
+            },
+        }
 
     async def set_club(self, club: str | None) -> int:
         """Push a GSPro 201 Player message, which is how club selection
@@ -547,9 +635,10 @@ class GSProListener:
 
     async def _send(self, writer: asyncio.StreamWriter, message: dict[str, Any]) -> bool:
         try:
-            # Newline, as the reference server frames it. Connectors extract
-            # by brace depth, but matching it removes a variable.
-            writer.write((json.dumps(message) + "\n").encode("utf-8"))
+            # CRLF. GolfForge frames with a bare \n, but its Square profile was
+            # validated against a different connector; every session in this bay
+            # that detected a ball used CRLF, so local evidence wins.
+            writer.write((json.dumps(message) + "\r\n").encode("utf-8"))
             await writer.drain()
             return True
         except Exception:

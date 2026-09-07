@@ -60,14 +60,31 @@ class Settings(BaseSettings):
     gspro_default_club: str = "DR"
     gspro_player_handed: str = "RH"
 
-    #: The Square's connector fires **one shot per arm**, then resets to idle
-    #: over ~2-3 s with no "reset done" signal. Per shot the order is
-    #: LaunchMonitorIsReady:true -> ball data -> club data (end of shot) ->
-    #: reset. The connect-time 201 arms shot 1; club data schedules exactly
-    #: one more, this long after. Re-arming immediately, on ball data, or on a
-    #: repeating timer lands mid-reset and freezes the loop -- the face never
-    #: lights again for the rest of the session. Measured in this bay twice.
+    #: Restored: every session in which the *first* ball was detected sent
+    #: these two fields. GolfForge omits them, but GolfForge's Square profile
+    #: was validated against brentyates' connector (DeviceID
+    #: "CustomLaunchMonitor"), not the official one this bay runs (DeviceID
+    #: "SquareGolf"). Local evidence beats a reference for other hardware.
+    gspro_distance_to_target: int = 200
+
+    #: The connector fires one shot per arm, then resets to idle over ~2-3 s
+    #: with no "reset done" signal. Club data marks end-of-shot; the re-arm
+    #: waits this long after it. Arming inside the reset freezes the loop.
     gspro_rearm_delay_s: float = 3.0
+
+    #: Which message re-arms the device. Empty means **probe**: try each in
+    #: turn after a shot and report which one worked, so one bay session
+    #: settles it instead of one hypothesis per session. Set it to the winner
+    #: (e.g. "full") once known, and no probing happens again.
+    #:
+    #: The official connector re-arms reliably against real GSPro -- users
+    #: report at most a couple of misses per round -- so a message that works
+    #: does exist. We are looking for which one.
+    gspro_arm_variant: str = ""
+    #: How long to wait for the device to report a ball after each attempt.
+    #: The device only says READY once a ball is actually on the mat, so this
+    #: has to cover teeing one up.
+    gspro_arm_probe_window_s: float = 15.0
 
     # ---- GSPro pass-through -----------------------------------------------
     #: Relay every frame on to the real GSPro, so the course plays while this

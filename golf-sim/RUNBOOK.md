@@ -215,11 +215,30 @@ discarding the frames. Read the log before suspecting the hardware:
 | `ignoring frame -- <reason>` | A frame arrived and was not treated as a strike. The reason is printed in full; that is the thing to report. |
 | Nothing at all after `launch monitor connected` | Now suspect Bluetooth. The bridge's own window shows that half, and the ball-ready sound tests it without touching any config. |
 
-**If the face never lights, the device is frozen and no amount of waiting fixes
-it.** The connector's arm loop wedges if it is re-armed while it is resetting,
-and there is no software recovery: power-cycle the Square, restart the
-connector, then start a fresh session. Judge nothing until you have done that —
-a frozen device fails every test regardless of what the backend does.
+**If the face never lights, the device is frozen and no amount of waiting
+fixes it.** Power-cycle the Square, restart the connector, then start a fresh
+session. Judge nothing until you have done that — a frozen device fails every
+test regardless of what the backend does.
+
+### Finding the arm message (one session, then never again)
+
+The backend does not yet know which message re-arms *this* connector, so it
+tries them in turn and tells you which one worked. Leave
+`GOLFSIM_GSPRO_ARM_VARIANT` unset, and set `GOLFSIM_GSPRO_LOG_FRAMES=true`.
+
+1. **Power-cycle the Square** and restart the connector. Non-negotiable — a
+   frozen device fails this test no matter what.
+2. Start the backend, connect, hit one ball.
+3. **Immediately tee up another and leave it there.** The device only reports
+   ready when it can actually see a ball, so without one on the mat the probe
+   cannot tell a working message from a failing one.
+4. Watch for `gspro: ARMED by '<variant>'`. That is the answer.
+5. Put it in `.env` — `GOLFSIM_GSPRO_ARM_VARIANT=full` (or whichever) — and
+   restart. The probing stops; one message per shot from then on.
+
+If it reaches `no candidate armed the device`, keep the whole log: that is five
+distinct messages refused, which is a genuinely new fact and narrows the search
+a long way.
 
 The same answer without tailing the log — `monitor_ready` is `true`, `false`,
 or `null` for "it has never said", which is a different fault from "it said

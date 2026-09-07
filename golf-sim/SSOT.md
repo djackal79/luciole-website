@@ -117,6 +117,8 @@ are now answered; their decisions are recorded below and are binding.
 | D19 | Re-arming needs a club *change*; a repeat is ignored | High | **Retracted** — timing was the confound |
 | D21 | Re-arming inside the post-shot cycle freezes the Square | **High** | **Fixed** — club data, settle 3 s, **exactly one** 201 |
 | D22 | A frozen Square stays frozen until it is power-cycled | Medium | **Open** — no software recovery found |
+| D23 | The reference profile was validated on a *different* connector | **High** | **Found** — local evidence wins on framing and 201 shape |
+| D24 | One hypothesis per bay session is unaffordable | **High** | **Fixed** — the backend probes and reports the winner |
 | D20 | The bay logs never contain the failure being debugged | High | **Closed** — the physical symptom was the missing data; see D21 |
 | D13 | Kinovea capture trigger not located | Medium | Research |
 | D14 | flighthook could replace the LM bridge | — | **Ruled out** — Omni only, bay has the original Square |
@@ -583,6 +585,63 @@ Square and restart the connector, which is now in the runbook.
 This matters for interpreting any future test: **a session that starts against
 an already-frozen device will fail however correct the code is.** Power-cycle
 first, then judge.
+
+### D23 — The reference profile was validated against a different connector
+
+The single most useful fact found all evening, and it invalidates part of D21.
+
+GolfForge's `squaregolf` profile — the source of the 3 s settle, the "exactly
+one re-arm", and the two-field 201 — is validated against
+**`brentyates/squaregolf-connector`**, whose frames carry
+`DeviceID: "CustomLaunchMonitor"`. This bay runs the **official** SQG connector,
+whose frames carry `DeviceID: "SquareGolf"`. Different program, different state
+machine, and its quirks were never in scope for that profile.
+
+So D21's rules are a good prior and nothing more. Where local evidence
+disagrees, local evidence wins — and it does on two points, both now restored:
+CRLF framing and a 201 carrying `DistanceToTarget` and `Surface`. Every session
+in this bay that detected a ball used both; the commit that dropped them is the
+one where no ball was seen at all.
+
+The other half is the hopeful part. Forum reports are consistent that the
+official connector **re-arms fine against real GSPro** — 18 holes on Square's
+native course clean, and at most "a couple times per round if any" on GSPro,
+with K (club up) as the fix when it sticks. **A message that re-arms this
+device therefore exists.** The open question is only which one, and that is a
+search, not a design problem.
+
+Note the shape of the reported failure: it bites on the *driving range* and
+rarely on a course. On a course GSPro sends a fresh 201 after every shot
+because the situation genuinely changed — new lie, new distance. On a range
+nothing changes. That is why `distance_change` is a probe candidate and not a
+superstition.
+
+### D24 — Probe the arm message, one session instead of one per hypothesis
+
+Six bay sessions went on testing one hypothesis each, and each cost an evening
+because the answer only arrives when a golfer swings. `gspro_arm_variant`
+unset now makes the backend try each candidate in turn after a shot and report
+which one the device answers:
+
+| variant | message | why |
+|---|---|---|
+| `full` | 201 + `DistanceToTarget` + `Surface` | what GSPro sends on a course; the shape live when the first ball was detected |
+| `distance_change` | as above, distance never repeated | if the *change* is the signal, a repeat is not one |
+| `club_change` | as `full`, different club | the K-key equivalent |
+| `minimal` | 201, `Handed` + `Club` only | GolfForge's validated form |
+| `ready` | `{"Code":201,"Message":"GSPro ready"}` | the connector family's other arm message, undocumented |
+
+This deliberately accepts the freeze risk D21 warns about. The trade is sound:
+a device that has not armed is *already* in the failed state, so a further
+attempt costs nothing that has not already been lost, while a session that
+tests one message and fails costs an entire evening.
+
+The success signal needs the golfer. `LaunchMonitorIsReady` is the connector's
+*ball-ready* flag, so it can only go true once a ball is physically on the mat
+— hence `PUT A BALL ON THE MAT NOW` in the log and a 15 s window per candidate.
+
+On success it logs `ARMED by '<variant>'` and the value to pin in `.env`. Pinned,
+it sends that one message and stops, which is the whole protocol.
 
 **D12 is closed by these two.** "The monitor is not registering the ball" was
 never true. It registered the ball; the backend discarded the frame, and then

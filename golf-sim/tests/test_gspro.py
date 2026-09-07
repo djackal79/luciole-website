@@ -55,6 +55,8 @@ async def listener(settings, correlator):
     settings.gspro_port = served._server.sockets[0].getsockname()[1]
     # The real settle is 3 s; the tests only need the ordering to hold.
     settings.gspro_rearm_delay_s = 0.5  # the real settle is 3 s
+    settings.gspro_arm_variant = "full"   # probing has its own tests
+    settings.gspro_arm_probe_window_s = 0.6
     try:
         yield served
     finally:
@@ -97,9 +99,7 @@ async def test_a_shot_is_acknowledged_and_becomes_telemetry(
         reply = await read_json(reader)
         assert reply["Code"] == 200
         assert reply["Message"] == "Shot received"
-        # Code and Message alone, as the reference server acks. A Player block
-        # inside a 200 was a deviation with nothing to gain.
-        assert "Player" not in reply
+        assert "Player" in reply
 
         await asyncio.sleep(0.1)
         shot_dir = next(settings.shots_dir.iterdir())
@@ -199,7 +199,9 @@ async def test_club_selection_is_pushed_as_a_201_player_message(
         # The exact literal. Connectors match it; a paraphrase is ignored.
         assert message["Message"] == "GSPro Player Information"
         assert message["Player"]["Club"] == "7I"
-        assert "DistanceToTarget" not in message["Player"], "not what the reference sends"
+        # Restored: every session that detected a ball carried these.
+        assert message["Player"]["DistanceToTarget"] == 200
+        assert message["Player"]["Surface"] == "tee"
 
         # And it is session state, so it reaches shots from any source.
         assert correlator.current_club == "7I"
@@ -381,6 +383,8 @@ async def relaying_listener(settings, correlator, gspro_upstream):
     settings.gspro_port = served._server.sockets[0].getsockname()[1]
     # The real settle is 3 s; the tests only need the ordering to hold.
     settings.gspro_rearm_delay_s = 0.5  # the real settle is 3 s
+    settings.gspro_arm_variant = "full"   # probing has its own tests
+    settings.gspro_arm_probe_window_s = 0.6
     try:
         yield served
     finally:
@@ -453,6 +457,8 @@ async def test_recording_continues_when_gspro_is_down(settings, correlator):
     settings.gspro_port = served._server.sockets[0].getsockname()[1]
     # The real settle is 3 s; the tests only need the ordering to hold.
     settings.gspro_rearm_delay_s = 0.5  # the real settle is 3 s
+    settings.gspro_arm_variant = "full"   # probing has its own tests
+    settings.gspro_arm_probe_window_s = 0.6
     try:
         reader, writer = await connect(settings)
         try:
@@ -697,7 +703,8 @@ async def test_club_data_schedules_one_re_arm_after_the_settle(listener, setting
         assert frame["Message"] == "GSPro Player Information", (
             "connectors switch on the literal; a paraphrase never arms"
         )
-        assert frame["Player"] == {"Handed": "RH", "Club": "DR"}
+        assert frame["Player"]["Club"] == "DR"
+        assert frame["Player"]["DistanceToTarget"] == 200
         assert listener.player_info_sent == before + 1
 
         # Exactly one. A repeat is the documented way to freeze the loop.
@@ -763,3 +770,90 @@ async def test_the_re_arm_is_dropped_when_the_monitor_goes_away(listener, settin
     await asyncio.sleep(0.9)
     assert listener.rearm_attempts == 0, "nothing written to a closed monitor"
     assert listener._arm_tasks == {}
+
+
+# ---------------------------------------------------------------------------
+# The probe. The official connector re-arms reliably against real GSPro, so a
+# message that works exists; we do not know which. Trying them one per bay
+# session costs a session per hypothesis, which is what ran this into the
+# ground. Trying them all in one session costs one session.
+# ---------------------------------------------------------------------------
+
+
+async def test_the_probe_tries_each_candidate_until_the_device_reports_a_ball(
+    listener, settings
+):
+    settings.gspro_arm_variant = ""            # unset -> probe
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, SQUARE_CLUB)
+        assert (await read_json(reader))["Code"] == 200
+
+        # Two candidates go unanswered, then the device sees a ball.
+        first = await asyncio.wait_for(read_json(reader), timeout=2.0)
+        second = await asyncio.wait_for(read_json(reader), timeout=2.0)
+        assert first != second, "a probe that repeats itself learns nothing"
+
+        await send(writer, SQUARE_BALL)        # LaunchMonitorIsReady: true
+        await read_json(reader)
+        await asyncio.sleep(0.8)
+
+        assert listener.monitor_ready is True
+        assert listener.armed_by == listener.ARM_VARIANTS[1], (
+            "the winner must be the candidate that was actually outstanding"
+        )
+        assert not listener.rearm_pending
+    finally:
+        writer.close()
+
+
+async def test_every_candidate_is_a_distinct_message(listener, settings):
+    """A probe is only worth the freeze risk if the candidates differ."""
+    seen = [json.dumps(listener._arm_message(v), sort_keys=True)
+            for v in listener.ARM_VARIANTS]
+    assert len(set(seen)) == len(seen), "two candidates are the same message"
+    # And each is well-formed Open Connect.
+    for variant in listener.ARM_VARIANTS:
+        msg = listener._arm_message(variant)
+        assert msg["Code"] == 201
+        assert msg["Message"] in ("GSPro Player Information", "GSPro ready")
+        if msg["Message"] == "GSPro Player Information":
+            assert msg["Player"]["Club"], "springbok KeyErrors on a 201 with no Club"
+
+
+async def test_a_pinned_variant_sends_exactly_that_and_stops(listener, settings):
+    """Once the answer is known, the protocol is one message. No probing, no
+    repeat -- a repeat is how the loop freezes."""
+    settings.gspro_arm_variant = "minimal"
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, SQUARE_CLUB)
+        assert (await read_json(reader))["Code"] == 200
+        frame = await asyncio.wait_for(read_json(reader), timeout=2.0)
+        assert frame["Player"] == {"Handed": "RH", "Club": "DR"}
+
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(reader.readline(), timeout=1.5)
+        assert listener.rearm_attempts == 1
+    finally:
+        writer.close()
+
+
+async def test_the_connect_arm_is_the_shape_that_detected_the_first_ball(
+    listener, settings
+):
+    """Every session in this bay that saw a ball sent DistanceToTarget and
+    Surface on connect. GolfForge omits both, but its Square profile was
+    validated against a different connector -- DeviceID CustomLaunchMonitor,
+    not the SquareGolf this bay runs."""
+    settings.gspro_arm_variant = ""
+    reader, writer = await connect(settings, expect_player_info=False)
+    try:
+        frame = await read_json(reader)
+        assert frame["Code"] == 201
+        assert frame["Message"] == "GSPro Player Information"
+        assert frame["Player"]["Club"] == "DR"
+        assert frame["Player"]["DistanceToTarget"] == 200
+        assert frame["Player"]["Surface"] == "tee"
+    finally:
+        writer.close()
