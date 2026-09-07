@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -751,3 +752,162 @@ async def test_a_3d_shot_carries_no_reason(correlator, settings, tmp_path):
     metadata, _ = await _run_pose(correlator, settings, tmp_path)
     assert metadata["pose"]["dimensions"] == "3d"
     assert metadata["pose"]["depth_reason"] is None
+
+
+# ---- the real estimator, end to end ---------------------------------------
+#
+# Every other test here hands triangulation landmark dicts built by hand. That
+# leaves one link unexercised: what MediaPipe actually emits, flowing into
+# what triangulation actually expects. A shape, index or convention mismatch
+# there would be silent and would only surface on the sim PC.
+
+MODEL = Path("models/pose_landmarker_lite.task")
+
+#: A standing figure in world metres, Z up. Shoulders lie along X so the
+#: face-on camera sees their width and the down-the-line camera sees them
+#: edge-on -- the real rig's geometry.
+#: A neck, and arms held away from the torso. Both matter: without them the
+#: silhouette is one solid blob and BlazePose does not fire on it at all.
+FIGURE = {
+    "head":   (0.00,  0.00, 1.70), "neck": (0.00, 0.00, 1.52),
+    "l_sh":   (-0.20, 0.00, 1.45), "r_sh": (0.20, 0.00, 1.45),
+    "l_el":   (-0.34, 0.06, 1.16), "r_el": (0.34, 0.06, 1.16),
+    "l_wr":   (-0.30, 0.26, 0.94), "r_wr": (0.30, 0.26, 0.94),
+    "l_hip":  (-0.15, 0.00, 1.00), "r_hip": (0.15, 0.00, 1.00),
+    "l_kn":   (-0.17, 0.02, 0.55), "r_kn": (0.17, 0.02, 0.55),
+    "l_an":   (-0.18, 0.00, 0.09), "r_an": (0.18, 0.00, 0.09),
+}
+LIMBS = [("neck","l_sh"),("neck","r_sh"),("l_sh","r_sh"),
+         ("l_sh","l_el"),("l_el","l_wr"),("r_sh","r_el"),("r_el","r_wr"),
+         ("l_sh","l_hip"),("r_sh","r_hip"),("l_hip","r_hip"),
+         ("l_hip","l_kn"),("l_kn","l_an"),("r_hip","r_kn"),("r_kn","r_an")]
+
+
+def _turned(degrees):
+    """The figure with its shoulders rotated about the vertical."""
+    angle = math.radians(degrees)
+    out = {}
+    for name, (x, y, z) in FIGURE.items():
+        if name in ("l_sh", "r_sh", "l_el", "r_el", "l_wr", "r_wr"):
+            x, y = x * math.cos(angle) - y * math.sin(angle), x * math.sin(angle) + y * math.cos(angle)
+        out[name] = (x, y, z)
+    return out
+
+
+def _render(camera, joints):
+    """Draw the figure as this camera sees it. Crude, but BlazePose fires on it."""
+    frame = np.full((HEIGHT, WIDTH, 3), 205, np.uint8)
+    pix = {}
+    for name, world in joints.items():
+        point = camera.projection() @ np.array([*world, 1.0])
+        pix[name] = (int(point[0] / point[2]), int(point[1] / point[2]))
+    for a, b in LIMBS:
+        cv2.line(frame, pix[a], pix[b], (45, 45, 45), 22, cv2.LINE_AA)
+    cv2.circle(frame, pix["head"], 26, (45, 45, 45), -1, cv2.LINE_AA)
+    return frame
+
+
+def _write_clip(path, camera, frames, fps):
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (WIDTH, HEIGHT))
+    for joints in frames:
+        writer.write(_render(camera, joints))
+    writer.release()
+
+
+@pytest.mark.skipif(not MODEL.is_file(), reason="pose model not fetched here")
+def test_real_mediapipe_output_triangulates(tmp_path):
+    """Real inference on one camera, triangulated against a synthetic partner.
+
+    Only the face-on view can be faked convincingly enough for BlazePose: from
+    down-the-line a flat silhouette is a narrow vertical blob with no
+    distinguishable limbs, and it is not detected at any line weight. A real
+    golfer is detectable there because of clothing, shading and actual 3D form,
+    none of which a drawn figure has -- so detection quality on the DTL camera
+    can only be judged on real footage.
+
+    What this does close is the handoff. Every other test here hands
+    triangulation landmark dicts written by hand in this file; this one hands
+    it what MediaPipe genuinely emitted, so a shape, index or visibility
+    convention mismatch cannot hide until the sim PC finds it.
+    """
+    from backend.pose.extractor import PoseExtractor
+
+    extractor = PoseExtractor(MODEL)
+    if extractor.available() is not None:
+        pytest.skip(f"estimator unusable: {extractor.available()}")
+
+    poses = [_turned(d) for d in range(0, 40, 4)]
+    clip = tmp_path / "face.mp4"
+    _write_clip(clip, FACE_ON, poses, 30)
+
+    real = extractor.extract(clip, camera="face_on", impact_ms=300, max_fps=60)
+    assert real.detection_rate > 0.8, f"detected only {real.detection_rate:.0%}"
+
+    # The partner view, built from the same figure so the geometry is
+    # consistent. Landmarks the figure does not model sit at its centre.
+    synthetic = {
+        "camera": "dtl", "fps": 30.0, "width": WIDTH, "height": HEIGHT,
+        "impact_ms": 300, "frame_count": len(poses),
+        "frames": [
+            {
+                "t_ms": i * (1000.0 / 30.0),
+                "points": [
+                    project(DTL, _joint_for(name, pose))
+                    for name in MEDIAPIPE_LANDMARKS
+                ],
+            }
+            for i, pose in enumerate(poses)
+        ],
+    }
+
+    frames = triangulate_tracks(
+        {"body_swing": real.as_dict(), "body_swing_dtl": synthetic}, rig()
+    )
+    assert frames, "real landmarks produced no triangulated frames"
+    assert len(frames) == len(real.frames)
+
+    solved = [p for f in frames for p in f.points if p is not None]
+    assert solved, "nothing solved from real landmark output"
+    for point in solved:
+        assert len(point) == 4                       # x, y, z, reprojection_px
+        assert point[3] <= MAX_REPROJECTION_PX       # the gate actually applied
+
+
+#: Where each MediaPipe landmark sits on the drawn figure, for the ones it has.
+_FIGURE_FOR_LANDMARK = {
+    "nose": "head",
+    "left_shoulder": "l_sh", "right_shoulder": "r_sh",
+    "left_elbow": "l_el", "right_elbow": "r_el",
+    "left_wrist": "l_wr", "right_wrist": "r_wr",
+    "left_hip": "l_hip", "right_hip": "r_hip",
+    "left_knee": "l_kn", "right_knee": "r_kn",
+    "left_ankle": "l_an", "right_ankle": "r_an",
+}
+
+
+def _joint_for(landmark, pose):
+    return pose.get(_FIGURE_FOR_LANDMARK.get(landmark, ""), (0.0, 0.0, 1.2))
+
+
+@pytest.mark.skipif(not MODEL.is_file(), reason="pose model not fetched here")
+def test_real_landmarks_keep_the_sidecar_contract(tmp_path):
+    """The shape the rest of the system is written against, from real output."""
+    from backend.pose.extractor import PoseExtractor
+    from backend.pose.landmarks import MEDIAPIPE_LANDMARKS
+
+    extractor = PoseExtractor(MODEL)
+    if extractor.available() is not None:
+        pytest.skip("estimator unusable")
+
+    clip = tmp_path / "one.mp4"
+    _write_clip(clip, FACE_ON, [_turned(0)] * 6, 30)
+    track = extractor.extract(clip, camera="face_on", impact_ms=100).as_dict()
+
+    assert track["impact_ms"] == 100
+    assert track["width"] == WIDTH and track["height"] == HEIGHT
+    for frame in track["frames"]:
+        assert set(frame) == {"t_ms", "points"}
+        assert len(frame["points"]) == len(MEDIAPIPE_LANDMARKS)
+        for point in frame["points"]:
+            assert len(point) == 3                      # x, y, visibility
+            assert 0.0 <= point[2] <= 1.0
