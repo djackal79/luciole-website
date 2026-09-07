@@ -115,6 +115,7 @@ are now answered; their decisions are recorded below and are binding.
 | D17 | The Square flags *every* frame `IsHeartBeat`, strikes included | High | **Fixed** — content decides, not the flag |
 | D18 | The Square must be re-armed after every shot | High | **Fixed** — Code 201 on any not-ready frame |
 | D19 | Re-arming needs a club *change*; a repeat is ignored | High | **Fixed** — decoy club, then the real one |
+| D20 | The bay logs never contain the failure being debugged | High | **Open** — capture the gap between two shots |
 | D13 | Kinovea capture trigger not located | Medium | Research |
 | D14 | flighthook could replace the LM bridge | — | **Ruled out** — Omni only, bay has the original Square |
 
@@ -484,6 +485,41 @@ connector meets in the wild. And GSPro's own spec marks `LaunchMonitorIsReady`
 fields are the Square's own account of itself, which GSPro ignores. That is
 consistent with D17: the flags describe the device, they do not classify the
 frame.
+
+### D20 — What the bay logs do *not* show — OPEN
+
+Three evenings' worth of pasted log covers the shot and about three seconds
+either side. Every one of them ends before the thing in question happens, and
+three fixes were made on inference from that window. Recording the reasoning
+error so it is not repeated.
+
+What the logs actually establish, across 18:41:52 (78.1 mph), 18:48:40
+(92.7 mph) and 18:59:19 (84.4 mph):
+
+- Each *ball* frame carries `LaunchMonitorIsReady: true`. **The device was
+  armed immediately before every shot it reported.** It does re-arm.
+- Each *club* frame carries `false`, and that is the normal post-strike state:
+  the ball has been hit away, so `LaunchMonitorBallDetected` is false too.
+- No paste contains the recovery, so nothing measures how long it takes or what
+  provokes it.
+
+The unmeasured question is the gap: seven and eleven minutes between shots.
+Either the golfer was doing other things and the device armed promptly, or the
+golfer was swinging and only one in twenty registered. **Those two are opposite
+faults and the logs cannot tell them apart.** Everything from D18 onward was
+built on the second reading without checking.
+
+Two changes came out of admitting that. `armed again after Ns and N re-arm
+attempt(s)` is logged on recovery, so the answer survives a log trimmed to the
+shot; and re-arm attempts now back off (2s doubling to 15s) rather than
+repeating every second. The backoff is not politeness: a re-arm *changes the
+club*, and a device handed a fresh selection every second may never be left
+alone long enough to act on one. Retrying harder is the obvious response to
+"it did not arm" and it was making things worse.
+
+**What to capture next, before changing any more code:** the untrimmed log
+between one shot's club frame and the next shot's ball frame, and whether the
+golfer swung during it.
 
 **D12 is closed by these two.** "The monitor is not registering the ball" was
 never true. It registered the ball; the backend discarded the frame, and then

@@ -684,9 +684,11 @@ async def test_the_first_not_ready_frame_is_not_swallowed_by_the_throttle(
 
 
 async def test_a_burst_of_not_ready_frames_gets_one_nudge(listener, settings):
-    """Only *repeats* of a known not-ready state are throttled. A monitor
-    heartbeating at 10 Hz while it warms up should not draw ten club frames a
-    second back."""
+    """Only *repeats* of a known not-ready state wait. A monitor heartbeating
+    at 10 Hz while it warms up should not draw ten club frames a second back --
+    and since a re-arm *changes the club*, hammering it is not merely noisy: a
+    device handed a fresh selection every second may never be left alone long
+    enough to act on one."""
     reader, writer = await connect(settings)
     beat = {
         "DeviceID": "SquareGolf",
@@ -787,5 +789,50 @@ async def test_the_nudge_can_be_turned_off(listener, settings):
         assert (await read_json(reader))["Player"]["Club"] == "DR"
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(reader.readline(), timeout=0.5)
+    finally:
+        writer.close()
+
+
+async def test_re_arm_attempts_back_off(listener, settings):
+    """Retrying harder is the obvious response to "it did not arm" and it is
+    the wrong one -- each attempt changes the club, so a one-second retry loop
+    never lets the device settle on any selection. Attempts must space out."""
+    settings.gspro_rearm_club_nudge = False       # one frame per attempt
+    reader, writer = await connect(settings)
+    beat = {
+        "DeviceID": "SquareGolf",
+        "ShotDataOptions": {"IsHeartBeat": True, "LaunchMonitorIsReady": False},
+    }
+    try:
+        # Two seconds of heartbeats at 20 Hz. A flat one-second throttle would
+        # give two nudges; the backoff gives the immediate one and then waits.
+        for _ in range(40):
+            await send(writer, beat)
+            await asyncio.sleep(0.05)
+        await asyncio.sleep(0.2)
+        assert listener._rearm_attempts == 1, (
+            f"{listener._rearm_attempts} club changes in two seconds"
+        )
+    finally:
+        writer.close()
+
+
+async def test_recovery_is_reported_with_both_numbers(listener, settings, caplog):
+    """The line that answers "did the re-arm work", logged on recovery because
+    that is the only moment both numbers are known -- and because it survives a
+    log trimmed to the shot itself."""
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, SQUARE_CLUB)                   # ready: false
+        await asyncio.sleep(0.6)
+        assert listener.monitor_ready is False
+
+        with caplog.at_level("INFO", logger="backend.gspro"):
+            await send(writer, SQUARE_BALL)               # ready: true
+            await asyncio.sleep(0.2)
+
+        assert listener.monitor_ready is True
+        assert listener._rearm_attempts == 0, "the counter must reset"
+        assert any("armed again after" in r.getMessage() for r in caplog.records)
     finally:
         writer.close()

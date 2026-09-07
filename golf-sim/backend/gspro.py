@@ -47,6 +47,16 @@ SHOT_COALESCE_S = 4.0
 #: "not ready" on every frame of a burst should get one nudge, not twenty.
 PLAYER_INFO_MIN_GAP_S = 1.0
 
+#: Re-arm attempts back off. The first is immediate -- that is the one that
+#: usually works -- and the rest double out to a slow retry.
+#:
+#: Not politeness. A re-arm *changes the club*, and a device given a fresh club
+#: selection every second may never be left alone long enough to act on one.
+#: Retrying harder is the obvious response to "it did not arm" and it is the
+#: wrong one.
+REARM_BACKOFF_BASE_S = 2.0
+REARM_BACKOFF_MAX_S = 15.0
+
 MAX_BUFFER_BYTES = 1024 * 1024
 
 
@@ -69,6 +79,9 @@ class GSProListener:
         self._last_shot_id: str | None = None
         self._last_shot_at: float = 0.0
         self._player_info_at: float = 0.0
+        self._rearm_at: float = 0.0
+        self._rearm_attempts = 0
+        self._unready_since: float | None = None
         self._monitor_ready: bool | None = None
         self.last_error: str | None = None
         self.shots_received = 0
@@ -267,18 +280,42 @@ class GSProListener:
                 "gspro: monitor reports %s",
                 "READY -- armed for the next strike" if ready else "NOT READY",
             )
+        now = time.monotonic()
         if ready is not False:
+            if self._unready_since is not None:
+                # The line that answers "did the re-arm work". Logged on
+                # recovery because that is the only moment both numbers are
+                # known, and it survives a log the user trims to the shot.
+                log.info(
+                    "gspro: armed again after %.1fs and %d re-arm attempt(s)",
+                    now - self._unready_since, self._rearm_attempts,
+                )
+            self._unready_since = None
+            self._rearm_attempts = 0
             return False
 
-        # Announce whenever this is *news*: the monitor was ready and has just
-        # gone unready, or we had never heard its readiness at all. Only a
-        # repeat of an already-known not-ready state is throttled -- the
-        # connect-time announce stamps the throttle clock, so anything looser
-        # swallows the not-ready frame that arrives inside the first second,
-        # which is every monitor that was never ready to begin with.
+        # Arm immediately when this is *news*: the monitor was ready and has
+        # just gone unready, or we had never heard its readiness at all. Only a
+        # repeat of an already-known not-ready state waits, and it waits on a
+        # backoff rather than a flat gap -- see REARM_BACKOFF_BASE_S.
         if was is not False:
+            self._unready_since = now
+            self._rearm_attempts = 0
             return True
-        return time.monotonic() - self._player_info_at >= PLAYER_INFO_MIN_GAP_S
+
+        wait = min(
+            REARM_BACKOFF_MAX_S,
+            REARM_BACKOFF_BASE_S * 2 ** max(0, self._rearm_attempts - 1),
+        )
+        if now - self._rearm_at < wait:
+            return False
+        log.info(
+            "gspro: still not ready %.0fs after the shot (%d re-arm attempt(s) "
+            "so far) -- if this never resolves, the monitor is ignoring the "
+            "club change",
+            now - (self._unready_since or now), self._rearm_attempts,
+        )
+        return True
 
     async def _handle(
         self, payload: dict[str, Any], writer: asyncio.StreamWriter, relayed: bool
@@ -423,6 +460,15 @@ class GSProListener:
         return self._monitor_ready
 
     @property
+    def rearm_attempts(self) -> int:
+        """Re-arms sent since the monitor last reported itself ready.
+
+        Zero while it is armed. A number that climbs and never resets is the
+        signature of a monitor ignoring the club change.
+        """
+        return self._rearm_attempts
+
+    @property
     def forward_active(self) -> bool:
         """Is a relay leg open right now?
 
@@ -502,6 +548,9 @@ class GSProListener:
         self.player_info_sent += 1
         real = self.current_club or self.settings.gspro_default_club
 
+        if rearm:
+            self._rearm_at = now
+            self._rearm_attempts += 1
         if rearm and self.settings.gspro_rearm_club_nudge:
             decoy = self._decoy_club()
             log.info("gspro: re-arming -- club %s then back to %s", decoy, real)
