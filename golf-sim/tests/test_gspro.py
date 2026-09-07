@@ -508,8 +508,9 @@ async def test_a_monitor_still_not_ready_is_told_again(listener, settings):
             "DeviceID": "SquareGolf",
             "ShotDataOptions": {"IsHeartBeat": True, "LaunchMonitorIsReady": False},
         })
+        # Readiness is answered before the ack: the re-arm is the urgent part.
+        assert (await read_json(reader))["Code"] == 201      # the club again
         assert (await read_json(reader))["Code"] == 200      # heartbeat ack
-        assert (await read_json(reader))["Code"] == 201      # and the club again
     finally:
         writer.close()
 
@@ -581,7 +582,8 @@ async def test_one_swing_in_two_frames_is_one_shot(listener, settings, correlato
         await read_json(reader)
         await asyncio.sleep(0.1)
         await send(writer, SQUARE_CLUB)
-        await read_json(reader)
+        assert (await read_json(reader))["Code"] == 201   # re-arm
+        assert (await read_json(reader))["Code"] == 200   # ack
         await asyncio.sleep(0.2)
 
         assert listener.shots_received == 1, "the swing was recorded twice"
@@ -623,7 +625,8 @@ async def test_the_merge_does_not_kill_the_connection(listener, settings, correl
         await read_json(reader)
         await asyncio.sleep(0.1)
         await send(writer, SQUARE_CLUB)
-        await read_json(reader)
+        assert (await read_json(reader))["Code"] == 201   # re-arm
+        assert (await read_json(reader))["Code"] == 200   # ack
         await asyncio.sleep(0.2)
 
         # Still talking: a further frame is answered, not silence from a
@@ -631,5 +634,63 @@ async def test_the_merge_does_not_kill_the_connection(listener, settings, correl
         await send(writer, {**SQUARE_BALL, "ShotNumber": 9})
         assert (await read_json(reader))["Message"] == "Shot received"
         assert listener.shots_received == 2
+    finally:
+        writer.close()
+
+
+async def test_the_club_frame_re_arms_the_monitor(listener, settings):
+    """The Square goes unready the instant it has reported a strike, and says
+    so on the *club* frame -- which is a shot by every content test, so it
+    returns before the heartbeat branch where the re-arm used to live. The
+    device was armed once and never again: exactly one shot per session, which
+    is what the bay saw."""
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, SQUARE_BALL)                   # ready: true
+        assert (await read_json(reader))["Code"] == 200
+        await asyncio.sleep(0.1)
+
+        before = listener.player_info_sent
+        await send(writer, SQUARE_CLUB)                   # ready: false
+        assert (await read_json(reader))["Code"] == 201, "the monitor was left unarmed"
+        assert (await read_json(reader))["Code"] == 200
+        assert listener.player_info_sent == before + 1
+    finally:
+        writer.close()
+
+
+async def test_the_first_not_ready_frame_is_not_swallowed_by_the_throttle(
+    listener, settings
+):
+    """The connect-time announce stamps the throttle clock. A monitor that
+    reports not-ready inside the next second -- which is every monitor that was
+    never ready to begin with -- must still be told, or nothing ever arms it."""
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, {
+            "DeviceID": "SquareGolf",
+            "ShotDataOptions": {"IsHeartBeat": True, "LaunchMonitorIsReady": False},
+        })
+        assert (await read_json(reader))["Code"] == 201
+        assert (await read_json(reader))["Code"] == 200
+    finally:
+        writer.close()
+
+
+async def test_a_burst_of_not_ready_frames_gets_one_nudge(listener, settings):
+    """Only *repeats* of a known not-ready state are throttled. A monitor
+    heartbeating at 10 Hz while it warms up should not draw ten club frames a
+    second back."""
+    reader, writer = await connect(settings)
+    beat = {
+        "DeviceID": "SquareGolf",
+        "ShotDataOptions": {"IsHeartBeat": True, "LaunchMonitorIsReady": False},
+    }
+    try:
+        for _ in range(5):
+            await send(writer, beat)
+        await asyncio.sleep(0.3)
+        # One for the edge into not-ready, then silence for the repeats.
+        assert listener.player_info_sent == 2, "connect announce plus one nudge"
     finally:
         writer.close()

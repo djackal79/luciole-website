@@ -200,9 +200,17 @@ Square LM ──(Bluetooth)──► bridge ──(TCP 921)──► backend
                invisible here          visible in the log
 ```
 
-`clients: 1` with no shots means the second link is fine and the first is not.
-The bridge's own window shows that half; the ball-ready sound is a quick test
-of it without touching any config.
+`clients: 1` with no shots means the TCP half is fine. It does **not** follow
+that the Bluetooth half is broken — that assumption cost an evening on
+7 September, when the monitor was reporting perfectly and this backend was
+discarding the frames. Read the log before suspecting the hardware:
+
+| In the log | What it means |
+|---|---|
+| `monitor reports NOT READY`, never `READY` | The device has not been armed. It should arm on the `sent player info` line that follows; if it never says READY, that is a real fault. |
+| `monitor reports READY` | Bluetooth is fine and the device is armed. Any missing shot from here is a backend or bridge problem, not the monitor. |
+| `ignoring frame -- <reason>` | A frame arrived and was not treated as a strike. The reason is printed in full; that is the thing to report. |
+| Nothing at all after `launch monitor connected` | Now suspect Bluetooth. The bridge's own window shows that half, and the ball-ready sound tests it without touching any config. |
 
 Then:
 

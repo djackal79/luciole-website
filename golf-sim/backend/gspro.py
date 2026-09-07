@@ -43,6 +43,10 @@ _DISABLED = object()
 #: frames is about 0.8 s.
 SHOT_COALESCE_S = 4.0
 
+#: Do not re-announce the club more often than this. A monitor that reports
+#: "not ready" on every frame of a burst should get one nudge, not twenty.
+PLAYER_INFO_MIN_GAP_S = 1.0
+
 MAX_BUFFER_BYTES = 1024 * 1024
 
 
@@ -64,6 +68,8 @@ class GSProListener:
         self._last_shot_number: Any = None
         self._last_shot_id: str | None = None
         self._last_shot_at: float = 0.0
+        self._player_info_at: float = 0.0
+        self._monitor_ready: bool | None = None
         self.last_error: str | None = None
         self.shots_received = 0
         self.heartbeats_received = 0
@@ -227,16 +233,39 @@ class GSProListener:
         if self.settings.gspro_log_frames:
             log.info("gspro frame: %s", json.dumps(payload)[:4000])
 
+        # Re-arm on ANY frame that reports the monitor unready -- not just
+        # heartbeats. The Square goes unready again the instant it has
+        # reported a strike, and it says so on the club frame, which is a
+        # *shot* frame and returns before the heartbeat branch is reached.
+        # Checking only heartbeats therefore armed the device once and never
+        # again: one shot per session, then silence.
+        if not relayed:
+            options = payload.get("ShotDataOptions") or {}
+            ready = options.get("LaunchMonitorIsReady")
+            if ready is False:
+                # Announce whenever this is *news*: the monitor was ready and
+                # has just gone unready, or we had never heard its readiness at
+                # all. Only a repeat of an already-known not-ready state is
+                # throttled. Anything looser drops the one re-arm that matters
+                # -- the connect-time announce stamps the throttle clock, so a
+                # not-ready frame arriving inside the first second would be
+                # silently swallowed and the device never armed.
+                await self._announce_player(writer, force=self._monitor_ready is not False)
+            if ready is not None and bool(ready) is not self._monitor_ready:
+                # The one transition worth a line in the log. Coming back to
+                # ready after a strike is the proof the re-arm landed; staying
+                # unready is the proof it did not, and there is no other way to
+                # tell those apart from the bay.
+                log.info(
+                    "gspro: monitor reports %s",
+                    "READY -- armed for the next strike" if ready else "NOT READY",
+                )
+                self._monitor_ready = bool(ready)
+
         if is_heartbeat(payload):
             self.heartbeats_received += 1
             if not relayed:
                 await self._send(writer, self._ack(200, "Heartbeat received"))
-                # A monitor still reporting "not ready" may have missed the
-                # player info sent on connect, or may need it again after
-                # waking. Cheap to repeat, and the alternative is silence.
-                options = payload.get("ShotDataOptions") or {}
-                if options.get("LaunchMonitorIsReady") is False:
-                    await self._announce_player(writer)
             return
 
         if (reason := shot_rejection_reason(payload)) is not None:
@@ -399,10 +428,22 @@ class GSProListener:
             },
         }
 
-    async def _announce_player(self, writer: asyncio.StreamWriter) -> None:
-        """Tell the monitor the club, if we are the one answering it."""
+    async def _announce_player(
+        self, writer: asyncio.StreamWriter, *, force: bool = False
+    ) -> None:
+        """Tell the monitor the club, if we are the one answering it.
+
+        ``force`` skips the throttle. Used whenever a not-ready report is news
+        rather than a repeat, which is the re-arm that actually matters -- a
+        device that has just reported a strike must be armed again before it
+        will report another, and dropping that one nudge costs the next shot.
+        """
         if not self.settings.gspro_send_player_info:
             return
+        now = time.monotonic()
+        if not force and now - self._player_info_at < PLAYER_INFO_MIN_GAP_S:
+            return
+        self._player_info_at = now
         self.player_info_sent += 1
         log.info(
             "gspro: sent player info (club %s) -- a monitor that never arms is "

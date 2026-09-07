@@ -59,7 +59,7 @@ will you in three weeks.
 |---|---|
 | Backend + frontend on the sim PC | **Working.** Mock shots render, pairing verified |
 | GSPro socket ← SQG-GSPRO-Connect | **Working.** Bridge connects, protocol confirmed |
-| Square LM (original, **not Omni**) → SQG-GSPRO-Connect | **Blocked.** Monitor not registering the ball — D12 |
+| Square LM (original, **not Omni**) → SQG-GSPRO-Connect | **Working 7 Sep.** 94.9 mph ball, spin and club data recorded — D17/D18 |
 | Kinovea post-recording hooks | Configured; per capture screen, not Preferences |
 | Kinovea capture trigger | **Not found yet** — D13 |
 | Phone watcher | Not started |
@@ -111,7 +111,9 @@ are now answered; their decisions are recorded below and are binding.
 | D15 | Reprojection error cannot see a time skew between the two cameras | High | **Closed by refusal** — see below |
 | D16 | A plain chessboard has no absolute origin | High | **Closed** — ChArUco board |
 | D11 | Root-level route aliases duplicate the contract paths | Low | Converge |
-| D12 | Square LM not registering the ball | **Blocking hardware** | Vendor-side |
+| D12 | Square LM not registering the ball | **Blocking hardware** | **Resolved 7 Sep** — never hardware; see D17/D18 |
+| D17 | The Square flags *every* frame `IsHeartBeat`, strikes included | High | **Fixed** — content decides, not the flag |
+| D18 | The Square must be re-armed after every shot | High | **Fixed** — Code 201 on any not-ready frame |
 | D13 | Kinovea capture trigger not located | Medium | Research |
 | D14 | flighthook could replace the LM bridge | — | **Ruled out** — Omni only, bay has the original Square |
 
@@ -394,6 +396,62 @@ square carries a coded marker, so the origin is absolute and every view agrees
 on it. It also calibrates from a partly occluded board, which a chessboard
 cannot.
 
+### D17 — The Square flags every frame as a heartbeat — FIXED
+
+Measured in the bay, 7 September. The Square sets
+`ShotDataOptions.IsHeartBeat: true` on **every** frame it sends, a real strike
+included. The listener trusted the flag and discarded the frame, so a genuine
+94.89 mph drive with 5194 rpm of backspin was logged as a keep-alive and
+thrown away.
+
+The flag is therefore not a classifier. `is_heartbeat()` now requires the flag
+*and* an absence of shot content: a frame carrying ball speed is a shot no
+matter what it calls itself. The real frames are pinned verbatim in
+`tests/test_gspro.py` as `SQUARE_BALL` and `SQUARE_CLUB`, so a future
+"tidy-up" of that predicate fails loudly.
+
+Corollary found the same evening: one swing arrives as **two** frames sharing a
+`ShotNumber` — ball data first, club data about 700 ms later, each genuine by
+every content test. Submitting both put the swing on screen twice, so the
+second is merged into the first (`ShotCorrelator.merge_telemetry`), filling
+only fields the shot lacks. It never overwrites a real measurement with a later
+frame's zeros, because the club frame reports `BallData.Speed: 0`.
+
+### D18 — The Square must be re-armed after every shot — FIXED
+
+Predicted from `OpenShotGolf`'s connection sequence (§3c) and then confirmed on
+the hardware: **one shot per session, then silence.**
+
+Two protocol facts, both measured:
+
+1. A Square that has never been told a club sits at
+   `LaunchMonitorIsReady: false` forever. It arms on a GSPro **Code 201
+   "GSPro Player Information"** frame. A `Player` block inside a Code 200
+   acknowledgement — which is what this backend sent — is not that message.
+   Sending a real 201 on connect armed the device immediately.
+2. The Square goes unready again the instant it has reported a strike, and it
+   says so on the **club** frame. Which is a *shot* frame by D17's content
+   test, so it returns from `_dispatch` before the heartbeat branch where the
+   re-arm lived. The device was armed once and never again.
+
+The readiness check therefore runs on **every** frame, ahead of any return
+path, not just heartbeats. It is throttled to one nudge per second so a
+warming-up monitor heartbeating at 10 Hz does not draw ten club frames a second
+back — but the throttle only ever suppresses a *repeat* of an already-known
+not-ready state. Any transition into not-ready, and any not-ready report from a
+monitor whose readiness was previously unknown, always sends.
+
+That last clause is the one that took two goes. The connect-time announce
+stamps the throttle clock, so a monitor that reports not-ready within the next
+second — which is every monitor that was never ready to begin with — had its
+one nudge silently swallowed, and nothing armed it. Both failure modes are
+pinned by tests that were checked against a deliberate re-introduction of each
+bug.
+
+**D12 is closed by these two.** "The monitor is not registering the ball" was
+never true. It registered the ball; the backend discarded the frame, and then
+failed to re-arm the device for the next one.
+
 ---
 
 ## 3b. External advice, reviewed
@@ -480,6 +538,10 @@ sequence, which explains a monitor that pairs and then never reports:
 Step 5 is the one that will bite twice: a connector that arms once but never
 re-arms yields exactly one shot per session and then silence, which reads like
 a flaky monitor rather than a protocol gap.
+
+**Confirmed on the hardware the same evening — that is exactly what happened.**
+See D18 for what the arming message turned out to be (Code 201, not a `Player`
+block on a Code 200) and where the re-arm has to fire from.
 
 **Nothing here should be copied into this repo.** It is someone else's
 implementation, and this corner of the ecosystem has already seen one takedown.
@@ -680,8 +742,9 @@ in for real data, and two new backend fields worth showing.
   impact sits ~3000 ms into the clip. This is a refusal, not a bug: a 50 ms
   alignment error turns a real 90° shoulder turn into 61° at 0.4 px of
   reprojection error, so nothing downstream could catch it.
-- Still open from before: the Square is not registering the ball, and
-  Kinovea's audio trigger has not been located.
+- Still open from before: Kinovea's audio trigger has not been located.
+  The Square itself is no longer open — it registers the ball and reports a
+  full strike; see D17/D18.
 
 ## 5. Context for the chat surfaces
 
