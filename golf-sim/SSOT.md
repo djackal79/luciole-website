@@ -428,6 +428,69 @@ argument for a third camera is about *coverage*.
 
 ---
 
+## 3c. Prior art, reviewed 7 September
+
+Two references the user pointed at. Neither had informed anything built here
+before this. `github.com/GolfForge/golf` does not resolve — 404, and no project
+by that name is findable; it may be misremembered or taken down, as
+`brentyates/squaregolf-connector` was.
+
+### The Square must be armed, and re-armed after every shot
+
+`jhauck2/OpenShotGolf` carries a working Square implementation in
+`addons/launch_monitors/square/`. Its connection session establishes this
+sequence, which explains a monitor that pairs and then never reports:
+
+1. Heartbeat, immediately on connect.
+2. Club configuration, after a short delay — the device is told which club and
+   which handedness before it will detect anything sensibly.
+3. **`DetectBall` — this arms shot detection.** Until it is sent the device sits
+   connected and idle.
+4. Heartbeat on a timer thereafter.
+5. **After every reported shot, `DetectBall` is sent again to re-arm.**
+
+Step 5 is the one that will bite twice: a connector that arms once but never
+re-arms yields exactly one shot per session and then silence, which reads like
+a flaky monitor rather than a protocol gap.
+
+**Nothing here should be copied into this repo.** It is someone else's
+implementation, and this corner of the ecosystem has already seen one takedown.
+The finding is a fact about how the user's own hardware behaves, and the action
+is to check whether SQG-GSPRO-Connect exposes club selection, a detection or
+spin mode, and an auto-re-arm setting — not to reimplement the protocol.
+
+Incidental: OpenShotGolf listens for GSPro Open Connect on port 49152, which
+confirms the port is a convention rather than a requirement. Useful to know for
+the pass-through arrangement, where the listener already moves to 922.
+
+### SwingNerds — two ideas worth taking
+
+A commercial product covering much the same ground (and supporting Square).
+Most of what it does this build already has or has planned. Two do not:
+
+**Automatic data-quality flagging.** It marks partial swings, practice swings,
+shots played with the wrong club, and outliers, and excludes them from
+analytics. This matters more than it sounds: a range session is full of
+half-swings and mishits, and dispersion built on unfiltered shots is a lie.
+This build is unusually well placed to do it — a practice swing is video with
+no telemetry, a mishit is a flight the model can flag against the club's own
+distribution, and a wrong club shows as a carry far outside its group. It fits
+the existing schema as a status on the shot rather than a new subsystem, and it
+belongs alongside `depth_reason` as another thing the app says plainly.
+
+**A nominated standard swing per club.** Rather than comparing arbitrary pairs,
+one shot per club is marked the reference, and every new shot plays against it
+in sync. Better than the generic comparison in `DESIGN_BRIEF.md` §6, and it
+needs the same missing piece.
+
+### Both converge on club tagging
+
+Dispersion, gapping, per-club standard swings, and wrong-club detection all
+require knowing which club was used. It is one field on the shot and one
+control in the UI, and it is the keystone for everything above.
+
+---
+
 ## 4. Next steps
 
 ### Antigravity (Build 2)
