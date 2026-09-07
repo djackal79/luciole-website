@@ -174,7 +174,11 @@ class SessionSimulator:
         good = 0
         for shot in shots:
             present = {k for k, v in shot["sources"].items() if v}
-            if present == expected_sources:
+            # Subset, not equality: pose lands seconds after the shot closes,
+            # so a package may honestly carry MORE than was simulated. Testing
+            # for equality marked a complete shot as a failure purely because
+            # its pose had finished in time.
+            if expected_sources <= present:
                 good += 1
             missing = expected_sources - present
             note = f"   MISSING: {', '.join(sorted(missing))}" if missing else ""

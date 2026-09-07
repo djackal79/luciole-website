@@ -436,6 +436,9 @@ def write_packages(packages: list[ShotPackage], root: Path, *, media: bool) -> N
                 container_fps=int(entry.container_fps or 30),
                 size=f"{min(entry.width or 640, 640)}x{min(entry.height or 480, 480)}",
                 label=name,
+                # Body-swing clips carry a figure so a seeded install can
+                # exercise pose; the impact clip stays a test pattern.
+                golfer=name.startswith("body_swing"),
             )
     print(f"wrote {len(packages)} shot package(s) to {root}")
 

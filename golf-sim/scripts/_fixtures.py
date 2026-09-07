@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 import shutil
 import struct
@@ -117,6 +118,76 @@ def _stub_mp4(size_bytes: int) -> bytes:
     return ftyp + struct.pack(">I", payload_size + 8) + b"mdat" + b"\x00" * payload_size
 
 
+#: Joints of a crude golfer, in the frame's own normalised coordinates.
+#: A neck and arms held clear of the torso are not decoration -- without them
+#: the silhouette is one blob and MediaPipe does not fire on it at all.
+_FIGURE = {
+    "head": (0.500, 0.248), "neck": (0.500, 0.314),
+    "l_sh": (0.459, 0.339), "r_sh": (0.541, 0.339),
+    "l_el": (0.433, 0.442), "r_el": (0.567, 0.442),
+    "l_wr": (0.444, 0.510), "r_wr": (0.556, 0.510),
+    "l_hip": (0.470, 0.500), "r_hip": (0.530, 0.500),
+    "l_kn": (0.467, 0.655), "r_kn": (0.533, 0.655),
+    "l_an": (0.465, 0.812), "r_an": (0.535, 0.812),
+}
+_BONES = [("neck","l_sh"),("neck","r_sh"),("l_sh","r_sh"),("l_sh","l_el"),
+          ("l_el","l_wr"),("r_sh","r_el"),("r_el","r_wr"),("l_sh","l_hip"),
+          ("r_sh","r_hip"),("l_hip","r_hip"),("l_hip","l_kn"),("l_kn","l_an"),
+          ("r_hip","r_kn"),("r_kn","r_an")]
+
+#: Fractions of frame height. Tuned against the detector, not eyeballed --
+#: a thinner figure is not detected at all.
+_LIMB = 0.031
+_HEAD = 0.036
+
+
+def _write_golfer_clip(destination, seconds, container_fps, size) -> bool:
+    """A figure MediaPipe will actually detect, swinging.
+
+    ffmpeg's testsrc is decodable but contains no person, so a mock session
+    could never exercise the pose pipeline -- extraction would run, find
+    nobody, and report failure. That left pose and 3D as the only part of the
+    chain untestable without going to the bay. Drawn with OpenCV, which the
+    pose extras already install, so this needs nothing extra.
+    """
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return False
+
+    width, height = (int(v) for v in size.split("x"))
+    writer = cv2.VideoWriter(
+        str(destination), cv2.VideoWriter_fourcc(*"mp4v"), container_fps, (width, height)
+    )
+    if not writer.isOpened():
+        return False
+
+    total = max(1, int(round(seconds * container_fps)))
+    for index in range(total):
+        # Shoulders and arms swing through a turn; hips and legs stay put.
+        phase = math.sin(2 * math.pi * index / total)
+        frame = np.full((height, width, 3), 205, np.uint8)
+        pixels = {}
+        for name, (x, y) in _FIGURE.items():
+            if name in ("l_sh", "r_sh", "l_el", "r_el", "l_wr", "r_wr", "neck", "head"):
+                # Enough motion that interpolation and frame alignment are
+                # exercised, little enough that the figure stays detectable --
+                # a big swing deforms it until MediaPipe loses it entirely.
+                x += 0.022 * phase * (1.0 if name.startswith("r") else -1.0)
+                if name in ("l_wr", "r_wr", "l_el", "r_el"):
+                    y -= 0.045 * abs(phase)
+            pixels[name] = (int(x * width), int(y * height))
+        for a, b in _BONES:
+            cv2.line(frame, pixels[a], pixels[b], (45, 45, 45),
+                     max(6, round(height * _LIMB)), cv2.LINE_AA)
+        cv2.circle(frame, pixels["head"], max(8, round(height * _HEAD)),
+                   (45, 45, 45), -1, cv2.LINE_AA)
+        writer.write(frame)
+    writer.release()
+    return destination.exists() and destination.stat().st_size > 1024
+
+
 def make_clip(
     destination: Path,
     *,
@@ -125,13 +196,20 @@ def make_clip(
     size: str = "640x480",
     label: str = "clip",
     target_bytes: int = 128 * 1024,
+    golfer: bool = False,
 ) -> Path:
     """Write a test clip, using ffmpeg for a real one when it is installed.
 
     ``container_fps`` is the *container* rate, matching how the phone writes
     240 fps footage into a 30 fps container.
+
+    ``golfer`` draws a detectable figure instead of a test pattern, so a mock
+    session exercises pose extraction rather than stopping at "no golfer
+    detected". Use it for the body-swing cameras.
     """
     destination.parent.mkdir(parents=True, exist_ok=True)
+    if golfer and _write_golfer_clip(destination, seconds, container_fps, size):
+        return destination
     if shutil.which("ffmpeg"):
         command = [
             "ffmpeg", "-y", "-loglevel", "error",

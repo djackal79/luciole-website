@@ -51,6 +51,8 @@ def export_clip(
             seconds=seconds,
             container_fps=container_fps,
             label="body_swing",
+            # A body-swing clip with nobody in it cannot exercise pose.
+            golfer=True,
         )
         payload = source.read_bytes()
 
