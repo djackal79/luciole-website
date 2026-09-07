@@ -430,13 +430,41 @@ argument for a third camera is about *coverage*.
 
 ## 3c. Prior art, reviewed 7 September
 
-Two references the user pointed at. Neither had informed anything built here
-before this. `github.com/GolfForge/golf` does not resolve — 404, and no project
-by that name is findable; it may be misremembered or taken down, as
-`brentyates/squaregolf-connector` was.
+Three references the user pointed at. None had informed anything built here
+before this.
+
+### GolfForge — a GSPro replacement, not a rival to this app
+
+`github.com/GolfForge/GolfForge`. An AGPL-3.0, Unreal Engine 5 **course
+simulator** with AI-assisted course building from LIDAR and walking/treadmill
+integration. It is the half of the stack GSPro occupies, not the half this app
+occupies — it plays courses, it does not analyse swings. So there is little to
+borrow: the novel ideas below came from SwingNerds instead.
+
+What matters here is that it speaks **GSPro Open Connect on port 921**, the
+same protocol the pass-through relay already forwards. GolfForge would drop
+into the place GSPro sits with no backend change at all, which makes the
+subscription optional rather than necessary.
+
+Its Square support, though, is **not a solution to the bay's problem**: it
+delegates to `brentyates/squaregolf-connector`, the repo that was taken down.
+Its table reads "Square Omni / Square Golf ✅ validated", and the README
+specifies the *Omni* — which is not the unit in this bay.
+
+One operational detail worth having: its quick-start says to **select the
+monitor in GolfForge first, then launch the connector**. If the connector does
+not retry a refused connection, starting it before its destination is
+listening would leave it looking connected to the device and silent toward the
+PC. Worth ruling out before anything harder.
+
+A licence note, since this build may be shared: AGPL-3.0 is strongly copyleft.
+Borrowing GolfForge code into this app would oblige releasing this app's source
+under AGPL too, network use included. Running it alongside as a separate
+program carries no such obligation.
 
 ### The Square must be armed, and re-armed after every shot
 
+The one finding that acts on the bay's actual blocker.
 `jhauck2/OpenShotGolf` carries a working Square implementation in
 `addons/launch_monitors/square/`. Its connection session establishes this
 sequence, which explains a monitor that pairs and then never reports:
