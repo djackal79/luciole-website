@@ -59,8 +59,21 @@ async def listener(settings, correlator):
         await served.stop()
 
 
-async def connect(settings):
-    return await asyncio.open_connection(settings.gspro_host, settings.gspro_port)
+async def connect(settings, expect_player_info: bool = True):
+    """Connect, and swallow the player-info frame pushed on connect.
+
+    Every test written before that frame existed reads the *next* reply as the
+    answer to what it sent, so it is consumed here rather than in each test.
+    Tests that care about it pass ``expect_player_info=False`` and read it.
+    """
+    reader, writer = await asyncio.open_connection(
+        settings.gspro_host, settings.gspro_port
+    )
+    # Not sent while relaying: GSPro pushes its own and two would conflict.
+    if (expect_player_info and settings.gspro_send_player_info
+            and not settings.gspro_forward_enabled):
+        await read_json(reader)
+    return reader, writer
 
 
 async def send(writer, payload: dict) -> None:
@@ -433,6 +446,9 @@ async def test_recording_continues_when_gspro_is_down(settings, correlator):
     try:
         reader, writer = await connect(settings)
         try:
+            # Forwarding is configured but GSPro is not there, so we are the
+            # simulator after all -- including announcing the club.
+            assert (await read_json(reader))["Code"] == 201
             await send(writer, SHOT)
             # We answer, because GSPro is not there to.
             assert (await read_json(reader))["Message"] == "Shot received"
@@ -458,3 +474,55 @@ async def test_relaying_to_our_own_port_is_refused(settings, correlator):
     assert await served.start() is False
     assert served.live is False
     assert "own address" in served.last_error
+
+
+# ---------------------------------------------------------------------------
+# Player information -- what a monitor may be waiting for before it arms
+# ---------------------------------------------------------------------------
+
+
+async def test_the_club_is_announced_the_moment_a_monitor_connects(
+    listener, settings
+):
+    """A bridge that configures its device per club cannot arm ball detection
+    until it has been told one. The Square reports LaunchMonitorIsReady false
+    forever otherwise, which reads as broken hardware."""
+    reader, writer = await connect(settings, expect_player_info=False)
+    try:
+        frame = await read_json(reader)
+        assert frame["Code"] == 201
+        assert frame["Message"] == "GSPro Player Information"
+        assert frame["Player"]["Club"] == "DR"
+        assert frame["Player"]["Handed"] == "RH"
+    finally:
+        writer.close()
+
+
+async def test_a_monitor_still_not_ready_is_told_again(listener, settings):
+    """The heartbeat carries the monitor's own readiness. While it says it is
+    not ready, repeat the club -- it may have missed the first one, or woken
+    since."""
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, {
+            "DeviceID": "SquareGolf",
+            "ShotDataOptions": {"IsHeartBeat": True, "LaunchMonitorIsReady": False},
+        })
+        assert (await read_json(reader))["Code"] == 200      # heartbeat ack
+        assert (await read_json(reader))["Code"] == 201      # and the club again
+    finally:
+        writer.close()
+
+
+async def test_a_ready_monitor_is_not_pestered(listener, settings):
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, {
+            "DeviceID": "SquareGolf",
+            "ShotDataOptions": {"IsHeartBeat": True, "LaunchMonitorIsReady": True},
+        })
+        assert (await read_json(reader))["Code"] == 200
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(reader.readline(), timeout=0.4)
+    finally:
+        writer.close()

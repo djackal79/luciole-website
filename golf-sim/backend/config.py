@@ -52,6 +52,14 @@ class Settings(BaseSettings):
     #: Log every frame the monitor sends. For working out what a bridge
     #: actually emits when shots are not registering.
     gspro_log_frames: bool = False
+    #: Push a Code 201 "Player Information" frame on connect, and again
+    #: whenever a heartbeat reports LaunchMonitorIsReady false. Some bridges
+    #: configure the device per club and will not arm ball detection until
+    #: they have been told one. Set false if a monitor objects to it.
+    gspro_send_player_info: bool = True
+    gspro_default_club: str = "DR"
+    gspro_player_handed: str = "RH"
+    gspro_distance_to_target: int = 200
 
     # ---- GSPro pass-through -----------------------------------------------
     #: Relay every frame on to the real GSPro, so the course plays while this

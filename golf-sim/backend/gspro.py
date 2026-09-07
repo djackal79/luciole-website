@@ -54,6 +54,7 @@ class GSProListener:
         self.correlator = correlator
         self._server: asyncio.AbstractServer | None = None
         self._writers: set[asyncio.StreamWriter] = set()
+        self.player_info_sent = 0
         self.last_error: str | None = None
         self.shots_received = 0
         self.heartbeats_received = 0
@@ -149,6 +150,10 @@ class GSProListener:
         log.info("launch monitor connected from %s", peer)
 
         forward = await self._open_forward(writer) if self.forwarding else None
+        if forward is None:
+            # Only when we are the simulator. With pass-through, GSPro sends
+            # its own and two would conflict.
+            await self._announce_player(writer)
         buffer = ""
         try:
             while True:
@@ -217,6 +222,12 @@ class GSProListener:
             self.heartbeats_received += 1
             if not relayed:
                 await self._send(writer, self._ack(200, "Heartbeat received"))
+                # A monitor still reporting "not ready" may have missed the
+                # player info sent on connect, or may need it again after
+                # waking. Cheap to repeat, and the alternative is silence.
+                options = payload.get("ShotDataOptions") or {}
+                if options.get("LaunchMonitorIsReady") is False:
+                    await self._announce_player(writer)
             return
 
         if (reason := shot_rejection_reason(payload)) is not None:
@@ -324,6 +335,43 @@ class GSProListener:
         return self.forwarding and self.forward_error is None and self.client_count > 0
 
     # -- outbound ----------------------------------------------------------
+
+    def _player_info(self) -> dict[str, Any]:
+        """The message GSPro pushes to tell a connector which club is in play.
+
+        Code 201 in Open Connect, and it is not merely informational: a bridge
+        that has to configure its device per club may wait for this before it
+        arms shot detection at all. The Square is such a device -- a working
+        implementation sends club configuration and only then the command that
+        arms ball detection -- so a monitor reporting
+        ``LaunchMonitorIsReady: false`` forever may simply never have been told
+        what it is hitting.
+
+        We never sent this. Replies carried a Player block inside a Code 200
+        acknowledgement, which is not the message a connector waits on.
+        """
+        return {
+            "Code": 201,
+            "Message": "GSPro Player Information",
+            "Player": {
+                "Handed": self.settings.gspro_player_handed,
+                "Club": self.current_club or self.settings.gspro_default_club,
+                "DistanceToTarget": self.settings.gspro_distance_to_target,
+                "Surface": "tee",
+            },
+        }
+
+    async def _announce_player(self, writer: asyncio.StreamWriter) -> None:
+        """Tell the monitor the club, if we are the one answering it."""
+        if not self.settings.gspro_send_player_info:
+            return
+        self.player_info_sent += 1
+        log.info(
+            "gspro: sent player info (club %s) -- a monitor that never arms is "
+            "usually waiting for this",
+            self.current_club or self.settings.gspro_default_club,
+        )
+        await self._send(writer, self._player_info())
 
     def _ack(self, code: int, message: str) -> dict[str, Any]:
         return {
