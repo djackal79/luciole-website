@@ -114,8 +114,9 @@ are now answered; their decisions are recorded below and are binding.
 | D12 | Square LM not registering the ball | **Blocking hardware** | **Resolved 7 Sep** — never hardware; see D17/D18 |
 | D17 | The Square flags *every* frame `IsHeartBeat`, strikes included | High | **Fixed** — content decides, not the flag |
 | D18 | The Square must be re-armed after every shot | High | **Fixed** — Code 201 on any not-ready frame |
-| D19 | Re-arming needs a club *change*; a repeat is ignored | High | **Fixed** — decoy club, then the real one |
-| D20 | The bay logs never contain the failure being debugged | High | **Open** — capture the gap between two shots |
+| D19 | Re-arming needs a club *change*; a repeat is ignored | High | **Retracted** — timing was the confound |
+| D21 | Re-arming inside the post-shot cycle freezes the Square | **High** | **Fixed** — settle 3 s after club data, then one 201 |
+| D20 | The bay logs never contain the failure being debugged | High | **Closed** — the physical symptom was the missing data; see D21 |
 | D13 | Kinovea capture trigger not located | Medium | Research |
 | D14 | flighthook could replace the LM bridge | — | **Ruled out** — Omni only, bay has the original Square |
 
@@ -450,41 +451,18 @@ one nudge silently swallowed, and nothing armed it. Both failure modes are
 pinned by tests that were checked against a deliberate re-introduction of each
 bug.
 
-### D19 — The Square re-arms on a club *change*, not on a repeat — FIXED
+### D19 — The Square re-arms on a club *change* — RETRACTED
 
-D18 got the mechanism right and the content wrong. The re-arm fired on exactly
-the right frame, the log confirmed it, and the device stayed unready anyway:
+Wrong, and recorded as such. The inference was: a 201 with the same club did
+not arm the device; GSPro users fix the same symptom by pressing K (club up),
+which is a 201 with a different club; therefore the change is the signal.
 
-```
-18:48:41,571 gspro: monitor reports NOT READY
-18:48:41,571 gspro: sent player info (club DR) ...
-                    -- and nothing. No READY, ever.
-```
-
-A Code 201 carrying the club the monitor already has is not a signal. The
-**change** is. Under GSPro the community workaround for this exact symptom --
-the Square's eight red sensors not lighting after a shot -- is to press **K**,
-which is *club up*: a 201 with a different club.
-
-The bay log is what discriminates between the two readings. "Any 201 arms it"
-predicts the device would have armed at 18:48:41; it did not. So the club must
-differ from the one in play.
-
-The re-arm therefore sends a decoy club, holds `gspro_rearm_gap_s` (250 ms),
-then sends the real one — two distinct selections, ending on the club actually
-in play so shot tagging is unaffected. `gspro_rearm_decoy_club` defaults to
-`7I` and is swapped for `DR` when a 7-iron is what is in hand; a decoy equal to
-the real club is no change at all, which is the bug this entry is about.
-`gspro_rearm_club_nudge=false` reverts to a plain repeat.
-
-Two ordering points came out of the same reading. The frame is acknowledged
-*before* the 201s now: GSPro's real order is acknowledge the shot, then send
-player information, and a 201 arriving ahead of the ack is a sequence no
-connector meets in the wild. And GSPro's own spec marks `LaunchMonitorIsReady`
-"currently not implemented" and `IsHeartBeat` "optional (retired)" — both
-fields are the Square's own account of itself, which GSPro ignores. That is
-consistent with D17: the flags describe the device, they do not classify the
-frame.
+The confound was timing. K is a human pressing a key seconds after the shot.
+Every 201 this backend sent — same club or decoy — went out within 260 ms of
+the club frame, inside the window in which the device cannot be re-armed at
+all (D21). The club change was never tested outside that window, so the
+experiment could not have distinguished the two explanations. The decoy-club
+nudge is removed; the setting with it.
 
 ### D20 — What the bay logs do *not* show — OPEN
 
@@ -520,6 +498,52 @@ alone long enough to act on one. Retrying harder is the obvious response to
 **What to capture next, before changing any more code:** the untrimmed log
 between one shot's club frame and the next shot's ball frame, and whether the
 golfer swung during it.
+
+### D21 — Re-arming inside the Square's post-shot cycle freezes it — FIXED
+
+The face lights on the first arm and never again; the unit never goes green
+after the first shot. Four fixes on 7 September did not touch it, because all
+four re-armed within a quarter of a second of the club frame.
+
+Two sources settled it, both read for behaviour and neither copied:
+
+**GolfForge's Open Connect server driver** — validated with the Square through
+a connector — documents the device's protocol as arm / fire / re-arm:
+connect-time 201 arms the first shot; *"after club-data arrives (end-of-shot),
+the driver waits ~3 seconds then sends exactly one re-arm {Code:201}.
+Re-arming too early freezes the loop."* The C++ comment gives the reason:
+*"the connector fires one shot per arm then resets (~2-3s)"*. The trigger is
+the club-data frame specifically; the 201 is the two-field literal
+`{"Code":201,"Message":"GSPro Player Information","Player":{"Handed":"RH","Club":"DR"}}`;
+no retry.
+
+**A surviving fork of the taken-down Square connector** shows the other half.
+It arms ball detection (BLE club command, then BLE detect-ball) on receipt of
+a simulator message whose `Message` is the exact literal
+`"GSPro Player Information"` — or the undocumented `"GSPro ready"`, which real
+GSPro evidently sends when the next shot is set up. And it sends a frame to the
+simulator **only when its ready state changes**. That is why the bay log goes
+silent after every shot: not-ready, nothing changing, nothing sent. A re-arm
+driven by incoming frames — every version this backend shipped — fires once,
+too early, and then has nothing to fire on.
+
+The re-arm is now a timer: club-data frame → wait `gspro_rearm_delay_s` (3 s)
+→ one 201 with the validated literal → a slow repeat every 10 s only while the
+monitor still reports unready, six at most. Cancelled the instant a ready
+report arrives, and on disconnect. The failure mode is early, never late, so
+the repeat is safe insurance and the fast retry it replaces was the bug.
+
+Also fixed by the same reading: the app's club picker broadcast
+`"Message": "Player Information"`, a paraphrase the connector's literal match
+ignores. It now sends the real one.
+
+Corrections to the record while here: `LaunchMonitorIsReady` is not "not
+implemented" by GSPro in any sense that matters — a connector uses it to say
+whether the device is armed, and this backend reads it for exactly that. And
+the OpenShotGolf sequence in §3c (club config, then `DetectBall`, re-sent after
+every shot) is precisely what the bridge does on receipt of the 201; §3c's
+guess that SQG-GSPRO-Connect might expose an auto-re-arm *setting* is moot —
+the re-arm is the simulator's job, and this backend is the simulator.
 
 **D12 is closed by these two.** "The monitor is not registering the ball" was
 never true. It registered the ball; the backend discarded the frame, and then

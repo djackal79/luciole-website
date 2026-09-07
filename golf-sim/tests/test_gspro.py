@@ -53,6 +53,10 @@ async def listener(settings, correlator):
     assert await served.start()
     # Port 0 means the real port is only known once bound.
     settings.gspro_port = served._server.sockets[0].getsockname()[1]
+    # The real settle is 3 s; the tests only need the ordering to hold.
+    settings.gspro_rearm_delay_s = 0.5
+    settings.gspro_rearm_retry_s = 0.5
+    settings.gspro_rearm_max_attempts = 3
     try:
         yield served
     finally:
@@ -192,7 +196,8 @@ async def test_club_selection_is_pushed_as_a_201_player_message(
         assert await listener.set_club("7I") == 1
         message = await read_json(reader)
         assert message["Code"] == 201
-        assert message["Message"] == "Player Information"
+        # The exact literal. Connectors match it; a paraphrase is ignored.
+        assert message["Message"] == "GSPro Player Information"
         assert message["Player"]["Club"] == "7I"
 
         # And it is session state, so it reaches shots from any source.
@@ -373,6 +378,10 @@ async def relaying_listener(settings, correlator, gspro_upstream):
     served = GSProListener(settings, correlator)
     assert await served.start()
     settings.gspro_port = served._server.sockets[0].getsockname()[1]
+    # The real settle is 3 s; the tests only need the ordering to hold.
+    settings.gspro_rearm_delay_s = 0.5
+    settings.gspro_rearm_retry_s = 0.5
+    settings.gspro_rearm_max_attempts = 3
     try:
         yield served
     finally:
@@ -443,6 +452,10 @@ async def test_recording_continues_when_gspro_is_down(settings, correlator):
     served = GSProListener(settings, correlator)
     assert await served.start()
     settings.gspro_port = served._server.sockets[0].getsockname()[1]
+    # The real settle is 3 s; the tests only need the ordering to hold.
+    settings.gspro_rearm_delay_s = 0.5
+    settings.gspro_rearm_retry_s = 0.5
+    settings.gspro_rearm_max_attempts = 3
     try:
         reader, writer = await connect(settings)
         try:
@@ -508,11 +521,15 @@ async def test_a_monitor_still_not_ready_is_told_again(listener, settings):
             "DeviceID": "SquareGolf",
             "ShotDataOptions": {"IsHeartBeat": True, "LaunchMonitorIsReady": False},
         })
-        # The frame is acknowledged first -- GSPro's real order -- and the
-        # re-arm follows as a club change: a decoy, then the club in play.
-        assert (await read_json(reader))["Code"] == 200      # heartbeat ack
-        assert (await read_json(reader))["Player"]["Club"] == "7I"
-        assert (await read_json(reader))["Player"]["Club"] == "DR"
+        assert (await read_json(reader))["Code"] == 200      # heartbeat ack, at once
+        # Nothing more inside the settle window -- told sooner, the Square
+        # freezes for the rest of the session ...
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(reader.readline(), timeout=0.25)
+        # ... then the club, once.
+        frame = await asyncio.wait_for(read_json(reader), timeout=1.0)
+        assert frame["Code"] == 201
+        assert frame["Message"] == "GSPro Player Information"
     finally:
         writer.close()
 
@@ -584,9 +601,7 @@ async def test_one_swing_in_two_frames_is_one_shot(listener, settings, correlato
         await read_json(reader)
         await asyncio.sleep(0.1)
         await send(writer, SQUARE_CLUB)
-        assert (await read_json(reader))["Code"] == 200   # ack
-        assert (await read_json(reader))["Code"] == 201   # re-arm, decoy club
-        assert (await read_json(reader))["Code"] == 201   # re-arm, real club
+        assert (await read_json(reader))["Code"] == 200   # ack; the re-arm waits
         await asyncio.sleep(0.2)
 
         assert listener.shots_received == 1, "the swing was recorded twice"
@@ -628,9 +643,7 @@ async def test_the_merge_does_not_kill_the_connection(listener, settings, correl
         await read_json(reader)
         await asyncio.sleep(0.1)
         await send(writer, SQUARE_CLUB)
-        assert (await read_json(reader))["Code"] == 200   # ack
-        assert (await read_json(reader))["Code"] == 201   # re-arm, decoy club
-        assert (await read_json(reader))["Code"] == 201   # re-arm, real club
+        assert (await read_json(reader))["Code"] == 200   # ack; the re-arm waits
         await asyncio.sleep(0.2)
 
         # Still talking: a further frame is answered, not silence from a
@@ -642,12 +655,14 @@ async def test_the_merge_does_not_kill_the_connection(listener, settings, correl
         writer.close()
 
 
-async def test_the_club_frame_re_arms_the_monitor(listener, settings):
-    """The Square goes unready the instant it has reported a strike, and says
-    so on the *club* frame -- which is a shot by every content test, so it
-    returns before the heartbeat branch where the re-arm used to live. The
-    device was armed once and never again: exactly one shot per session, which
-    is what the bay saw."""
+async def test_the_club_frame_re_arms_the_monitor_after_it_has_settled(
+    listener, settings
+):
+    """Club data marks the end of a shot. The device then has to finish its
+    own cycle before it will take another arm signal; re-armed inside that
+    window it freezes -- face dark for the rest of the session, which is what
+    the bay saw four fixes running. So: acknowledge at once, say nothing for
+    the settle, then one 201."""
     reader, writer = await connect(settings)
     try:
         await send(writer, SQUARE_BALL)                   # ready: true
@@ -655,21 +670,29 @@ async def test_the_club_frame_re_arms_the_monitor(listener, settings):
         await asyncio.sleep(0.1)
 
         before = listener.player_info_sent
-        await send(writer, SQUARE_CLUB)                   # ready: false
-        assert (await read_json(reader))["Code"] == 200
-        assert (await read_json(reader))["Code"] == 201, "the monitor was left unarmed"
-        assert (await read_json(reader))["Code"] == 201
+        await send(writer, SQUARE_CLUB)                   # ready: false, end of shot
+        assert (await read_json(reader))["Code"] == 200   # ack, at once
+        assert listener.rearm_pending
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(reader.readline(), timeout=0.25)
+
+        frame = await asyncio.wait_for(read_json(reader), timeout=1.0)
+        assert frame["Code"] == 201, "the monitor was left unarmed"
+        assert frame["Message"] == "GSPro Player Information"
+        assert frame["Player"] == {"Handed": "RH", "Club": "DR"}, (
+            "the two fields a validated server sends, nothing more"
+        )
         assert listener.player_info_sent == before + 1
+        assert listener.rearm_attempts == 1
     finally:
         writer.close()
 
-
-async def test_the_first_not_ready_frame_is_not_swallowed_by_the_throttle(
+async def test_a_monitor_that_was_never_ready_is_armed_after_the_settle(
     listener, settings
 ):
-    """The connect-time announce stamps the throttle clock. A monitor that
-    reports not-ready inside the next second -- which is every monitor that was
-    never ready to begin with -- must still be told, or nothing ever arms it."""
+    """First contact: the bridge reports not-ready before anything has armed
+    it. The connect-time 201 usually does; if it did not, the settle timer
+    sends another rather than leaving the device dark."""
     reader, writer = await connect(settings)
     try:
         await send(writer, {
@@ -677,18 +700,16 @@ async def test_the_first_not_ready_frame_is_not_swallowed_by_the_throttle(
             "ShotDataOptions": {"IsHeartBeat": True, "LaunchMonitorIsReady": False},
         })
         assert (await read_json(reader))["Code"] == 200
-        assert (await read_json(reader))["Code"] == 201
-        assert (await read_json(reader))["Code"] == 201
+        frame = await asyncio.wait_for(read_json(reader), timeout=1.0)
+        assert frame["Code"] == 201
     finally:
         writer.close()
 
-
-async def test_a_burst_of_not_ready_frames_gets_one_nudge(listener, settings):
-    """Only *repeats* of a known not-ready state wait. A monitor heartbeating
-    at 10 Hz while it warms up should not draw ten club frames a second back --
-    and since a re-arm *changes the club*, hammering it is not merely noisy: a
-    device handed a fresh selection every second may never be left alone long
-    enough to act on one."""
+async def test_a_burst_of_not_ready_frames_gets_one_re_arm(listener, settings):
+    """A repeat of not-ready neither adds a re-arm nor restarts the settle. A
+    bridge that heartbeats its state at 10 Hz would otherwise push the re-arm
+    out forever; one that only reports changes (the Square's) sends nothing to
+    push it with -- which is why the timer, not the traffic, drives it."""
     reader, writer = await connect(settings)
     beat = {
         "DeviceID": "SquareGolf",
@@ -697,9 +718,9 @@ async def test_a_burst_of_not_ready_frames_gets_one_nudge(listener, settings):
     try:
         for _ in range(5):
             await send(writer, beat)
-        await asyncio.sleep(0.3)
-        # One for the edge into not-ready, then silence for the repeats.
-        assert listener.player_info_sent == 2, "connect announce plus one nudge"
+        await asyncio.sleep(0.8)
+        # The connect-time one, then exactly one after the settle.
+        assert listener.player_info_sent == 2, "connect announce plus one re-arm"
     finally:
         writer.close()
 
@@ -725,98 +746,6 @@ async def test_health_reports_what_the_monitor_says_about_itself(
         writer.close()
 
 
-async def test_the_re_arm_changes_the_club_and_changes_it_back(listener, settings):
-    """Repeating the club the monitor already has does nothing -- measured in
-    the bay, where a 201 went out after every shot and the Square stayed
-    unready indefinitely. The *change* is the signal, which is why pressing K
-    (club up) in GSPro is the known workaround for the same symptom. So the
-    re-arm must be two distinct selections, ending on the real club."""
-    reader, writer = await connect(settings)
-    try:
-        await send(writer, SQUARE_BALL)                   # ready: true
-        assert (await read_json(reader))["Code"] == 200
-        await asyncio.sleep(0.1)
-
-        await send(writer, SQUARE_CLUB)                   # ready: false
-        assert (await read_json(reader))["Code"] == 200   # ack first
-        first = await read_json(reader)
-        second = await read_json(reader)
-
-        assert first["Code"] == second["Code"] == 201
-        assert first["Player"]["Club"] != second["Player"]["Club"], (
-            "the monitor sees no change and stays unarmed"
-        )
-        # Ends on the club actually in play, so shot tagging is unaffected.
-        assert second["Player"]["Club"] == "DR"
-    finally:
-        writer.close()
-
-
-async def test_the_decoy_is_never_the_club_in_play(listener, settings, correlator):
-    """With a 7-iron in hand the configured decoy *is* the real club, and a
-    re-arm that sends 7I twice is no change at all."""
-    settings.gspro_rearm_decoy_club = "7I"
-    correlator.current_club = "7I"
-    reader, writer = await connect(settings)
-    try:
-        await send(writer, SQUARE_BALL)
-        await read_json(reader)
-        await asyncio.sleep(0.1)
-
-        await send(writer, SQUARE_CLUB)
-        await read_json(reader)
-        first = await read_json(reader)
-        second = await read_json(reader)
-
-        assert first["Player"]["Club"] != "7I"
-        assert second["Player"]["Club"] == "7I"
-    finally:
-        writer.close()
-
-
-async def test_the_nudge_can_be_turned_off(listener, settings):
-    """If the club change turns out to upset some other monitor, one setting
-    puts it back to a plain repeat."""
-    settings.gspro_rearm_club_nudge = False
-    reader, writer = await connect(settings)
-    try:
-        await send(writer, SQUARE_BALL)
-        await read_json(reader)
-        await asyncio.sleep(0.1)
-
-        await send(writer, SQUARE_CLUB)
-        assert (await read_json(reader))["Code"] == 200
-        assert (await read_json(reader))["Player"]["Club"] == "DR"
-        with pytest.raises(asyncio.TimeoutError):
-            await asyncio.wait_for(reader.readline(), timeout=0.5)
-    finally:
-        writer.close()
-
-
-async def test_re_arm_attempts_back_off(listener, settings):
-    """Retrying harder is the obvious response to "it did not arm" and it is
-    the wrong one -- each attempt changes the club, so a one-second retry loop
-    never lets the device settle on any selection. Attempts must space out."""
-    settings.gspro_rearm_club_nudge = False       # one frame per attempt
-    reader, writer = await connect(settings)
-    beat = {
-        "DeviceID": "SquareGolf",
-        "ShotDataOptions": {"IsHeartBeat": True, "LaunchMonitorIsReady": False},
-    }
-    try:
-        # Two seconds of heartbeats at 20 Hz. A flat one-second throttle would
-        # give two nudges; the backoff gives the immediate one and then waits.
-        for _ in range(40):
-            await send(writer, beat)
-            await asyncio.sleep(0.05)
-        await asyncio.sleep(0.2)
-        assert listener._rearm_attempts == 1, (
-            f"{listener._rearm_attempts} club changes in two seconds"
-        )
-    finally:
-        writer.close()
-
-
 async def test_recovery_is_reported_with_both_numbers(listener, settings, caplog):
     """The line that answers "did the re-arm work", logged on recovery because
     that is the only moment both numbers are known -- and because it survives a
@@ -836,3 +765,66 @@ async def test_recovery_is_reported_with_both_numbers(listener, settings, caplog
         assert any("armed again after" in r.getMessage() for r in caplog.records)
     finally:
         writer.close()
+
+
+
+async def test_a_ready_report_cancels_the_pending_re_arm(listener, settings):
+    """The connect-time 201 usually arms the device inside the settle window.
+    Once it says so, the scheduled re-arm must not go out on top of it."""
+    reader, writer = await connect(settings)
+    beat = {"DeviceID": "SquareGolf", "ShotDataOptions": {"IsHeartBeat": True}}
+    try:
+        await send(writer, {**beat, "ShotDataOptions": {
+            **beat["ShotDataOptions"], "LaunchMonitorIsReady": False}})
+        assert (await read_json(reader))["Code"] == 200
+        assert listener.rearm_pending
+        await send(writer, {**beat, "ShotDataOptions": {
+            **beat["ShotDataOptions"], "LaunchMonitorIsReady": True}})
+        assert (await read_json(reader))["Code"] == 200
+        assert not listener.rearm_pending
+
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(reader.readline(), timeout=1.2)
+        assert listener.rearm_attempts == 0
+    finally:
+        writer.close()
+
+
+async def test_the_re_arm_is_repeated_slowly_and_then_gives_up(listener, settings):
+    """Insurance, not a hammer. A validated server sends one and stops; a slow
+    repeat while the monitor still reports unready cannot be *early*, which is
+    the only way this signal does harm. Six ignored (three here) is a fault
+    to log, not a reason to keep going."""
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, {
+            "DeviceID": "SquareGolf",
+            "ShotDataOptions": {"IsHeartBeat": True, "LaunchMonitorIsReady": False},
+        })
+        assert (await read_json(reader))["Code"] == 200
+
+        codes = []
+        while True:
+            try:
+                codes.append((await asyncio.wait_for(read_json(reader), timeout=1.0))["Code"])
+            except asyncio.TimeoutError:
+                break
+        assert codes == [201, 201, 201]
+        assert listener.rearm_attempts == 3
+        assert not listener.rearm_pending
+    finally:
+        writer.close()
+
+
+async def test_the_re_arm_is_cancelled_on_disconnect(listener, settings):
+    reader, writer = await connect(settings)
+    await send(writer, {
+        "DeviceID": "SquareGolf",
+        "ShotDataOptions": {"IsHeartBeat": True, "LaunchMonitorIsReady": False},
+    })
+    assert (await read_json(reader))["Code"] == 200
+    assert listener.rearm_pending
+    writer.close()
+    await asyncio.sleep(0.8)
+    assert not listener.rearm_pending
+    assert listener._arm_tasks == {}

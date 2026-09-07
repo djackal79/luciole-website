@@ -207,8 +207,12 @@ discarding the frames. Read the log before suspecting the hardware:
 
 | In the log | What it means |
 |---|---|
-| `monitor reports NOT READY`, never `READY` | The device has not been armed. It should arm on the `sent player info` line that follows; if it never says READY, that is a real fault. |
-| `monitor reports READY` | Bluetooth is fine and the device is armed. Any missing shot from here is a backend or bridge problem, not the monitor. |
+| `sent player info on connect` | The first arm. The face should light within a second or two. |
+| `monitor reports READY -- armed for the next strike` | Bluetooth is fine and the device is armed. Any missing shot from here is a backend or bridge problem, not the monitor. |
+| `monitor reports NOT READY -- re-arm in 3.0s` | Normal after every shot. The device has to finish its own cycle before it will take another arm signal; the backend is waiting it out on purpose. |
+| `re-arm 1 sent (club DR) 3.0s after the shot` | The arm signal went. The face should light within a second or two. |
+| `armed again after 4.2s and 1 re-arm attempt(s)` | It worked. This is the line to look for. |
+| `still not ready ... giving up` | Six re-arms over a minute, ignored. Real fault — keep the log. Selecting a club in the app sends one more. |
 | `ignoring frame -- <reason>` | A frame arrived and was not treated as a strike. The reason is printed in full; that is the thing to report. |
 | Nothing at all after `launch monitor connected` | Now suspect Bluetooth. The bridge's own window shows that half, and the ball-ready sound tests it without touching any config. |
 
@@ -220,10 +224,13 @@ no":
 curl.exe http://127.0.0.1:8000/api/health
 ```
 
-**After a shot the monitor reports NOT READY, and that is normal** — you have
-just hit the ball away, so there is nothing on the mat to detect. Tee up
-another and watch for `monitor reports READY`. That line, not the absence of
-an error, is what says you can swing again.
+**After a shot the monitor reports NOT READY, and that is normal.** The
+device disarms itself after every strike and needs to be told to arm again —
+but not for about three seconds, or it freezes for the rest of the session.
+The backend waits that out and then sends the arm signal once. Watch for
+`armed again after …`; that line, not the absence of an error, is what says
+you can swing again. Do not change club in the app inside those three
+seconds — that sends the same signal early.
 
 Then:
 

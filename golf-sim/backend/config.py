@@ -52,27 +52,27 @@ class Settings(BaseSettings):
     #: Log every frame the monitor sends. For working out what a bridge
     #: actually emits when shots are not registering.
     gspro_log_frames: bool = False
-    #: Push a Code 201 "Player Information" frame on connect, and again
-    #: whenever a heartbeat reports LaunchMonitorIsReady false. Some bridges
-    #: configure the device per club and will not arm ball detection until
-    #: they have been told one. Set false if a monitor objects to it.
+    #: Push a Code 201 "GSPro Player Information" frame on connect, and again
+    #: after each shot once the device has settled (below). The Square's
+    #: bridge configures the device per club and enables ball detection on
+    #: that message; it never arms without it. Set false if a monitor objects.
     gspro_send_player_info: bool = True
     gspro_default_club: str = "DR"
     gspro_player_handed: str = "RH"
-    gspro_distance_to_target: int = 200
 
-    #: Re-arm by *changing* the club, not by repeating it. A Square that has
-    #: just reported a strike ignores a Code 201 carrying the club it already
-    #: has -- measured in the bay: one is sent after every shot and the device
-    #: stays unready. The community workaround under GSPro is to press K
-    #: (club up), which is a 201 with a *different* club. So the re-arm sends
-    #: a decoy club and then the real one, and the change is what arms it.
-    gspro_rearm_club_nudge: bool = True
-    #: The stand-in club, swapped for another if it is the one in play.
-    gspro_rearm_decoy_club: str = "7I"
-    #: Held between the two, so the device sees two distinct selections
-    #: rather than one coalesced write.
-    gspro_rearm_gap_s: float = 0.25
+    #: The Square follows an arm / fire / re-arm protocol over Open Connect: a
+    #: Code 201 arms it, one strike disarms it, and it needs another 201 to
+    #: arm again. But *not straight away*. Re-arming inside the device's own
+    #: post-shot cycle freezes it -- the face never lights again, for the rest
+    #: of the session -- and that cycle runs a few seconds past the club-data
+    #: frame. A server validated against the Square through a connector waits
+    #: ~3 s after club data and then sends exactly one 201. This is that wait.
+    gspro_rearm_delay_s: float = 3.0
+    #: If the monitor still has not reported ready, try again this often. The
+    #: failure mode is *early*, never *late*, so a slow repeat is safe and a
+    #: fast one is the bug this replaces.
+    gspro_rearm_retry_s: float = 10.0
+    gspro_rearm_max_attempts: int = 6
 
     # ---- GSPro pass-through -----------------------------------------------
     #: Relay every frame on to the real GSPro, so the course plays while this
