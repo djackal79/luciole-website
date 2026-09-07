@@ -233,38 +233,56 @@ class GSProListener:
         if self.settings.gspro_log_frames:
             log.info("gspro frame: %s", json.dumps(payload)[:4000])
 
-        # Re-arm on ANY frame that reports the monitor unready -- not just
-        # heartbeats. The Square goes unready again the instant it has
-        # reported a strike, and it says so on the club frame, which is a
-        # *shot* frame and returns before the heartbeat branch is reached.
-        # Checking only heartbeats therefore armed the device once and never
-        # again: one shot per session, then silence.
-        if not relayed:
-            options = payload.get("ShotDataOptions") or {}
-            ready = options.get("LaunchMonitorIsReady")
-            if ready is not None:
-                was, self._monitor_ready = self._monitor_ready, bool(ready)
-                if self._monitor_ready is not was:
-                    # The one transition worth a line in the log, and it is
-                    # logged before the reply so the bay reads cause then
-                    # effect. Coming back to ready after a strike is the proof
-                    # the re-arm landed; staying unready is the proof it did
-                    # not, and there is no other way to tell those apart.
-                    log.info(
-                        "gspro: monitor reports %s",
-                        "READY -- armed for the next strike" if ready else "NOT READY",
-                    )
-                if ready is False:
-                    # Announce whenever this is *news*: the monitor was ready
-                    # and has just gone unready, or we had never heard its
-                    # readiness at all. Only a repeat of an already-known
-                    # not-ready state is throttled. Anything looser drops the
-                    # one re-arm that matters -- the connect-time announce
-                    # stamps the throttle clock, so a not-ready frame arriving
-                    # inside the first second would be silently swallowed and
-                    # the device never armed.
-                    await self._announce_player(writer, force=was is not False)
+        # The re-arm is deferred to a finally below so it lands *after* the
+        # reply to this frame. GSPro's real order is acknowledge the shot,
+        # then send player information; a 201 arriving before the ack is a
+        # sequence no connector ever sees in the wild.
+        rearm = self._note_readiness(payload) if not relayed else False
+        try:
+            await self._handle(payload, writer, relayed)
+        finally:
+            if rearm:
+                await self._announce_player(writer, force=True, rearm=True)
 
+    def _note_readiness(self, payload: dict[str, Any]) -> bool:
+        """Record what the monitor says about itself. True if it needs arming.
+
+        Checked on *every* frame, not just heartbeats. The Square goes unready
+        the instant it has reported a strike and says so on the club frame,
+        which is a shot frame -- so a check that only ran on heartbeats armed
+        the device once and never again.
+        """
+        options = payload.get("ShotDataOptions") or {}
+        ready = options.get("LaunchMonitorIsReady")
+        if ready is None:
+            return False
+
+        was, self._monitor_ready = self._monitor_ready, bool(ready)
+        if self._monitor_ready is not was:
+            # The one transition worth a line in the log. Coming back to ready
+            # after a strike is the proof the re-arm landed; staying unready is
+            # the proof it did not, and there is no other way to tell those
+            # apart from the bay.
+            log.info(
+                "gspro: monitor reports %s",
+                "READY -- armed for the next strike" if ready else "NOT READY",
+            )
+        if ready is not False:
+            return False
+
+        # Announce whenever this is *news*: the monitor was ready and has just
+        # gone unready, or we had never heard its readiness at all. Only a
+        # repeat of an already-known not-ready state is throttled -- the
+        # connect-time announce stamps the throttle clock, so anything looser
+        # swallows the not-ready frame that arrives inside the first second,
+        # which is every monitor that was never ready to begin with.
+        if was is not False:
+            return True
+        return time.monotonic() - self._player_info_at >= PLAYER_INFO_MIN_GAP_S
+
+    async def _handle(
+        self, payload: dict[str, Any], writer: asyncio.StreamWriter, relayed: bool
+    ) -> None:
         if is_heartbeat(payload):
             self.heartbeats_received += 1
             if not relayed:
@@ -416,7 +434,7 @@ class GSProListener:
 
     # -- outbound ----------------------------------------------------------
 
-    def _player_info(self) -> dict[str, Any]:
+    def _player_info(self, club: str | None = None) -> dict[str, Any]:
         """The message GSPro pushes to tell a connector which club is in play.
 
         Code 201 in Open Connect, and it is not merely informational: a bridge
@@ -435,21 +453,45 @@ class GSProListener:
             "Message": "GSPro Player Information",
             "Player": {
                 "Handed": self.settings.gspro_player_handed,
-                "Club": self.current_club or self.settings.gspro_default_club,
+                "Club": club or self.current_club or self.settings.gspro_default_club,
                 "DistanceToTarget": self.settings.gspro_distance_to_target,
                 "Surface": "tee",
             },
         }
 
+    def _decoy_club(self) -> str:
+        """A club that is definitely not the one in play."""
+        real = self.current_club or self.settings.gspro_default_club
+        decoy = self.settings.gspro_rearm_decoy_club
+        if decoy.upper() == real.upper():
+            # Whatever the decoy is set to, it must differ from the real club
+            # or the change the monitor is waiting for never happens.
+            return "DR" if real.upper() != "DR" else "7I"
+        return decoy
+
     async def _announce_player(
-        self, writer: asyncio.StreamWriter, *, force: bool = False
+        self,
+        writer: asyncio.StreamWriter,
+        *,
+        force: bool = False,
+        rearm: bool = False,
     ) -> None:
         """Tell the monitor the club, if we are the one answering it.
 
-        ``force`` skips the throttle. Used whenever a not-ready report is news
-        rather than a repeat, which is the re-arm that actually matters -- a
-        device that has just reported a strike must be armed again before it
-        will report another, and dropping that one nudge costs the next shot.
+        ``force`` skips the throttle. ``rearm`` changes the club and changes it
+        back, which is what actually arms a Square that has just reported a
+        strike.
+
+        Repeating the club it already has does nothing. Measured in the bay on
+        7 September: a Code 201 goes out after every shot and the device stays
+        at ``LaunchMonitorIsReady: false`` indefinitely. Under GSPro the
+        community workaround for the same symptom is to press K -- club up --
+        which is a 201 carrying a *different* club. The change is the signal,
+        not the message.
+
+        So a re-arm sends a decoy club, holds briefly, then sends the real one:
+        two distinct selections, ending on the right club so shot tagging is
+        unaffected.
         """
         if not self.settings.gspro_send_player_info:
             return
@@ -458,11 +500,20 @@ class GSProListener:
             return
         self._player_info_at = now
         self.player_info_sent += 1
-        log.info(
-            "gspro: sent player info (club %s) -- a monitor that never arms is "
-            "usually waiting for this",
-            self.current_club or self.settings.gspro_default_club,
-        )
+        real = self.current_club or self.settings.gspro_default_club
+
+        if rearm and self.settings.gspro_rearm_club_nudge:
+            decoy = self._decoy_club()
+            log.info("gspro: re-arming -- club %s then back to %s", decoy, real)
+            if not await self._send(writer, self._player_info(decoy)):
+                return
+            await asyncio.sleep(self.settings.gspro_rearm_gap_s)
+            self._player_info_at = time.monotonic()
+        else:
+            log.info(
+                "gspro: sent player info (club %s) -- a monitor that never arms "
+                "is usually waiting for this", real,
+            )
         await self._send(writer, self._player_info())
 
     def _ack(self, code: int, message: str) -> dict[str, Any]:

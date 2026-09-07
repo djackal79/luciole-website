@@ -61,6 +61,19 @@ class Settings(BaseSettings):
     gspro_player_handed: str = "RH"
     gspro_distance_to_target: int = 200
 
+    #: Re-arm by *changing* the club, not by repeating it. A Square that has
+    #: just reported a strike ignores a Code 201 carrying the club it already
+    #: has -- measured in the bay: one is sent after every shot and the device
+    #: stays unready. The community workaround under GSPro is to press K
+    #: (club up), which is a 201 with a *different* club. So the re-arm sends
+    #: a decoy club and then the real one, and the change is what arms it.
+    gspro_rearm_club_nudge: bool = True
+    #: The stand-in club, swapped for another if it is the one in play.
+    gspro_rearm_decoy_club: str = "7I"
+    #: Held between the two, so the device sees two distinct selections
+    #: rather than one coalesced write.
+    gspro_rearm_gap_s: float = 0.25
+
     # ---- GSPro pass-through -----------------------------------------------
     #: Relay every frame on to the real GSPro, so the course plays while this
     #: app records. Only one process can bind a port, so run the listener on

@@ -114,6 +114,7 @@ are now answered; their decisions are recorded below and are binding.
 | D12 | Square LM not registering the ball | **Blocking hardware** | **Resolved 7 Sep** — never hardware; see D17/D18 |
 | D17 | The Square flags *every* frame `IsHeartBeat`, strikes included | High | **Fixed** — content decides, not the flag |
 | D18 | The Square must be re-armed after every shot | High | **Fixed** — Code 201 on any not-ready frame |
+| D19 | Re-arming needs a club *change*; a repeat is ignored | High | **Fixed** — decoy club, then the real one |
 | D13 | Kinovea capture trigger not located | Medium | Research |
 | D14 | flighthook could replace the LM bridge | — | **Ruled out** — Omni only, bay has the original Square |
 
@@ -447,6 +448,42 @@ second — which is every monitor that was never ready to begin with — had its
 one nudge silently swallowed, and nothing armed it. Both failure modes are
 pinned by tests that were checked against a deliberate re-introduction of each
 bug.
+
+### D19 — The Square re-arms on a club *change*, not on a repeat — FIXED
+
+D18 got the mechanism right and the content wrong. The re-arm fired on exactly
+the right frame, the log confirmed it, and the device stayed unready anyway:
+
+```
+18:48:41,571 gspro: monitor reports NOT READY
+18:48:41,571 gspro: sent player info (club DR) ...
+                    -- and nothing. No READY, ever.
+```
+
+A Code 201 carrying the club the monitor already has is not a signal. The
+**change** is. Under GSPro the community workaround for this exact symptom --
+the Square's eight red sensors not lighting after a shot -- is to press **K**,
+which is *club up*: a 201 with a different club.
+
+The bay log is what discriminates between the two readings. "Any 201 arms it"
+predicts the device would have armed at 18:48:41; it did not. So the club must
+differ from the one in play.
+
+The re-arm therefore sends a decoy club, holds `gspro_rearm_gap_s` (250 ms),
+then sends the real one — two distinct selections, ending on the club actually
+in play so shot tagging is unaffected. `gspro_rearm_decoy_club` defaults to
+`7I` and is swapped for `DR` when a 7-iron is what is in hand; a decoy equal to
+the real club is no change at all, which is the bug this entry is about.
+`gspro_rearm_club_nudge=false` reverts to a plain repeat.
+
+Two ordering points came out of the same reading. The frame is acknowledged
+*before* the 201s now: GSPro's real order is acknowledge the shot, then send
+player information, and a 201 arriving ahead of the ack is a sequence no
+connector meets in the wild. And GSPro's own spec marks `LaunchMonitorIsReady`
+"currently not implemented" and `IsHeartBeat` "optional (retired)" — both
+fields are the Square's own account of itself, which GSPro ignores. That is
+consistent with D17: the flags describe the device, they do not classify the
+frame.
 
 **D12 is closed by these two.** "The monitor is not registering the ball" was
 never true. It registered the ball; the backend discarded the frame, and then
