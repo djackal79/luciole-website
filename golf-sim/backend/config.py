@@ -60,19 +60,14 @@ class Settings(BaseSettings):
     gspro_default_club: str = "DR"
     gspro_player_handed: str = "RH"
 
-    #: The Square follows an arm / fire / re-arm protocol over Open Connect: a
-    #: Code 201 arms it, one strike disarms it, and it needs another 201 to
-    #: arm again. But *not straight away*. Re-arming inside the device's own
-    #: post-shot cycle freezes it -- the face never lights again, for the rest
-    #: of the session -- and that cycle runs a few seconds past the club-data
-    #: frame. A server validated against the Square through a connector waits
-    #: ~3 s after club data and then sends exactly one 201. This is that wait.
+    #: The Square's connector fires **one shot per arm**, then resets to idle
+    #: over ~2-3 s with no "reset done" signal. Per shot the order is
+    #: LaunchMonitorIsReady:true -> ball data -> club data (end of shot) ->
+    #: reset. The connect-time 201 arms shot 1; club data schedules exactly
+    #: one more, this long after. Re-arming immediately, on ball data, or on a
+    #: repeating timer lands mid-reset and freezes the loop -- the face never
+    #: lights again for the rest of the session. Measured in this bay twice.
     gspro_rearm_delay_s: float = 3.0
-    #: If the monitor still has not reported ready, try again this often. The
-    #: failure mode is *early*, never *late*, so a slow repeat is safe and a
-    #: fast one is the bug this replaces.
-    gspro_rearm_retry_s: float = 10.0
-    gspro_rearm_max_attempts: int = 6
 
     # ---- GSPro pass-through -----------------------------------------------
     #: Relay every frame on to the real GSPro, so the course plays while this

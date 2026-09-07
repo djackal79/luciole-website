@@ -115,7 +115,8 @@ are now answered; their decisions are recorded below and are binding.
 | D17 | The Square flags *every* frame `IsHeartBeat`, strikes included | High | **Fixed** — content decides, not the flag |
 | D18 | The Square must be re-armed after every shot | High | **Fixed** — Code 201 on any not-ready frame |
 | D19 | Re-arming needs a club *change*; a repeat is ignored | High | **Retracted** — timing was the confound |
-| D21 | Re-arming inside the post-shot cycle freezes the Square | **High** | **Fixed** — settle 3 s after club data, then one 201 |
+| D21 | Re-arming inside the post-shot cycle freezes the Square | **High** | **Fixed** — club data, settle 3 s, **exactly one** 201 |
+| D22 | A frozen Square stays frozen until it is power-cycled | Medium | **Open** — no software recovery found |
 | D20 | The bay logs never contain the failure being debugged | High | **Closed** — the physical symptom was the missing data; see D21 |
 | D13 | Kinovea capture trigger not located | Medium | Research |
 | D14 | flighthook could replace the LM bridge | — | **Ruled out** — Omni only, bay has the original Square |
@@ -527,11 +528,38 @@ silent after every shot: not-ready, nothing changing, nothing sent. A re-arm
 driven by incoming frames — every version this backend shipped — fires once,
 too early, and then has nothing to fire on.
 
-The re-arm is now a timer: club-data frame → wait `gspro_rearm_delay_s` (3 s)
-→ one 201 with the validated literal → a slow repeat every 10 s only while the
-monitor still reports unready, six at most. Cancelled the instant a ready
-report arrives, and on disconnect. The failure mode is early, never late, so
-the repeat is safe insurance and the fast retry it replaces was the bug.
+The re-arm is: **club-data frame → wait 3 s → exactly one 201.** Nothing else
+schedules one, and nothing repeats it.
+
+Both halves of that cost a bay session before they were read properly. The
+first attempt at this entry armed on any transition into not-ready *and*
+retried six times, and the reference forbids both in one sentence — *"Re-arming
+on ball-data / immediately / on a timer lands mid-reset and freezes the loop"*.
+The C++ is unambiguous where the prose can be skimmed:
+
+```cpp
+if (Profile.bArmModel && MessageHasClubData(Msg))
+    RearmDueTime = FPlatformTime::Seconds() + Profile.RearmSettleSeconds;
+...
+if (RearmDueTime > 0.0 && FPlatformTime::Seconds() >= RearmDueTime)
+{
+    RearmDueTime = 0.0;   // cleared: one arm per club frame, never retried
+    SendPlayer();
+}
+```
+
+`ContainsClubData` is the only trigger. `LaunchMonitorIsReady` never arms
+anything — in the reference it feeds a player-facing ball-ready light, and in
+the connector source it is set from *ball* ready, meaning "a ball is on the mat
+and being watched". It goes false whenever the mat is empty, which includes the
+moment a monitor first connects. Arming on it fired 3 s into a session that had
+had no shot at all, landed in the connector's reset, and froze the device
+before the first ball: 19:30 on 7 September, six re-arms, face dark throughout.
+
+Two further deviations from the reference removed while here, neither
+diagnosed as harmful but both pointless: replies were framed `\r\n` where the
+reference uses `\n`, and the Code 200 ack carried a `Player` block the
+reference does not send.
 
 Also fixed by the same reading: the app's club picker broadcast
 `"Message": "Player Information"`, a paraphrase the connector's literal match
@@ -544,6 +572,17 @@ the OpenShotGolf sequence in §3c (club config, then `DetectBall`, re-sent after
 every shot) is precisely what the bridge does on receipt of the 201; §3c's
 guess that SQG-GSPRO-Connect might expose an auto-re-arm *setting* is moot —
 the re-arm is the simulator's job, and this backend is the simulator.
+
+### D22 — A frozen device does not recover on its own — OPEN
+
+Once the connector's arm loop is frozen, nothing this backend can send revives
+it: the 19:30 session sent six 201s over a minute to a device that never lit.
+No software recovery has been found. The bay procedure is to power-cycle the
+Square and restart the connector, which is now in the runbook.
+
+This matters for interpreting any future test: **a session that starts against
+an already-frozen device will fail however correct the code is.** Power-cycle
+first, then judge.
 
 **D12 is closed by these two.** "The monitor is not registering the ball" was
 never true. It registered the ball; the backend discarded the frame, and then

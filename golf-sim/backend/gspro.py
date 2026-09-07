@@ -241,26 +241,27 @@ class GSProListener:
             log.info("gspro frame: %s", json.dumps(payload)[:4000])
 
         if not relayed:
-            self._note_readiness(payload, writer)
+            self._note_readiness(payload)
+            options = payload.get("ShotDataOptions") or {}
+            if options.get("ContainsClubData") is True:
+                # Club data is the connector's end-of-shot marker, and the one
+                # and only thing that schedules a re-arm. Not the ready flag:
+                # that goes false whenever no ball is sitting on the mat, which
+                # includes the moment a monitor first connects -- so arming on
+                # it fires three seconds into a session that has had no shot,
+                # lands in the connector's reset, and freezes it. That is this
+                # log, 19:30 on 7 September.
+                self._schedule_rearm(writer)
         await self._handle(payload, writer, relayed)
 
-    def _note_readiness(
-        self, payload: dict[str, Any], writer: asyncio.StreamWriter
-    ) -> None:
-        """Record what the monitor says about itself, and schedule the re-arm.
+    def _note_readiness(self, payload: dict[str, Any]) -> None:
+        """Record what the monitor says about itself. Indicator only.
 
-        Checked on *every* frame, not just heartbeats: the Square goes unready
-        the instant it has reported a strike and says so on the club frame,
-        which is a shot frame.
-
-        The re-arm is a **timer**, never an immediate reply. Two measured
-        facts force that. The Square freezes if it is re-armed inside its own
-        post-shot cycle -- the face never lights again for the rest of the
-        session -- and that cycle runs a few seconds past the club-data frame.
-        And the bridge only sends a frame when its ready state *changes*, so
-        after a shot the line goes quiet: nothing arrives to hang a retry on.
-        A re-arm driven by incoming frames therefore fires once, too early,
-        and never again. Seven September, in full.
+        ``LaunchMonitorIsReady`` is the connector's *ball-ready* state -- there
+        is a ball on the mat and the device is watching it. The reference
+        implementation surfaces it as a player-facing light and never arms on
+        it, and neither do we: it is the proof an arm worked, not a request for
+        one.
         """
         options = payload.get("ShotDataOptions") or {}
         ready = options.get("LaunchMonitorIsReady")
@@ -268,47 +269,26 @@ class GSProListener:
             return
         now = time.monotonic()
         was, self._monitor_ready = self._monitor_ready, bool(ready)
-
-        if ready:
-            if was is not True:
-                if self._unready_since is not None:
-                    # The line that answers "did the re-arm work". Both
-                    # numbers are only known here, and it survives a log
-                    # trimmed to the shot.
-                    log.info(
-                        "gspro: armed again after %.1fs and %d re-arm attempt(s)",
-                        now - self._unready_since, self._rearm_attempts,
-                    )
-                else:
-                    log.info("gspro: monitor reports READY -- armed for the next strike")
-            self._cancel_rearm(writer)
-            self._unready_since = None
-            self._rearm_attempts = 0
+        if self._monitor_ready is was:
             return
-
-        # Club data marks the end of a shot, which is the moment the settle
-        # clock starts -- whatever the ready flag did on the ball frame. A
-        # bare transition into not-ready (first contact, or a bridge that
-        # reports ball state) starts it too. A *repeat* of not-ready does not
-        # restart it, or a bridge that heartbeats the state would push the
-        # re-arm out forever.
-        end_of_shot = options.get("ContainsClubData") is True
-        if was is not False:
+        if ready:
+            since = f" after {now - self._unready_since:.1f}s" if self._unready_since else ""
+            self._unready_since = None
+            log.info("gspro: monitor reports READY%s -- ball seen, armed for the "
+                     "next strike", since)
+        else:
             self._unready_since = now
-            self._rearm_attempts = 0
-            log.info(
-                "gspro: monitor reports NOT READY -- re-arm in %.1fs (told "
-                "sooner, the Square freezes)", self.settings.gspro_rearm_delay_s,
-            )
-        if was is not False or end_of_shot:
-            self._schedule_rearm(writer)
+            log.info("gspro: monitor reports NOT READY -- no ball on the mat")
 
     def _schedule_rearm(self, writer: asyncio.StreamWriter) -> None:
+        """Arm once, after the settle. A second club frame restarts the clock."""
         self._cancel_rearm(writer)
         task = asyncio.create_task(self._rearm_later(writer), name="gspro-rearm")
         self._arm_tasks[writer] = task
-        task.add_done_callback(lambda t: self._arm_tasks.pop(writer, None)
-                               if self._arm_tasks.get(writer) is t else None)
+        task.add_done_callback(
+            lambda t: self._arm_tasks.pop(writer, None)
+            if self._arm_tasks.get(writer) is t else None
+        )
 
     def _cancel_rearm(self, writer: asyncio.StreamWriter) -> None:
         task = self._arm_tasks.pop(writer, None)
@@ -316,33 +296,23 @@ class GSProListener:
             task.cancel()
 
     async def _rearm_later(self, writer: asyncio.StreamWriter) -> None:
-        """Wait out the device's post-shot cycle, then arm it once.
+        """Wait out the connector's reset, then send exactly one 201.
 
-        A validated server sends exactly one 201 after the settle and never
-        retries. The slow repeat here is insurance only: the failure mode is
-        *early*, never late, so a 201 ten seconds on cannot do harm, and a
-        monitor that ignores six of them is a fault to log, not to hammer.
+        Exactly one. There is no retry here and there must not be: a repeat is
+        the documented way to freeze the loop, and it cost this bay an evening.
+        If the device does not come back, that is a fault to report -- selecting
+        a club in the app sends one more by hand.
         """
         await asyncio.sleep(self.settings.gspro_rearm_delay_s)
-        limit = self.settings.gspro_rearm_max_attempts
-        while self._monitor_ready is False and writer in self._writers:
-            since = time.monotonic() - (self._unready_since or time.monotonic())
-            if self._rearm_attempts >= limit:
-                log.warning(
-                    "gspro: still not ready %.0fs and %d re-arms after the shot -- "
-                    "giving up. Select a club in the app to nudge it, and keep "
-                    "this log: the monitor is ignoring a message a validated "
-                    "server arms it with", since, self._rearm_attempts,
-                )
-                return
-            self._rearm_attempts += 1
-            log.info(
-                "gspro: re-arm %d sent (club %s) %.1fs after the shot",
-                self._rearm_attempts, self._club(), since,
-            )
-            if not await self._announce_player(writer):
-                return
-            await asyncio.sleep(self.settings.gspro_rearm_retry_s)
+        if writer not in self._writers:
+            return
+        self._rearm_attempts += 1
+        log.info(
+            "gspro: re-arm sent (club %s) %.1fs after the shot -- the face "
+            "should light; nothing more will be sent",
+            self._club(), self.settings.gspro_rearm_delay_s,
+        )
+        await self._announce_player(writer)
 
     async def _handle(
         self, payload: dict[str, Any], writer: asyncio.StreamWriter, relayed: bool
@@ -544,15 +514,9 @@ class GSProListener:
         return await self._send(writer, self._player_info())
 
     def _ack(self, code: int, message: str) -> dict[str, Any]:
-        return {
-            "Code": code,
-            "Message": message,
-            "Player": {
-                "Handed": "RH",
-                "Club": self.current_club or "DR",
-                "DistanceToTarget": 0,
-            },
-        }
+        # No Player block. The reference acks with Code and Message alone;
+        # a Player payload inside a 200 is a deviation with nothing to gain.
+        return {"Code": code, "Message": message}
 
     async def set_club(self, club: str | None) -> int:
         """Push a GSPro 201 Player message, which is how club selection
@@ -583,7 +547,9 @@ class GSProListener:
 
     async def _send(self, writer: asyncio.StreamWriter, message: dict[str, Any]) -> bool:
         try:
-            writer.write((json.dumps(message) + "\r\n").encode("utf-8"))
+            # Newline, as the reference server frames it. Connectors extract
+            # by brace depth, but matching it removes a variable.
+            writer.write((json.dumps(message) + "\n").encode("utf-8"))
             await writer.drain()
             return True
         except Exception:

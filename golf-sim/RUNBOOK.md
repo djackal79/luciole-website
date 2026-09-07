@@ -207,14 +207,19 @@ discarding the frames. Read the log before suspecting the hardware:
 
 | In the log | What it means |
 |---|---|
-| `sent player info on connect` | The first arm. The face should light within a second or two. |
-| `monitor reports READY -- armed for the next strike` | Bluetooth is fine and the device is armed. Any missing shot from here is a backend or bridge problem, not the monitor. |
-| `monitor reports NOT READY -- re-arm in 3.0s` | Normal after every shot. The device has to finish its own cycle before it will take another arm signal; the backend is waiting it out on purpose. |
-| `re-arm 1 sent (club DR) 3.0s after the shot` | The arm signal went. The face should light within a second or two. |
-| `armed again after 4.2s and 1 re-arm attempt(s)` | It worked. This is the line to look for. |
-| `still not ready ... giving up` | Six re-arms over a minute, ignored. Real fault — keep the log. Selecting a club in the app sends one more. |
+| `sent player info on connect` | The arm for shot 1. The face should light once a ball is on the mat. |
+| `monitor reports READY -- ball seen` | Armed, ball detected, swing away. |
+| `monitor reports NOT READY -- no ball on the mat` | Normal, and **not** a request for anything. It is what the device says whenever the mat is empty — including before your first ball of the session. |
+| `re-arm sent (club DR) 3.0s after the shot` | The one arm signal for the next shot. Nothing more will be sent, by design. |
+| `monitor reports READY after 4.2s` | It worked. This is the line to look for. |
 | `ignoring frame -- <reason>` | A frame arrived and was not treated as a strike. The reason is printed in full; that is the thing to report. |
 | Nothing at all after `launch monitor connected` | Now suspect Bluetooth. The bridge's own window shows that half, and the ball-ready sound tests it without touching any config. |
+
+**If the face never lights, the device is frozen and no amount of waiting fixes
+it.** The connector's arm loop wedges if it is re-armed while it is resetting,
+and there is no software recovery: power-cycle the Square, restart the
+connector, then start a fresh session. Judge nothing until you have done that —
+a frozen device fails every test regardless of what the backend does.
 
 The same answer without tailing the log — `monitor_ready` is `true`, `false`,
 or `null` for "it has never said", which is a different fault from "it said
@@ -225,12 +230,11 @@ curl.exe http://127.0.0.1:8000/api/health
 ```
 
 **After a shot the monitor reports NOT READY, and that is normal.** The
-device disarms itself after every strike and needs to be told to arm again —
-but not for about three seconds, or it freezes for the rest of the session.
-The backend waits that out and then sends the arm signal once. Watch for
-`armed again after …`; that line, not the absence of an error, is what says
-you can swing again. Do not change club in the app inside those three
-seconds — that sends the same signal early.
+connector fires one shot per arm, then resets to idle over two or three
+seconds. The backend waits that out and sends the arm signal exactly once.
+Watch for `monitor reports READY`; that line, not the absence of an error, is
+what says you can swing again. **Do not change club in the app inside those
+three seconds** — that sends the same signal early, which is what freezes it.
 
 Then:
 
