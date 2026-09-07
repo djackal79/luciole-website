@@ -400,7 +400,7 @@ class ShotCorrelator:
                 tracked.package = ShotPackage.model_validate(metadata)
                 metadata = tracked.package.to_json()
             storage.write_metadata(directory, metadata)
-            await self.bus.publish("shot.updated", metadata)
+            self.bus.publish(events.SHOT_UPDATED, metadata, shot_id=shot_id)
             return metadata
 
     async def set_pose(self, shot_id: str, block: dict[str, Any]) -> dict[str, Any] | None:

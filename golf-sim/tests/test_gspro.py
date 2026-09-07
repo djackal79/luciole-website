@@ -610,3 +610,26 @@ async def test_a_different_shot_number_is_a_different_swing(
         assert listener.shots_received == 2
     finally:
         writer.close()
+
+
+async def test_the_merge_does_not_kill_the_connection(listener, settings, correlator):
+    """A crash inside the merge dropped the monitor mid-session in the bay,
+    and the earlier tests missed it because the in-memory package is updated
+    before the throw -- so every assertion about the merged data still passed
+    while the connection died. This asserts the socket survives instead."""
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, SQUARE_BALL)
+        await read_json(reader)
+        await asyncio.sleep(0.1)
+        await send(writer, SQUARE_CLUB)
+        await read_json(reader)
+        await asyncio.sleep(0.2)
+
+        # Still talking: a further frame is answered, not silence from a
+        # connection the server tore down.
+        await send(writer, {**SQUARE_BALL, "ShotNumber": 9})
+        assert (await read_json(reader))["Message"] == "Shot received"
+        assert listener.shots_received == 2
+    finally:
+        writer.close()
