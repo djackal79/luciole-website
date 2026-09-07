@@ -11,10 +11,14 @@ import json
 import math
 from pathlib import Path
 
-import numpy as np
 import pytest
 
-import cv2
+# Pose is an optional install (~200 MB of mediapipe and opencv), so the whole
+# module steps aside when it is absent rather than failing collection. A suite
+# that errors because an *optional* dependency is missing tells a first-time
+# installer their checkout is broken when it is fine.
+np = pytest.importorskip("numpy", reason="pose extras not installed")
+cv2 = pytest.importorskip("cv2", reason="pose extras not installed")
 
 from backend.pose.calibration import (
     BOARD_TO_WORLD,

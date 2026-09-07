@@ -10,6 +10,10 @@ from pathlib import Path
 
 import pytest
 
+# See test_calibration: the pose extras are optional, so their tests skip
+# rather than break collection for anyone who has not installed them.
+pytest.importorskip("numpy", reason="pose extras not installed")
+
 from backend.models import DataStatus, SourceName
 from backend.pose import metrics
 from backend.pose.extractor import ExtractionError, PoseExtractor, PoseTrack

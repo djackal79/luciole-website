@@ -6,6 +6,11 @@ already proved the software is fine.
 
 Everything runs on the golf sim PC. Nothing is deployed anywhere.
 
+**State as of 8 September.** Stages 1-4 are proven. Stage 5a — the launch
+monitor — now works: the Square arms on connect and re-arms itself, ball after
+ball. Stages 5b, 5c and 6 have not been run against real hardware yet, so
+treat their checkpoints as expectations rather than observations.
+
 ---
 
 ## Stage 0 — Prerequisites
@@ -103,11 +108,15 @@ GOLFSIM_LATE_ATTACH_MS=30000
 pytest -q
 ```
 
-**Checkpoint: `92 passed, 1 skipped`.** The skip is the pose model, which you
-have not downloaded yet — expected.
+**Checkpoint: `129 passed, 5 skipped` — and above all, zero failures.**
 
-If this fails, stop. Nothing downstream will work and the failure message is
-the most useful thing you will get all night.
+The skips are the pose tests: mediapipe and OpenCV are a ~200 MB optional
+install you do not need until stage 6. The exact counts drift as tests are
+added, so read the word `failed`, not the numbers. With the pose extras
+installed it is 196 passed and no skips.
+
+If anything fails, stop. Nothing downstream will work and the failure message
+is the most useful thing you will get all night.
 
 ---
 
@@ -193,6 +202,52 @@ does not retry, so every backend restart needs the bridge restarted after it.
 The backend prints `launch monitor connected from ...` when it happens; no
 line means no connection.
 
+**Then leave it alone.** The backend sends one Code 201 on connect and the
+Square arms itself from it — and stays armed, detecting ball after ball, with
+nothing sent per shot. That message is a full player block (`Handed`, `Club`,
+`DistanceToTarget`, `Surface`) framed CRLF; if you ever find yourself editing
+`GOLFSIM_GSPRO_ARM_VARIANT`, read the section below first.
+
+### What a working session looks like
+
+Real log, 8 September, ball placed and lifted three times:
+
+```
+07:51:14  launch monitor connected from ('127.0.0.1', 59871)
+07:51:14  gspro: sent player info on connect (club DR) -- this arms the first strike
+07:51:38  gspro: monitor reports READY after 12.4s -- ball seen, armed for the next strike
+07:51:46  gspro: monitor reports NOT READY -- no ball on the mat
+07:51:54  gspro: monitor reports READY after 8.8s -- ball seen
+07:51:58  gspro: monitor reports NOT READY -- no ball on the mat
+07:52:07  gspro: monitor reports READY after 8.9s -- ball seen
+```
+
+READY / NOT READY tracking the ball on the mat, with no re-arm being sent, is
+the system working. Then hit one:
+
+```
+gspro: ignoring frame -- ball on the mat, not yet struck (Speed 0.0, ContainsBallData set)
+shot.created 20260908T...-026 via telemetry (created) sources=telemetry
+gspro: shot 4 frame merged into 20260908T...-026 (club data arrives separately)
+```
+
+**`merged into` is correct, not a double.** One swing arrives as two frames —
+ball data, then club data about 700 ms later, sharing a shot number. The second
+is folded into the first.
+
+### Reading the log
+
+| Line | Meaning |
+|---|---|
+| `sent player info on connect` | The arm. Everything else depends on this one. |
+| `monitor reports READY -- ball seen` | Armed, ball on the mat, swing away. |
+| `monitor reports NOT READY -- no ball on the mat` | Normal. It is what the device says whenever the mat is empty — before your first ball, and after every shot. **Not** a fault and **not** a request for anything. |
+| `ignoring frame -- ball on the mat, not yet struck` | The Square talking about a ball it is watching. Expected, once per resting frame. |
+| `... and N more like that` | The same reason repeating. A resting Square sends one every two seconds; they are counted rather than printed. |
+| `shot.created` then `merged into` | One swing, recorded once. |
+| `re-arm sent (club DR) 3.0s after the shot` | Belt and braces. The device normally re-arms itself, so this line is harmless whether or not it was needed. |
+| Nothing at all after `launch monitor connected` | Now suspect Bluetooth. The bridge's own window shows that half, and the ball-ready sound tests it without touching any config. |
+
 Remember there are two links, and the backend can only see one:
 
 ```
@@ -203,62 +258,47 @@ Square LM ──(Bluetooth)──► bridge ──(TCP 921)──► backend
 `clients: 1` with no shots means the TCP half is fine. It does **not** follow
 that the Bluetooth half is broken — that assumption cost an evening on
 7 September, when the monitor was reporting perfectly and this backend was
-discarding the frames. Read the log before suspecting the hardware:
+discarding the frames. Read the log before suspecting the hardware.
 
-| In the log | What it means |
-|---|---|
-| `sent player info on connect` | The arm for shot 1. The face should light once a ball is on the mat. |
-| `monitor reports READY -- ball seen` | Armed, ball detected, swing away. |
-| `monitor reports NOT READY -- no ball on the mat` | Normal, and **not** a request for anything. It is what the device says whenever the mat is empty — including before your first ball of the session. |
-| `re-arm sent (club DR) 3.0s after the shot` | The one arm signal for the next shot. Nothing more will be sent, by design. |
-| `monitor reports READY after 4.2s` | It worked. This is the line to look for. |
-| `ignoring frame -- <reason>` | A frame arrived and was not treated as a strike. The reason is printed in full; that is the thing to report. |
-| Nothing at all after `launch monitor connected` | Now suspect Bluetooth. The bridge's own window shows that half, and the ball-ready sound tests it without touching any config. |
+**If the face never lights at all, the device is frozen and waiting will not
+fix it.** Power-cycle the Square, restart the connector, then start a fresh
+session. Judge nothing until you have — a frozen device fails every test
+regardless of what the backend does.
 
-**If the face never lights, the device is frozen and no amount of waiting
-fixes it.** Power-cycle the Square, restart the connector, then start a fresh
-session. Judge nothing until you have done that — a frozen device fails every
-test regardless of what the backend does.
+### If it ever stalls mid-session
 
-### The arm message is known — leave it alone
+Others report the Square sticking roughly once a round. If that happens, the
+backend can find the message that revives it in a single session rather than
+one guess per evening. Set:
 
-`GOLFSIM_GSPRO_ARM_VARIANT` unset uses `full`, which is what works: a Code 201
-on connect carrying `Handed`, `Club`, `DistanceToTarget` and `Surface`, framed
-CRLF. The device then arms itself and stays armed, ball after ball, with
-nothing sent per shot.
+```ini
+GOLFSIM_GSPRO_ARM_VARIANT=
+GOLFSIM_GSPRO_LOG_FRAMES=true
+```
 
-Only if it ever stalls mid-session (reported as roughly once a round) is there
-anything to do: set `GOLFSIM_GSPRO_ARM_VARIANT=` (empty) and
-`GOLFSIM_GSPRO_LOG_FRAMES=true`, then after the stall tee up a ball and leave
-it there. The backend tries each candidate arm message in turn and logs
-`ARMED by '<variant>'` when one takes. Pin that value and the probing stops.
+After the stall, **tee up a ball and leave it there** — the device only reports
+ready when it can actually see one, so an empty mat tells the probe nothing.
+The backend tries each candidate arm message in turn and logs
+`ARMED by '<variant>'` when one takes. Put that value in `.env` and the
+probing stops.
 
-The same answer without tailing the log — `monitor_ready` is `true`, `false`,
-or `null` for "it has never said", which is a different fault from "it said
-no":
+Without tailing the log at all:
 
 ```powershell
 curl.exe http://127.0.0.1:8000/api/health
 ```
 
-**After a shot the monitor reports NOT READY, and that is normal.** The
-connector fires one shot per arm, then resets to idle over two or three
-seconds. The backend waits that out and sends the arm signal exactly once.
-Watch for `monitor reports READY`; that line, not the absence of an error, is
-what says you can swing again. **Do not change club in the app inside those
-three seconds** — that sends the same signal early, which is what freezes it.
+`gspro_socket.monitor_ready` is `true`, `false`, or `null` for "it has never
+said" — which is a different fault from "it said no".
 
-Then:
-
-```powershell
-curl.exe http://127.0.0.1:8000/api/health
-```
-
-**Checkpoint:** `gspro_socket.clients` is `1`. Hit a ball — a shot appears with
-telemetry and no video.
+**Checkpoint:** `gspro_socket.clients` is `1`, and the log shows READY when a
+ball is on the mat. Hit one — a shot appears with telemetry and no video.
 
 **To play GSPro at the same time**, sit in the middle rather than taking
-turns. In `.env`:
+turns. *Not yet tested against the working monitor — expect to debug it.* Note
+that in this mode the backend does **not** send the arming 201: GSPro sends its
+own, and two would collide. So if the Square fails to arm while relaying, that
+is GSPro's side, not this one. In `.env`:
 
 ```ini
 GOLFSIM_GSPRO_PORT=922
@@ -338,6 +378,16 @@ to the shot that is already on screen.
 
 ## Stage 6 — Pose (optional)
 
+Until you do this, every backend start prints:
+
+```
+WARNING backend.pose.pipeline: pose extraction unavailable -- pose dependencies
+missing: No module named 'cv2'
+```
+
+That is expected and harmless. Shots, telemetry and video all work without it;
+only the 3D panel is affected.
+
 ```powershell
 pip install -r requirements-pose.txt
 python scripts\fetch_pose_model.py
@@ -359,14 +409,18 @@ them, and a plausible guess would be worse than an honest blank.
 |---|---|
 | `gspro_socket.live: false`, `last_error` mentions address in use | GSPro is running. Close it. |
 | Monitor was connected, then stopped after a backend restart | The bridge does not auto-reconnect. Restart the bridge **after** the backend is listening. |
-| Bridge connected (`clients: 1`) but no shots | Two links in the chain. Check the bridge's own window for the launch monitor connection — the Bluetooth half is invisible to the backend. |
+| Bridge connected (`clients: 1`) but no shots | Read the log first. `monitor reports READY` when a ball is on the mat means the whole chain is fine and the problem is elsewhere. Only if nothing at all arrives is it worth checking the bridge's own window for the Bluetooth half. |
+| The face lights once and never again | The device is frozen. Power-cycle the Square and restart the connector; nothing in software recovers it. |
+| Log floods with `ignoring frame` | Expected — a resting Square sends one every two seconds. Repeats are counted, not printed, so you should see one line and then `... and N more like that`. |
+| One swing appears as two shots | Only if both Kinovea hooks share a `SOURCE`. `merged into` in the log is the launch monitor's two frames being folded into one shot, which is correct. |
 | Every swing produces **two** shots | Both Kinovea hooks send the same `SOURCE`. |
 | Impact clips arrive but never join a shot | `GOLFSIM_IMPACT_TRUST_TRIGGER_TS` is not `true`. |
 | Phone says "unreachable" | Firewall rule missing, or wrong IP, or phone on the guest network. |
 | Videos do not play, everything else fine | Backend not running — the frontend proxies media through it. |
 | Frontend blank, console shows proxy errors | Backend not on port 8000. |
-| `pose_worker.live: false` | Read `reason` in `/api/health`; usually the model was not downloaded. |
+| `pose_worker.live: false`, or `No module named 'cv2'` at startup | Stage 6 not done. Optional — everything else works without it. |
 | Shots stop completing after ending a session | Fixed — make sure you are on the latest commit. |
+| `pytest` errors on `import numpy` | An old checkout. The pose tests skip cleanly now; pull. |
 | "The system cannot find the path specified" after pasting a line with `;` | You are in cmd, where `;` is not a separator. Paste one line at a time. |
 | `venv: error: unrecognized arguments` | Same cause — several commands ran as one. |
 
