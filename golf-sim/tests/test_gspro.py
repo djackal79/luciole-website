@@ -694,3 +694,26 @@ async def test_a_burst_of_not_ready_frames_gets_one_nudge(listener, settings):
         assert listener.player_info_sent == 2, "connect announce plus one nudge"
     finally:
         writer.close()
+
+
+async def test_health_reports_what_the_monitor_says_about_itself(
+    listener, settings
+):
+    """`monitor_ready` is tri-state on purpose: a monitor that has never
+    reported and one reporting "no" are different faults, and collapsing them
+    to a boolean loses the distinction that matters in the bay."""
+    assert listener.monitor_ready is None
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, SQUARE_BALL)                   # ready: true
+        await read_json(reader)
+        await asyncio.sleep(0.1)
+        assert listener.monitor_ready is True
+
+        await send(writer, SQUARE_CLUB)                   # ready: false
+        await read_json(reader)
+        await read_json(reader)
+        await asyncio.sleep(0.1)
+        assert listener.monitor_ready is False
+    finally:
+        writer.close()

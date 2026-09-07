@@ -212,6 +212,19 @@ discarding the frames. Read the log before suspecting the hardware:
 | `ignoring frame -- <reason>` | A frame arrived and was not treated as a strike. The reason is printed in full; that is the thing to report. |
 | Nothing at all after `launch monitor connected` | Now suspect Bluetooth. The bridge's own window shows that half, and the ball-ready sound tests it without touching any config. |
 
+The same answer without tailing the log — `monitor_ready` is `true`, `false`,
+or `null` for "it has never said", which is a different fault from "it said
+no":
+
+```powershell
+curl.exe http://127.0.0.1:8000/api/health
+```
+
+**After a shot the monitor reports NOT READY, and that is normal** — you have
+just hit the ball away, so there is nothing on the mat to detect. Tee up
+another and watch for `monitor reports READY`. That line, not the absence of
+an error, is what says you can swing again.
+
 Then:
 
 ```powershell

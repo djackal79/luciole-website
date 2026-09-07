@@ -242,25 +242,28 @@ class GSProListener:
         if not relayed:
             options = payload.get("ShotDataOptions") or {}
             ready = options.get("LaunchMonitorIsReady")
-            if ready is False:
-                # Announce whenever this is *news*: the monitor was ready and
-                # has just gone unready, or we had never heard its readiness at
-                # all. Only a repeat of an already-known not-ready state is
-                # throttled. Anything looser drops the one re-arm that matters
-                # -- the connect-time announce stamps the throttle clock, so a
-                # not-ready frame arriving inside the first second would be
-                # silently swallowed and the device never armed.
-                await self._announce_player(writer, force=self._monitor_ready is not False)
-            if ready is not None and bool(ready) is not self._monitor_ready:
-                # The one transition worth a line in the log. Coming back to
-                # ready after a strike is the proof the re-arm landed; staying
-                # unready is the proof it did not, and there is no other way to
-                # tell those apart from the bay.
-                log.info(
-                    "gspro: monitor reports %s",
-                    "READY -- armed for the next strike" if ready else "NOT READY",
-                )
-                self._monitor_ready = bool(ready)
+            if ready is not None:
+                was, self._monitor_ready = self._monitor_ready, bool(ready)
+                if self._monitor_ready is not was:
+                    # The one transition worth a line in the log, and it is
+                    # logged before the reply so the bay reads cause then
+                    # effect. Coming back to ready after a strike is the proof
+                    # the re-arm landed; staying unready is the proof it did
+                    # not, and there is no other way to tell those apart.
+                    log.info(
+                        "gspro: monitor reports %s",
+                        "READY -- armed for the next strike" if ready else "NOT READY",
+                    )
+                if ready is False:
+                    # Announce whenever this is *news*: the monitor was ready
+                    # and has just gone unready, or we had never heard its
+                    # readiness at all. Only a repeat of an already-known
+                    # not-ready state is throttled. Anything looser drops the
+                    # one re-arm that matters -- the connect-time announce
+                    # stamps the throttle clock, so a not-ready frame arriving
+                    # inside the first second would be silently swallowed and
+                    # the device never armed.
+                    await self._announce_player(writer, force=was is not False)
 
         if is_heartbeat(payload):
             self.heartbeats_received += 1
@@ -390,6 +393,16 @@ class GSProListener:
             await forward.writer.wait_closed()
         except Exception:
             pass
+
+    @property
+    def monitor_ready(self) -> bool | None:
+        """The monitor's own last word on whether it is armed.
+
+        ``None`` means it has never said, which is not the same as unready --
+        a monitor that has reported nothing and one that has reported "no" are
+        different faults.
+        """
+        return self._monitor_ready
 
     @property
     def forward_active(self) -> bool:

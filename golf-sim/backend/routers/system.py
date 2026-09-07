@@ -78,6 +78,11 @@ async def health(
                 "host": settings.gspro_host,
                 "port": settings.gspro_port,
                 "clients": gspro.client_count,
+                # The monitor's own account of itself. None = never said.
+                # This is the field that answers "why did nothing happen when
+                # I swung", without tailing the log.
+                "monitor_ready": gspro.monitor_ready,
+                "player_info_sent": gspro.player_info_sent,
                 "shots_received": gspro.shots_received,
                 "heartbeats_received": gspro.heartbeats_received,
                 "frames_ignored": gspro.frames_ignored,
