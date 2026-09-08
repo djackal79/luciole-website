@@ -318,26 +318,33 @@ class GSProListener:
             task.cancel()
 
     async def _rearm_later(self, writer: asyncio.StreamWriter) -> None:
-        """Wait out the connector's reset, then arm it.
+        """Wait out the connector's reset, then arm it once.
 
-        With ``gspro_arm_variant`` set this sends that one message and stops --
-        which is the whole protocol, and what a device with a known answer
-        should do.
+        One message. The reference server sends exactly one after the settle
+        and never retries, and a repeat is the documented way to freeze the
+        connector's arm loop.
 
-        Unset, it *probes*: each candidate in turn, waiting after each to see
-        whether the device reports a ball. That trades the freeze risk for an
-        answer in one session instead of one hypothesis per session, and the
-        trade is worth taking because a device that has not armed is already in
-        the failed state -- there is nothing left to protect.
+        ``gspro_arm_variant=none`` sends nothing at all, which is worth trying:
+        this device has been observed re-arming itself, ball after ball, over
+        several minutes with no message from us. If it stops doing that only
+        after a shot -- and only when we send something -- then the message is
+        the problem, and silence is the fix.
 
-        The success signal needs the golfer: ``LaunchMonitorIsReady`` is the
-        connector's *ball-ready* flag, so it can only go true once a ball is
-        physically on the mat. Tee one up straight after the shot and leave it.
+        ``probe`` cycles the candidates to find which one works, accepting the
+        freeze risk for an answer in one session. Diagnostic only, never the
+        default.
         """
-        await asyncio.sleep(self.settings.gspro_rearm_delay_s)
+        variant = (self.settings.gspro_arm_variant or "full").strip().lower()
+        if variant == "none":
+            log.info(
+                "gspro: not re-arming (arm variant 'none') -- the device is "
+                "expected to arm itself; watch for READY when a ball goes down"
+            )
+            return
 
-        pinned = self.settings.gspro_arm_variant.strip()
-        variants = (pinned,) if pinned else self.ARM_VARIANTS
+        await asyncio.sleep(self.settings.gspro_rearm_delay_s)
+        probing = variant == "probe"
+        variants = self.ARM_VARIANTS if probing else (variant,)
         window = self.settings.gspro_arm_probe_window_s
 
         for variant in variants:
@@ -347,16 +354,21 @@ class GSProListener:
                 return
             self._rearm_attempts += 1
             self.player_info_sent += 1
-            log.info(
-                "gspro: arming with %r -- %s. PUT A BALL ON THE MAT NOW; the "
-                "device only reports ready once it can see one",
-                variant,
-                "the setting says so" if pinned else
-                f"probe {self._rearm_attempts} of {len(variants)}",
-            )
+            if probing:
+                log.info(
+                    "gspro: arming with %r -- probe %d of %d. PUT A BALL ON "
+                    "THE MAT NOW; the device only reports ready once it can "
+                    "see one", variant, self._rearm_attempts, len(variants),
+                )
+            else:
+                log.info(
+                    "gspro: re-arm sent (%s, club %s) %.1fs after the shot -- "
+                    "nothing more will be sent",
+                    variant, self._club(), self.settings.gspro_rearm_delay_s,
+                )
             if not await self._send(writer, self._arm_message(variant)):
                 return
-            if pinned:
+            if not probing:
                 return
 
             deadline = time.monotonic() + window

@@ -119,7 +119,8 @@ are now answered; their decisions are recorded below and are binding.
 | D22 | A frozen Square stays frozen until it is power-cycled | Medium | **Open** — no software recovery found |
 | D23 | The reference profile was validated on a *different* connector | **High** | **Found** — local evidence wins on framing and 201 shape |
 | D24 | One hypothesis per bay session is unaffordable | **High** | **Fixed** — the backend probes and reports the winner |
-| D25 | **The Square arms and re-arms continuously** | — | **SOLVED 8 Sep** — connect-time 201, CRLF, with DistanceToTarget + Surface |
+| D25 | The Square arms and detects ball after ball | — | **Solved 8 Sep** — connect-time 201, CRLF, with DistanceToTarget + Surface. Applies *before* a shot; after one is D26 |
+| D26 | Probing was the default, and may be what freezes it | **High** | **Default fixed**; `none` vs `full` still to be settled in the bay |
 | D20 | The bay logs never contain the failure being debugged | High | **Closed** — the physical symptom was the missing data; see D21 |
 | D13 | Kinovea capture trigger not located | Medium | Research |
 | D14 | flighthook could replace the LM bridge | — | **Ruled out** — Omni only, bay has the original Square |
@@ -629,6 +630,41 @@ that matter; repeats are now counted, not printed. And its resting frame sets
 `ContainsBallData` with `Speed: 0.0`, which the rejection message described as
 "ContainsBallData not set" — sending a reader hunting a flag that was there all
 along. It now reads `ball on the mat, not yet struck`.
+
+### D26 — The probe was the default, and that is likely what froze it
+
+8 September, afternoon. The device armed on connect and cycled READY /
+NOT READY correctly for three and a half minutes with **no message sent**.
+A shot was then struck (7.9 mph, recorded and merged correctly). Three seconds
+later the probe fired five arm messages over 75 seconds, and the device never
+reported ready again.
+
+`gspro_arm_variant` defaulted to `""`, and `""` meant *probe*. So five arm
+messages after every shot was the shipped behaviour — the exact pattern the
+reference implementation names as freezing the connector's arm loop — while
+`RUNBOOK.md` and the run sheet both said unset meant "the message that works".
+The documentation described the intent; the code did the opposite.
+
+Default is now `full`: one message, once. `""` means `full` too, so an empty
+`.env` line cannot re-enable probing. `probe` must be asked for by name.
+
+**The open question, stated honestly.** Two sessions, one pattern:
+
+| Session | Messages sent after a shot | Device afterwards |
+|---|---|---|
+| 8 Sep morning | none — no shot was taken | armed and re-armed itself for minutes |
+| 8 Sep afternoon | five, over 75 s | never armed again |
+
+That is consistent with the probe freezing it. It is equally consistent with
+the device simply not re-arming after a shot, which is the symptom this whole
+week began with. **One session cannot separate them, and the difference decides
+whether we send one message or none.**
+
+`gspro_arm_variant=none` is the discriminator, and it is the setting to try
+first: it is the only value that cannot itself be the cause. If the device
+re-arms with `none`, the answer is that this connector needs nothing from us
+and every arm message after connect has been damage. If it does not, the
+re-arm is genuinely required and `full` is the next candidate.
 
 ### D23 — The reference profile was validated against a different connector
 

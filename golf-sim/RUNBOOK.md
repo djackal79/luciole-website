@@ -202,11 +202,10 @@ does not retry, so every backend restart needs the bridge restarted after it.
 The backend prints `launch monitor connected from ...` when it happens; no
 line means no connection.
 
-**Then leave it alone.** The backend sends one Code 201 on connect and the
-Square arms itself from it — and stays armed, detecting ball after ball, with
-nothing sent per shot. That message is a full player block (`Handed`, `Club`,
-`DistanceToTarget`, `Surface`) framed CRLF; if you ever find yourself editing
-`GOLFSIM_GSPRO_ARM_VARIANT`, read the section below first.
+**Then leave it alone.** The backend sends one Code 201 on connect — a full
+player block (`Handed`, `Club`, `DistanceToTarget`, `Surface`) framed CRLF —
+and the Square arms itself from it. Before any shot has been taken it will then
+detect ball after ball for minutes with nothing further sent.
 
 ### What a working session looks like
 
@@ -265,22 +264,32 @@ fix it.** Power-cycle the Square, restart the connector, then start a fresh
 session. Judge nothing until you have — a frozen device fails every test
 regardless of what the backend does.
 
-### If it ever stalls mid-session
+### The unsolved half: re-arming after a shot
 
-Others report the Square sticking roughly once a round. If that happens, the
-backend can find the message that revives it in a single session rather than
-one guess per evening. Set:
+Detection before a shot is solid. **What happens after one is still open.**
 
-```ini
-GOLFSIM_GSPRO_ARM_VARIANT=
-GOLFSIM_GSPRO_LOG_FRAMES=true
-```
+`GOLFSIM_GSPRO_ARM_VARIANT` chooses what is sent once the club-data frame
+marks the end of a shot:
 
-After the stall, **tee up a ball and leave it there** — the device only reports
-ready when it can actually see one, so an empty mat tells the probe nothing.
-The backend tries each candidate arm message in turn and logs
-`ARMED by '<variant>'` when one takes. Put that value in `.env` and the
-probing stops.
+| Value | Behaviour |
+|---|---|
+| `full` *(default, and what unset means)* | One Code 201 with the full player block, three seconds after the shot. One only — a repeat is the documented way to freeze the connector's arm loop. |
+| `none` | Send nothing. Let the device re-arm itself. |
+| `probe` | Try each candidate in turn and report which one works. **Diagnostic only.** |
+
+**If the device stops arming after a shot, try `none` before anything else.**
+Both bay logs point the same way: with no message sent, the device armed and
+re-armed itself indefinitely; the only session where it stopped is the one
+where we sent something after the shot. That is correlation, not proof — but
+`none` is the cheap experiment that settles it, and it is the only setting that
+cannot be the cause.
+
+`probe` is the last resort. It sends five messages over 75 seconds, which is
+precisely the pattern that freezes the loop, so it is worth running only once
+the device has already failed to arm and there is nothing left to protect. Set
+`GOLFSIM_GSPRO_LOG_FRAMES=true` with it, **tee a ball up and leave it there**
+— the device only reports ready when it can see one, so an empty mat tells the
+probe nothing — and watch for `ARMED by '<variant>'`. Pin that value afterwards.
 
 Without tailing the log at all:
 

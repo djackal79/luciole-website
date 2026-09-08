@@ -783,7 +783,7 @@ async def test_the_re_arm_is_dropped_when_the_monitor_goes_away(listener, settin
 async def test_the_probe_tries_each_candidate_until_the_device_reports_a_ball(
     listener, settings
 ):
-    settings.gspro_arm_variant = ""            # unset -> probe
+    settings.gspro_arm_variant = "probe"       # diagnostic mode, never default
     reader, writer = await connect(settings)
     try:
         await send(writer, SQUARE_CLUB)
@@ -846,7 +846,6 @@ async def test_the_connect_arm_is_the_shape_that_detected_the_first_ball(
     Surface on connect. GolfForge omits both, but its Square profile was
     validated against a different connector -- DeviceID CustomLaunchMonitor,
     not the SquareGolf this bay runs."""
-    settings.gspro_arm_variant = ""
     reader, writer = await connect(settings, expect_player_info=False)
     try:
         frame = await read_json(reader)
@@ -890,5 +889,49 @@ async def test_a_resting_square_does_not_flood_the_log(listener, settings, caplo
         message = ignored[0].getMessage()
         assert "ContainsBallData set" in message
         assert "not yet struck" in message
+    finally:
+        writer.close()
+
+
+async def test_the_default_sends_one_message_not_five(listener, settings):
+    """The default was empty, and empty meant *probe* -- so five arm messages
+    in 75 seconds after every shot was the shipped behaviour, which is exactly
+    the pattern the reference implementation says freezes the connector's arm
+    loop. Meanwhile the runbook said unset meant the message that works. The
+    default is now that message."""
+    from backend.config import Settings
+    assert Settings().gspro_arm_variant == "full"
+
+    settings.gspro_arm_variant = ""            # an empty .env line is not probe
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, SQUARE_CLUB)
+        assert (await read_json(reader))["Code"] == 200
+
+        frame = await asyncio.wait_for(read_json(reader), timeout=2.0)
+        assert frame["Code"] == 201
+        assert frame["Player"]["DistanceToTarget"] == 200, "the 'full' shape"
+
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(reader.readline(), timeout=1.5)
+        assert listener.rearm_attempts == 1
+    finally:
+        writer.close()
+
+
+async def test_none_sends_nothing_at_all(listener, settings):
+    """Worth having as a real option, not a way to switch a feature off. This
+    device has been watched re-arming itself, ball after ball, for minutes with
+    no message from us. If it stops doing that only once we send something,
+    then our message is the fault and silence is the fix."""
+    settings.gspro_arm_variant = "none"
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, SQUARE_CLUB)
+        assert (await read_json(reader))["Code"] == 200
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(reader.readline(), timeout=1.5)
+        assert listener.rearm_attempts == 0
+        assert listener.player_info_sent == 1, "the connect-time arm, and no more"
     finally:
         writer.close()

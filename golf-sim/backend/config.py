@@ -72,18 +72,27 @@ class Settings(BaseSettings):
     #: waits this long after it. Arming inside the reset freezes the loop.
     gspro_rearm_delay_s: float = 3.0
 
-    #: Which message re-arms the device. Empty means **probe**: try each in
-    #: turn after a shot and report which one worked, so one bay session
-    #: settles it instead of one hypothesis per session. Set it to the winner
-    #: (e.g. "full") once known, and no probing happens again.
+    #: Which message re-arms the device after a shot.
     #:
-    #: The official connector re-arms reliably against real GSPro -- users
-    #: report at most a couple of misses per round -- so a message that works
-    #: does exist. We are looking for which one.
-    gspro_arm_variant: str = ""
-    #: How long to wait for the device to report a ball after each attempt.
-    #: The device only says READY once a ball is actually on the mat, so this
-    #: has to cover teeing one up.
+    #:   full | distance_change | club_change | minimal | ready
+    #:                     send that one message, once. The reference server
+    #:                     sends exactly one and never retries.
+    #:   none              send nothing, and let the device re-arm itself.
+    #:   probe             try each candidate in turn, reporting which one
+    #:                     works. Diagnostic only -- see below.
+    #:
+    #: Empty or unset means ``full``. It previously meant ``probe``, which made
+    #: five arm messages in 75 seconds the *default* behaviour after every
+    #: shot: the exact pattern the reference implementation says freezes the
+    #: connector's arm loop. That was a bug in this default, not a decision.
+    #:
+    #: ``probe`` is a recovery tool. It accepts the freeze risk in exchange for
+    #: identifying the working message in one bay session rather than one
+    #: hypothesis per session, and is worth it only once the device has already
+    #: failed to arm.
+    gspro_arm_variant: str = "full"
+    #: How long to wait for a ball to be reported after each probe attempt.
+    #: Only used by ``probe``.
     gspro_arm_probe_window_s: float = 15.0
 
     # ---- GSPro pass-through -----------------------------------------------
