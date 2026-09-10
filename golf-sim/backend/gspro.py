@@ -43,6 +43,11 @@ _DISABLED = object()
 #: frames is about 0.8 s.
 SHOT_COALESCE_S = 4.0
 
+#: How long to keep watching after a re-arm before saying, once, that the
+#: device has not come back. Observational only -- nothing is sent, because
+#: sending more is what freezes it.
+ARM_WATCH_S = 30.0
+
 MAX_BUFFER_BYTES = 1024 * 1024
 
 
@@ -73,6 +78,10 @@ class GSProListener:
         #: One pending re-arm per monitor. Cancelled the moment it reports
         #: ready, and on disconnect.
         self._arm_tasks: dict[asyncio.StreamWriter, asyncio.Task[None]] = {}
+        #: True once this cycle's arm message has gone out. The task lives on
+        #: afterwards to watch for the answer, and a watch is not a pending
+        #: send -- health would otherwise read "pending" for 30 s a shot.
+        self._rearm_sent = False
         self._monitor_ready: bool | None = None
         self.last_error: str | None = None
         self.shots_received = 0
@@ -305,6 +314,7 @@ class GSProListener:
     def _schedule_rearm(self, writer: asyncio.StreamWriter) -> None:
         """Arm once, after the settle. A second club frame restarts the clock."""
         self._cancel_rearm(writer)
+        self._rearm_sent = False
         task = asyncio.create_task(self._rearm_later(writer), name="gspro-rearm")
         self._arm_tasks[writer] = task
         task.add_done_callback(
@@ -340,6 +350,8 @@ class GSProListener:
                 "gspro: not re-arming (arm variant 'none') -- the device is "
                 "expected to arm itself; watch for READY when a ball goes down"
             )
+            self._rearm_sent = True
+            await self._watch_for_arm(writer, "the shot, with nothing sent")
             return
 
         await asyncio.sleep(self.settings.gspro_rearm_delay_s)
@@ -369,6 +381,8 @@ class GSProListener:
             if not await self._send(writer, self._arm_message(variant)):
                 return
             if not probing:
+                self._rearm_sent = True
+                await self._watch_for_arm(writer, f"the {variant!r} re-arm")
                 return
 
             deadline = time.monotonic() + window
@@ -392,6 +406,27 @@ class GSProListener:
             ", ".join(variants),
         )
 
+    async def _watch_for_arm(self, writer: asyncio.StreamWriter, after: str) -> None:
+        """Report whether the device came back. Sends nothing, ever.
+
+        Every bay log so far has stopped within seconds of the re-arm, so
+        "it did not work" has been the golfer's read rather than the log's.
+        This closes that: either the READY transition prints, or this does.
+        """
+        deadline = time.monotonic() + ARM_WATCH_S
+        while time.monotonic() < deadline:
+            await asyncio.sleep(0.5)
+            if self._monitor_ready:
+                return          # the READY transition has already said so
+            if writer not in self._writers:
+                return
+        log.warning(
+            "gspro: still not armed %.0fs after %s, and nothing more will be "
+            "sent. Put a ball on the mat -- if READY still does not appear, "
+            "this is the device refusing to re-arm, not a backend timeout",
+            ARM_WATCH_S, after,
+        )
+
     async def _handle(
         self, payload: dict[str, Any], writer: asyncio.StreamWriter, relayed: bool
     ) -> None:
@@ -413,7 +448,7 @@ class GSProListener:
 
         telemetry = telemetry_from_gspro(payload, local_now(), self._conditions())
         if not relayed:
-            await self._send(writer, self._ack(200, "Shot received"))
+            await self._send(writer, self._ack(200, self._shot_ack(payload)))
 
         # One swing, two frames. The Square reports ball data first and club
         # data about 700 ms later, both carrying the same ShotNumber, and both
@@ -536,8 +571,15 @@ class GSProListener:
 
     @property
     def rearm_pending(self) -> bool:
-        """A re-arm is scheduled or in its retry loop."""
-        return any(not t.done() for t in self._arm_tasks.values())
+        """A re-arm is scheduled and has not gone out yet.
+
+        False once it has been sent, even while the passive watch is still
+        running: a watch sends nothing, so reporting it as pending would say
+        the backend is about to act when it is only listening.
+        """
+        return not self._rearm_sent and any(
+            not t.done() for t in self._arm_tasks.values()
+        )
 
     @property
     def rearm_attempts(self) -> int:
@@ -626,6 +668,25 @@ class GSProListener:
             return False
         self.player_info_sent += 1
         return await self._send(writer, self._player_info())
+
+    #: The only acknowledgement texts the Square's connector recognises. Its
+    #: message handler switches on this literal set and files anything else as
+    #: "Unknown message type" -- and we had been replying "Shot received",
+    #: which is not among them. Every strike this bay has hit was acknowledged
+    #: with a string the connector does not know.
+    #:
+    #: In the connector source that only writes a log line. Whether the
+    #: official build gates its arm cycle on recognising the ack is exactly
+    #: what is unknown, and it is the first vocabulary mismatch found in a week
+    #: of looking, so it is worth spending a session on.
+    @staticmethod
+    def _shot_ack(payload: dict[str, Any]) -> str:
+        options = payload.get("ShotDataOptions") or {}
+        if options.get("ContainsClubData"):
+            return "Club & Ball Data received"
+        if options.get("ContainsBallData"):
+            return "Ball Data received"
+        return "Shot received successfully"
 
     def _ack(self, code: int, message: str) -> dict[str, Any]:
         return {

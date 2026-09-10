@@ -98,7 +98,8 @@ async def test_a_shot_is_acknowledged_and_becomes_telemetry(
         await send(writer, SHOT)
         reply = await read_json(reader)
         assert reply["Code"] == 200
-        assert reply["Message"] == "Shot received"
+        # SHOT carries both flags.
+        assert reply["Message"] == "Club & Ball Data received"
         assert "Player" in reply
 
         await asyncio.sleep(0.1)
@@ -467,7 +468,7 @@ async def test_recording_continues_when_gspro_is_down(settings, correlator):
             assert (await read_json(reader))["Code"] == 201
             await send(writer, SHOT)
             # We answer, because GSPro is not there to.
-            assert (await read_json(reader))["Message"] == "Shot received"
+            assert (await read_json(reader))["Message"] == "Club & Ball Data received"
             await asyncio.sleep(0.2)
             assert served.shots_received == 1
             assert served.frames_forwarded == 0
@@ -561,7 +562,7 @@ async def test_a_square_strike_flagged_as_a_heartbeat_is_still_a_shot(
     reader, writer = await connect(settings)
     try:
         await send(writer, SQUARE_BALL)
-        assert (await read_json(reader))["Message"] == "Shot received"
+        assert (await read_json(reader))["Message"] == "Ball Data received"
         await asyncio.sleep(0.1)
         assert listener.shots_received == 1
         shot = correlator._tracked[-1].package
@@ -629,7 +630,7 @@ async def test_the_merge_does_not_kill_the_connection(listener, settings, correl
         # Still talking: a further frame is answered, not silence from a
         # connection the server tore down.
         await send(writer, {**SQUARE_BALL, "ShotNumber": 9})
-        assert (await read_json(reader))["Message"] == "Shot received"
+        assert (await read_json(reader))["Message"] == "Ball Data received"
         assert listener.shots_received == 2
     finally:
         writer.close()
@@ -933,5 +934,67 @@ async def test_none_sends_nothing_at_all(listener, settings):
             await asyncio.wait_for(reader.readline(), timeout=1.5)
         assert listener.rearm_attempts == 0
         assert listener.player_info_sent == 1, "the connect-time arm, and no more"
+    finally:
+        writer.close()
+
+
+async def test_the_ack_uses_the_only_words_the_connector_knows(listener, settings):
+    """The connector's message handler switches on a literal set and files
+    everything else as "Unknown message type". We replied "Shot received",
+    which is not in that set -- so every strike this bay ever hit was
+    acknowledged with a string the connector does not recognise.
+
+    Whether the official build gates its arm cycle on that is unknown. It is
+    the only vocabulary mismatch found in a week of looking, so it is pinned
+    here rather than left to drift back."""
+    known = {"Ball Data received", "Club & Ball Data received",
+             "Shot received successfully"}
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, SQUARE_BALL)                  # ContainsBallData
+        ball = await read_json(reader)
+        assert ball["Message"] == "Ball Data received"
+        assert ball["Message"] in known
+        await asyncio.sleep(0.1)
+
+        await send(writer, SQUARE_CLUB)                  # ContainsClubData
+        club = await read_json(reader)
+        assert club["Message"] == "Club & Ball Data received"
+        assert club["Message"] in known
+    finally:
+        writer.close()
+
+
+async def test_a_shot_with_neither_flag_still_gets_a_known_ack(listener, settings):
+    """A bridge that sets no flags but reports a real speed is still a strike,
+    and still has to be answered in words the connector knows."""
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, {
+            "DeviceID": "TestMonitor", "ShotNumber": 8,
+            "BallData": {"Speed": 120.0, "VLA": 14.0, "HLA": 0.0},
+            "ShotDataOptions": {"LaunchMonitorIsReady": True, "IsHeartBeat": False},
+        })
+        assert (await read_json(reader))["Message"] == "Shot received successfully"
+    finally:
+        writer.close()
+
+
+async def test_the_log_says_when_the_device_never_came_back(
+    listener, settings, caplog, monkeypatch
+):
+    """Every bay log so far stopped within seconds of the re-arm, so "it didn't
+    work" has been the golfer's read rather than the log's. The watch only
+    reports -- it never sends, because sending more is what freezes it."""
+    monkeypatch.setattr("backend.gspro.ARM_WATCH_S", 0.6)
+    reader, writer = await connect(settings)
+    try:
+        with caplog.at_level("INFO", logger="backend.gspro"):
+            await send(writer, SQUARE_CLUB)              # ready: false
+            await read_json(reader)
+            await asyncio.sleep(1.6)
+
+        assert any("still not armed" in r.getMessage() for r in caplog.records)
+        assert listener.rearm_attempts == 1, "the watch must not send anything"
     finally:
         writer.close()
