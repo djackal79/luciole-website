@@ -277,6 +277,22 @@ marks the end of a shot:
 | `none` | Send nothing. Let the device re-arm itself. |
 | `probe` | Try each candidate in turn and report which one works. **Diagnostic only.** |
 
+Tested 10 September: `full` sends one message after a clean strike and the
+device does not come back -- the same outcome as `probe`'s five. **The number
+of messages is not the variable.** That leaves the content of what we send, and
+`none`, which remains the only setting that cannot itself be the cause.
+
+Thirty seconds after any re-arm the log now states whether the device returned:
+
+```
+gspro: still not armed 30s after the 'full' re-arm, and nothing more will be
+sent. Put a ball on the mat -- if READY still does not appear, this is the
+device refusing to re-arm, not a backend timeout
+```
+
+That watch sends nothing. It exists because every bay log so far stopped
+before the answer arrived.
+
 **If the device stops arming after a shot, try `none` before anything else.**
 Both bay logs point the same way: with no message sent, the device armed and
 re-armed itself indefinitely; the only session where it stopped is the one

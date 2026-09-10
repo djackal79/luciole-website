@@ -120,7 +120,8 @@ are now answered; their decisions are recorded below and are binding.
 | D23 | The reference profile was validated on a *different* connector | **High** | **Found** — local evidence wins on framing and 201 shape |
 | D24 | One hypothesis per bay session is unaffordable | **High** | **Fixed** — the backend probes and reports the winner |
 | D25 | The Square arms and detects ball after ball | — | **Solved 8 Sep** — connect-time 201, CRLF, with DistanceToTarget + Surface. Applies *before* a shot; after one is D26 |
-| D26 | Probing was the default, and may be what freezes it | **High** | **Default fixed**; `none` vs `full` still to be settled in the bay |
+| D26 | Probing was the default, and may be what freezes it | **High** | **Default fixed**. `full` since tested: one message fails as five did |
+| D27 | Shots acked with a string the connector calls unknown | **High** | **Fixed** -- ack now uses the connector's own vocabulary; effect untested |
 | D20 | The bay logs never contain the failure being debugged | High | **Closed** — the physical symptom was the missing data; see D21 |
 | D13 | Kinovea capture trigger not located | Medium | Research |
 | D14 | flighthook could replace the LM bridge | — | **Ruled out** — Omni only, bay has the original Square |
@@ -630,6 +631,45 @@ that matter; repeats are now counted, not printed. And its resting frame sets
 `ContainsBallData` with `Speed: 0.0`, which the rejection message described as
 "ContainsBallData not set" — sending a reader hunting a flag that was there all
 along. It now reads `ball on the mat, not yet struck`.
+
+### D27 — We acknowledge every shot in a word the connector does not know
+
+Found in the connector source, 10 September, after `full` failed exactly as
+`probe` had. Its inbound handler switches on a literal set:
+
+```go
+case baseMsg.Message == "Ball Data received",
+     baseMsg.Message == "Club & Ball Data received",
+     baseMsg.Message == "Shot received successfully":
+        log.Printf("[%s] Shot data confirmed by server", ...)
+default:
+        log.Printf("[%s] Unknown message type: %s ...", ...)
+```
+
+This backend replied **`"Shot received"`** -- not in that set. Every strike this
+bay has ever hit was acknowledged with a string the connector files as
+*unknown*. The ack is now derived from the frame: `ContainsClubData` gives
+"Club & Ball Data received", `ContainsBallData` gives "Ball Data received", and
+a flagless frame carrying a real speed gives "Shot received successfully".
+
+**What this is and is not.** It is the only vocabulary mismatch found in a week
+of reading sources, and it sits exactly where the failure is -- after a shot,
+on the reply to the shot. It is not a diagnosis: in the connector source the
+unrecognised case only writes a log line, and whether the *official* build
+gates its arm cycle on recognising the ack is unknown. GolfForge sends
+"Shot received" and is validated -- against a connector where the string
+provably does not matter (D23). Recorded as the next thing to test, not as the
+answer.
+
+**Ruled out by the same log:** one arm message fails as completely as five.
+`full` sent a single 201 three seconds after a clean 71.7 mph strike and the
+device did not return. The *count* of messages is not the variable, which is
+what `probe` had left ambiguous. That leaves the content, and `none`.
+
+**Also closed: the observability gap.** Every bay log has stopped within
+seconds of the re-arm, so "it didn't work" has been the golfer's read rather
+than the log's. A passive watch now says, once, thirty seconds later, whether
+the device came back. It sends nothing -- sending more is what freezes it.
 
 ### D26 — The probe was the default, and that is likely what froze it
 
