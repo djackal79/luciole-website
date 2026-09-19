@@ -74,6 +74,9 @@ class Settings(BaseSettings):
 
     #: Which message re-arms the device after a shot.
     #:
+    #:   gspro             what a real GSPro does: the 201 in the SAME write as
+    #:                     the shot's acknowledgement, at once, with a non-zero
+    #:                     DistanceToTarget. No settle.
     #:   full | distance_change | club_change | minimal | ready
     #:                     send that one message, once. The reference server
     #:                     sends exactly one and never retries.

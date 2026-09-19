@@ -122,6 +122,8 @@ are now answered; their decisions are recorded below and are binding.
 | D25 | The Square arms and detects ball after ball | — | **Solved 8 Sep** — connect-time 201, CRLF, with DistanceToTarget + Surface. Applies *before* a shot; after one is D26 |
 | D26 | Probing was the default, and may be what freezes it | **High** | **Default fixed**. `full` since tested: one message fails as five did |
 | D27 | Shots acked with a string the connector calls unknown | **High** | **Fixed** -- ack now uses the connector's own vocabulary; effect untested |
+| D28 | Real GSPro sends {200}{201} at once; 'ready' is 202; Square's connector is closed | **High** | **Built** as `gspro` mode; untested in the bay |
+| D29 | Pass-through logs GSPro's replies verbatim | **High** | **Built** — the capture that ends the guessing |
 | D20 | The bay logs never contain the failure being debugged | High | **Closed** — the physical symptom was the missing data; see D21 |
 | D13 | Kinovea capture trigger not located | Medium | Research |
 | D14 | flighthook could replace the LM bridge | — | **Ruled out** — Omni only, bay has the original Square |
@@ -631,6 +633,52 @@ that matter; repeats are now counted, not printed. And its resting frame sets
 `ContainsBallData` with `Speed: 0.0`, which the rejection message described as
 "ContainsBallData not set" — sending a reader hunting a flag that was there all
 along. It now reads `ball on the mat, not yet struck`.
+
+### D28 — What a real GSPro actually sends, from the survey that should have been read first
+
+18 September. `PinPoint-Golf/libgspro` carries a protocol survey of seventeen
+Open Connect implementations, with provenance for every claim, written in
+2026. Four of its findings bear directly on this bay, and three contradict
+what was built here.
+
+**1. After a shot, the 201 rides in the same write as the ack — at once.**
+Three independent clients that sat against a live GSPro ([MLM], [SLX], [OSP])
+saw `{200}{201}` arrive in one segment, and [OSP] arms its device on the 201's
+*non-zero `DistanceToTarget`*. There is no settle. The three-second settle here
+came from GolfForge's profile, validated against a different connector (D23).
+The official Square connector was built against real GSPro, which does this.
+New delivery mode `gspro_arm_variant=gspro` sends exactly that.
+
+**2. "GSPro ready" is Code 202, not 201.** `{"Code":202,"Message":"GSPro ready"}`
+at match or hole start, exact string, and OpenSkyPlus-style clients *arm only
+after seeing one*. The probe's `ready` variant sent it as 201 — a message no
+client would recognise. Fixed.
+
+**3. The Square's connector is closed and nobody has read it.** The survey
+author says so in as many words. Every rule applied here — GolfForge's,
+brentyates', the survey's own — describes *other* clients. The only way to
+learn what the official connector needs is to watch a real GSPro drive it.
+Pass-through now logs GSPro's replies verbatim (D29); that capture is the
+answer, and everything else on this page is inference.
+
+**4. A zero-speed shot makes GSPro reset the club selection** — observed by
+the [SLX] proxy sitting in the real path. This bay's connector sends
+zero-speed frames constantly while a ball rests on the mat. Whether the
+official connector *expects* the club reset that follows is unknown, but it is
+one more reason the capture matters more than any further guess.
+
+Corrections to the record: D21's settle and "exactly one" are the reference's
+rules for its own validated connector, not GSPro's behaviour; D19's `ready`
+probe was malformed; D24's probe rotated five messages of which one had the
+wrong code and none used GSPro's timing.
+
+### D29 — Pass-through is now a protocol capture
+
+With `gspro_forward_enabled=true` and `gspro_log_frames=true`, every reply the
+real GSPro sends the connector is logged as bytes, verbatim. Run GSPro on 921,
+this backend on 922, the connector at 922, hit two balls on the practice range,
+and the log contains exactly what arms the device after a shot. A week of
+guessing at that message could have been one evening of reading it.
 
 ### D27 — We acknowledge every shot in a word the connector does not know
 

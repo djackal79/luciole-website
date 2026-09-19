@@ -345,6 +345,9 @@ class GSProListener:
         default.
         """
         variant = (self.settings.gspro_arm_variant or "full").strip().lower()
+        if variant == "gspro":
+            await self._watch_for_arm(writer, "the ack+201 write")
+            return
         if variant == "none":
             log.info(
                 "gspro: not re-arming (arm variant 'none') -- the device is "
@@ -448,7 +451,26 @@ class GSProListener:
 
         telemetry = telemetry_from_gspro(payload, local_now(), self._conditions())
         if not relayed:
-            await self._send(writer, self._ack(200, self._shot_ack(payload)))
+            ack = self._ack(200, self._shot_ack(payload))
+            options = payload.get("ShotDataOptions") or {}
+            variant = (self.settings.gspro_arm_variant or "full").strip().lower()
+            if variant == "gspro" and options.get("ContainsClubData") is True:
+                # What a real GSPro does after a shot, per three independent
+                # clients that sat against one: the 201 rides in the *same*
+                # write as the acknowledgement, at once, carrying a non-zero
+                # DistanceToTarget. No settle. The three-second settle came
+                # from a profile validated on a different connector (D23);
+                # the official connector was built against this.
+                self._rearm_attempts += 1
+                self.player_info_sent += 1
+                self._rearm_sent = True
+                log.info(
+                    "gspro: ack + 201 in one write, as GSPro does (club %s, "
+                    "distance %s)", self._club(), self.settings.gspro_distance_to_target,
+                )
+                await self._send_many(writer, [ack, self._arm_message("full")])
+            else:
+                await self._send(writer, ack)
 
         # One swing, two frames. The Square reports ball data first and club
         # data about 700 ms later, both carrying the same ShotNumber, and both
@@ -530,13 +552,23 @@ class GSProListener:
     async def _pump(
         self, gspro: asyncio.StreamReader, monitor: asyncio.StreamWriter
     ) -> None:
-        """Copy GSPro's replies straight back to the monitor, untouched."""
+        """Copy GSPro's replies straight back to the monitor, untouched.
+
+        With ``gspro_log_frames`` on, every reply is also logged verbatim --
+        bytes, not a parse, so framing survives. This turns pass-through into
+        a protocol capture: run the real GSPro behind this backend, hit two
+        balls, and the log holds exactly what GSPro sends the connector after
+        a shot. A week of guessing at that message could have been one
+        evening of reading it.
+        """
         try:
             while True:
                 chunk = await gspro.read(65536)
                 if not chunk:
                     log.info("GSPro pass-through: GSPro closed the connection")
                     return
+                if self.settings.gspro_log_frames:
+                    log.info("gspro reply <- GSPro: %r", chunk[:4000])
                 monitor.write(chunk)
                 await monitor.drain()
         except asyncio.CancelledError:
@@ -610,8 +642,11 @@ class GSProListener:
     #: lie, new distance -- and the official connector re-arms from it. On a
     #: driving range nothing changes, which is where users report the failure
     #: and reach for K (club up). That shape is what these probe.
+    #: 'gspro' is deliberately not here: it is the same 201 as 'full' but sent
+    #: in the shot's own acknowledgement write, at once. The probe rotates
+    #: *messages*; a delivery mode is chosen by name.
     ARM_VARIANTS: tuple[str, ...] = (
-        "full",             # what GSPro sends on a course
+        "full",             # a 201 with DistanceToTarget, three seconds after the shot
         "distance_change",  # ... with the situation genuinely different
         "club_change",      # the K-key equivalent
         "minimal",          # GolfForge's two-field form
@@ -621,10 +656,12 @@ class GSProListener:
     def _arm_message(self, variant: str) -> dict[str, Any]:
         """One candidate arm message. See ARM_VARIANTS for why each is here."""
         if variant == "ready":
-            # brentyates' connector arms on a message whose text is "GSPro
-            # ready" as readily as on player info, and it is undocumented, so
-            # nothing says what Code real GSPro puts on it.
-            return {"Code": 201, "Message": "GSPro ready"}
+            # Real GSPro: {"Code":202,"Message":"GSPro ready"} when a match or
+            # hole starts. Code 202 -- the probe sent 201, which was wrong.
+            # OpenSkyPlus-style connectors arm their device only after seeing
+            # one; the Square's connector is closed, so whether it is such a
+            # client is exactly the unknown.
+            return {"Code": 202, "Message": "GSPro ready"}
 
         club = self._club()
         distance = self.settings.gspro_distance_to_target
@@ -725,6 +762,20 @@ class GSProListener:
             if await self._send(writer, message):
                 delivered += 1
         return delivered
+
+    async def _send_many(
+        self, writer: asyncio.StreamWriter, messages: list[dict[str, Any]]
+    ) -> bool:
+        """Several objects in one TCP write -- the concatenation GSPro itself
+        produces and every surviving connector has to split."""
+        try:
+            writer.write("".join(json.dumps(m) + "\r\n" for m in messages).encode("utf-8"))
+            await writer.drain()
+            return True
+        except Exception:
+            self._writers.discard(writer)
+            await self._disconnect(writer)
+            return False
 
     async def _send(self, writer: asyncio.StreamWriter, message: dict[str, Any]) -> bool:
         try:

@@ -816,7 +816,8 @@ async def test_every_candidate_is_a_distinct_message(listener, settings):
     # And each is well-formed Open Connect.
     for variant in listener.ARM_VARIANTS:
         msg = listener._arm_message(variant)
-        assert msg["Code"] == 201
+        # 201 carries player info; 202 is the ready signal. Both are GSPro's.
+        assert msg["Code"] in (201, 202)
         assert msg["Message"] in ("GSPro Player Information", "GSPro ready")
         if msg["Message"] == "GSPro Player Information":
             assert msg["Player"]["Club"], "springbok KeyErrors on a 201 with no Club"
@@ -998,3 +999,60 @@ async def test_the_log_says_when_the_device_never_came_back(
         assert listener.rearm_attempts == 1, "the watch must not send anything"
     finally:
         writer.close()
+
+
+async def test_pass_through_logs_what_the_real_gspro_replies(
+    relaying_listener, settings, gspro_upstream, caplog
+):
+    """Pass-through with frame logging on is a protocol capture: whatever the
+    real GSPro sends the connector after a shot lands in the log, verbatim and
+    as bytes, so framing survives. It is the instrument that answers the
+    re-arm question by reading rather than guessing."""
+    settings.gspro_log_frames = True
+    reader, writer = await asyncio.open_connection(settings.gspro_host, settings.gspro_port)
+    try:
+        with caplog.at_level("INFO", logger="backend.gspro"):
+            await send(writer, SHOT)
+            reply = await read_json(reader)        # the upstream's own ack, relayed
+            await asyncio.sleep(0.2)
+        assert reply["Code"] == 200
+        captured = [r.getMessage() for r in caplog.records if "reply <- GSPro" in r.getMessage()]
+        assert len(captured) == 1
+        assert "200" in captured[0]
+    finally:
+        writer.close()
+
+
+async def test_gspro_variant_sends_ack_and_201_in_one_write_at_once(listener, settings):
+    """What a real GSPro does after a shot, per three independent clients that
+    sat against one: the 201 arrives in the same TCP write as the 200, at once,
+    with a non-zero DistanceToTarget. Every earlier variant here delayed it by
+    a settle taken from a profile validated on a different connector."""
+    settings.gspro_arm_variant = "gspro"
+    reader, writer = await connect(settings)
+    try:
+        await send(writer, SQUARE_BALL)
+        assert (await read_json(reader))["Code"] == 200        # ball frame: ack only
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(reader.readline(), timeout=0.3)
+
+        await send(writer, SQUARE_CLUB)                        # end of shot
+        raw = await asyncio.wait_for(reader.read(4096), timeout=1.0)
+        objs = [json.loads(line) for line in raw.decode().split("\r\n") if line]
+        assert [o["Code"] for o in objs] == [200, 201], "one write, ack then 201"
+        assert objs[0]["Message"] == "Club & Ball Data received"
+        assert objs[1]["Message"] == "GSPro Player Information"
+        assert objs[1]["Player"]["DistanceToTarget"] > 0
+        assert listener.rearm_attempts == 1
+
+        with pytest.raises(asyncio.TimeoutError):              # and nothing after
+            await asyncio.wait_for(reader.readline(), timeout=1.2)
+    finally:
+        writer.close()
+
+
+async def test_the_ready_message_carries_code_202(listener, settings):
+    """GSPro sends {"Code":202,"Message":"GSPro ready"}. The probe sent it as
+    201, which no client would recognise as the ready signal."""
+    msg = listener._arm_message("ready")
+    assert msg == {"Code": 202, "Message": "GSPro ready"}
