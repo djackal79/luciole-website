@@ -1,0 +1,11 @@
+name = "nocturnal-series-site"
+compatibility_date = "2026-08-08"
+pages_build_output_dir = "dist"
+
+# Secrets are NOT declared here. SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set
+# as Cloudflare Pages environment variables (Settings > Environment variables), with
+# the service-role key marked "Encrypted". They are read only inside functions/,
+# which runs server-side and is never bundled into the client.
+#
+#   npx wrangler pages secret put SUPABASE_SERVICE_ROLE_KEY
+#   npx wrangler pages secret put SUPABASE_URL

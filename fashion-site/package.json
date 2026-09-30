@@ -1,0 +1,26 @@
+{
+  "name": "nocturnal-series-site",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "prebuild": "node scripts/gen-seo.mjs",
+    "build": "vite build",
+    "review": "node scripts/review.mjs",
+    "test": "node scripts/test-enquiry.mjs && node scripts/test-form-states.mjs",
+    "preview": "vite preview",
+    "deploy": "wrangler pages deploy dist"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.9.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.0",
+    "lighthouse": "^13.4.1",
+    "playwright": "^1.62.1",
+    "vite": "^7.1.12"
+  }
+}

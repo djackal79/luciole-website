@@ -1,0 +1,23 @@
+{
+  "$comment": "Shopify-shaped catalogue. Single source of truth for all product data on this site. Any value wrapped in {{ }} is an UNCONFIRMED placeholder and is rendered in a visually distinct draft style — see src/lib/placeholder.js. Do not replace a placeholder with a plausible-looking stand-in; replace it only with a confirmed value or leave it as-is. Ownership of each placeholder is registered in PLACEHOLDERS.md.",
+  "products": [
+    {
+      "handle": "nocturnal-series-v-neck",
+      "title": "Nocturnal Series — V-Neck Tee",
+      "description": "{{ PRODUCT DESCRIPTION — Pris }}",
+      "price": "{{ RRP AUD — Carl }}",
+      "currency": "AUD",
+      "images": [],
+      "variants": [
+        {
+          "title": "{{ SIZE RUN NOT CONFIRMED — Carl }}",
+          "sku": "{{ SKU — Carl }}",
+          "price": "{{ RRP AUD — Carl }}",
+          "available": false
+        }
+      ],
+      "available": false,
+      "tags": ["nocturnal-series", "v-neck", "tee", "luna-moth"]
+    }
+  ]
+}
