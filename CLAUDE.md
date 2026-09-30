@@ -20,7 +20,8 @@ the repo, the vault wins: say so.
 ## Session start
 
 1. Vault: search Drive under `10_Projects/`. Folder names use spaces (`01_Golf Sim`); notes write `01_Golf_Sim`.
-   Read AGENTS.md, _status.md, _decisions.md. On 30/09/2026 none exist for Golf Sim (only `refs/`): say so, don't invent.
+   Read AGENTS.md, _status.md, _decisions.md (created 30/09/2026 from the repo; re-verify anything volatile in `_status.md`).
+   If one is missing, say so; don't invent it.
 2. Live state, from the source and not from summaries: `git ls-remote --heads origin`,
    `git log --oneline origin/main..HEAD`, the decision table in `golf-sim/SSOT.md`, open PRs on GitHub.
 3. Never open the credential notes in `20_Areas/03_Technical_Infrastructure`. Never copy a secret into a note, commit or chat.
