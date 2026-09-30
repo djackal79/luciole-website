@@ -6,7 +6,7 @@ This repo holds several unrelated projects. Work out which one you are in before
 
 | Path | What it is | Vault home |
 |---|---|---|
-| `index.html` (root) | Luciole Designs "coming soon" page. The hub at luciole-website.pages.dev deploys from here | `20_Areas/01_Luciole_Designs` |
+| `index.html` (root) | Luciole Designs "coming soon" page. Probably the source of the hub at luciole-website.pages.dev (unconfirmed; this repo also holds the board games) | `20_Areas/01_Luciole_Designs` |
 | `fashion-site/` | Nocturnal Series site draft (Vite + React). Lives on branch `claude/brief-3-fashion-site-code-ykvbcw`, PR #2. Not on `main` until merged | `20_Areas/01_Luciole_Designs` (site), `10_Projects/04_Fashion` (garment) |
 | `game/` | "Pull Another One" party game | `10_Projects/05_Board_Game` |
 | `fashion-house/`, `website/` | "The Fashion House" board game and its marketing page. Deploys via `.github/workflows/deploy-fashion-house.yml` | `10_Projects/05_Board_Game` |
