@@ -8,7 +8,7 @@ the repo, the vault wins: say so.
 
 | Path | Project | Vault home |
 |---|---|---|
-| `golf-sim/` | Golf Sim (golf simulator: Square/GSPro ingest, Kinovea, pose, dashboard) | `10_Projects/01_Golf Sim` |
+| `golf-sim/` | Golf Sim (golf simulator: Square/GSPro ingest, Kinovea, pose, dashboard) | `10_Projects/01_Golf_Sim` |
 | `game/`, `PROMPTS-EXPORT.*` | Pull Another One (Christmas cracker party game) | `10_Projects/05_Board Game 1` (probable) |
 | `fashion-house/`, `website/`, `.github/workflows/deploy-fashion-house.yml` | THE FASHION HOUSE(TM) game + marketing site | `10_Projects/05_Board Game 1` (probable) |
 | `index.html`, `README.md` | Luciole Designs "coming soon" page | `20_Areas/01_Luciole Designs` |
@@ -19,7 +19,7 @@ the repo, the vault wins: say so.
 
 ## Session start
 
-1. Vault: search Drive under `10_Projects/`. Folder names use spaces (`01_Golf Sim`); notes write `01_Golf_Sim`.
+1. Vault: search Drive under `10_Projects/`. Some folder names use spaces (`05_Board Game 1`); Golf Sim's is `01_Golf_Sim`.
    Read AGENTS.md, _status.md, _decisions.md (created 30/09/2026 from the repo; re-verify anything volatile in `_status.md`).
    If one is missing, say so; don't invent it.
 2. Live state, from the source and not from summaries: `git ls-remote --heads origin`,
@@ -46,6 +46,6 @@ what changed, commit hashes, decisions, open questions. Prose dates are DD/MM/YY
 
 ## Golf Sim: where to look
 
-`golf-sim/RUNBOOK.md` (staged bring-up), `SSOT.md` (status + decisions D0-D29), `CONTRACT.md` (data contract),
+`golf-sim/SQUARE_REARM_HANDOVER.md` (the open Square problem, start here), `RUNBOOK.md` (staged bring-up), `SSOT.md` (status + decisions D0-D29), `CONTRACT.md` (data contract),
 `FRONTEND_BRIEF.md` and `DESIGN_BRIEF.md` (frontend), `HANDOVER.md`. Tests: `cd golf-sim && pytest -q`.
 Volatile status belongs in the vault `_status.md`, not in this file.
